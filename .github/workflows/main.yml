@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            command: npm run build:win
+            command: npx electron-builder --win nsis --publish never
           - os: macos-latest
-            command: npm run build:mac:arm64
+            command: npx electron-builder --mac dmg zip --arm64 --publish never
 
     runs-on: ${{ matrix.os }}
 
