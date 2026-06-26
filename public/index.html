@@ -17725,10 +17725,81 @@ async function doSearch(q, opts) {
 // ============================================================
 //  音频上下文 & 频谱分析
 // ============================================================
+function audioGraphHealthy() {
+  return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && analyser && beatAnalyser && gainNode);
+}
+function disconnectAudioGraphNodes(keepSource) {
+  try { if (source) source.disconnect(); } catch (e) {}
+  try { if (analyser) analyser.disconnect(); } catch (e) {}
+  try { if (beatAnalyser) beatAnalyser.disconnect(); } catch (e) {}
+  try { if (gainNode) gainNode.disconnect(); } catch (e) {}
+  if (!keepSource) source = null;
+  analyser = null;
+  beatAnalyser = null;
+  gainNode = null;
+  audioReady = false;
+}
+function restoreMediaTimeWhenReady(media, seconds) {
+  seconds = Math.max(0, Number(seconds) || 0);
+  if (!media || seconds <= 0.05) return;
+  var restored = false;
+  function apply() {
+    if (restored || !media) return;
+    try {
+      var duration = Number(media.duration) || 0;
+      media.currentTime = duration > 0 ? Math.min(seconds, Math.max(0, duration - 0.25)) : seconds;
+      restored = true;
+    } catch (e) {}
+  }
+  media.addEventListener('loadedmetadata', apply, { once: true });
+  media.addEventListener('canplay', apply, { once: true });
+  setTimeout(apply, 250);
+  apply();
+}
+function replaceAudioElementForGraphRecovery(reason) {
+  if (!audio) return false;
+  var oldAudio = audio;
+  var src = oldAudio.currentSrc || oldAudio.src || '';
+  var resumeAt = isFinite(oldAudio.currentTime) ? Number(oldAudio.currentTime) : 0;
+  var wasPaused = oldAudio.paused;
+  var onended = oldAudio.onended;
+  var onloadedmetadata = oldAudio.onloadedmetadata;
+  try { oldAudio.pause(); } catch (e) {}
+  disconnectAudioGraphNodes(false);
+  audioCtx = null;
+  audio = new Audio();
+  audio.crossOrigin = 'anonymous';
+  audio.preload = oldAudio.preload || 'auto';
+  audio.playbackRate = oldAudio.playbackRate || 1;
+  audio.onended = onended;
+  audio.onloadedmetadata = onloadedmetadata;
+  bindPlaybackProgressEvents(audio);
+  if (src) {
+    audio.src = src;
+    restoreMediaTimeWhenReady(audio, resumeAt);
+    if (!wasPaused) audio.load();
+  }
+  applyVolumeToAudio();
+  console.warn('[AudioGraphRecovery]', reason || 'recovered');
+  return true;
+}
 function initAudio() {
-  if (audioReady) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  source = audioCtx.createMediaElementSource(audio);
+  if (!audio) return false;
+  if (audioGraphHealthy()) return true;
+  if (audioCtx && audioCtx.state === 'closed') replaceAudioElementForGraphRecovery('closed-context');
+  var AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return false;
+  if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
+  var keepSource = !!source && audioCtx && audioCtx.state !== 'closed';
+  disconnectAudioGraphNodes(keepSource);
+  if (!source) {
+    if (audio.__mineradioMediaSourceBound) {
+      replaceAudioElementForGraphRecovery('stale-media-source');
+      if (!audioCtx || audioCtx.state === 'closed') audioCtx = new AudioContextCtor();
+    }
+    source = audioCtx.createMediaElementSource(audio);
+    audio.__mineradioMediaSourceBound = true;
+  }
   analyser = audioCtx.createAnalyser();
   beatAnalyser = audioCtx.createAnalyser();
   gainNode = audioCtx.createGain();
@@ -17746,10 +17817,23 @@ function initAudio() {
   beatTimeDomainData.fill(128);
   resetRealtimeBeatEngine();
   audioReady = true;
+  return true;
 }
 function resumeAudioAnalysis() {
+  if (audioCtx && audioCtx.state === 'closed') {
+    replaceAudioElementForGraphRecovery('resume-closed-context');
+    initAudio();
+  }
   if (audioCtx && audioCtx.state === 'suspended') return audioCtx.resume().catch(function(e){ console.warn('audio context resume failed:', e); });
   return Promise.resolve();
+}
+async function ensurePlaybackAudioGraph(reason) {
+  if (!audio) return false;
+  if (!audioGraphHealthy()) initAudio();
+  await resumeAudioAnalysis();
+  if (!audioGraphHealthy()) initAudio();
+  await resumeAudioAnalysis();
+  return audioGraphHealthy();
 }
 
 function ensureUiSfxContext() {
@@ -18632,17 +18716,17 @@ async function attemptAudioPlay(opts) {
   opts = opts || {};
   try {
       if (!audio) return false;
-      if (!audioReady) initAudio();
+      if (!audioGraphHealthy()) initAudio();
       if (opts.fade !== false) preparePlaybackFadeIn();
       if (opts.manual) {
         var manualPlay = audio.play();
-        await resumeAudioAnalysis();
+        await ensurePlaybackAudioGraph('manual-play-after-request');
         await manualPlay;
       } else {
-        await resumeAudioAnalysis();
+        await ensurePlaybackAudioGraph('auto-play-before-request');
         await audio.play();
       }
-      await resumeAudioAnalysis();
+      await ensurePlaybackAudioGraph('playback-started');
       switchPlaybackVisualToEmily();
       playing = true; setPlayIcon(true);
     if (opts.fade !== false) startPlaybackFadeIn();
