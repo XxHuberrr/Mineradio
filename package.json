@@ -25,6 +25,7 @@
     },
     "files": [
       "desktop/**/*",
+      "lib/**/*",
       "public/**/*",
       "build/**/*",
       "server.js",
