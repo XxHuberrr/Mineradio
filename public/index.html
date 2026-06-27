@@ -17980,6 +17980,7 @@ function applyVolumeToAudio() {
     gainNode.gain.cancelScheduledValues(now);
     gainNode.gain.setTargetAtTime(targetVolume, now, 0.025);
   }
+  if (spotifyPlayer) { try { spotifyPlayer.setVolume(Math.max(0, Math.min(1, targetVolume))); } catch (e) {} }
 }
 
 function updateVolumeUi() {
@@ -18141,8 +18142,6 @@ function moveQueueIndexToTop(idx) {
 }
 function playSearchResult(i) {
   var song = playlist[i]; if (!song) return;
-  // Phase 2：Spotify 仅接入搜索/登录元数据，整曲播放（Web Playback SDK）将在 Phase 3 接入。
-  if (songProviderKey(song) === 'spotify') { showToast('Spotify 播放将在下一步接入'); return; }
   homeForcedOpen = false;
   homeSuppressed = false;
   setHomeControlsLocked(false);
@@ -18354,6 +18353,7 @@ function handlePlaybackUnavailable(song, data) {
 
 function pauseCurrentAudioForTrackSwitch() {
   playToggleBusy = false;
+  if (playbackMode === 'spotify') { spotifyPausePlayback(); }
   if (!audio) return;
   try {
     audioFadeSerial++;
@@ -18413,6 +18413,164 @@ function scheduleAudioResumePosition(media, seconds, token) {
   media.addEventListener('canplay', applyResume, { once: true });
   setTimeout(applyResume, 520);
   applyResume();
+}
+
+// ============================================================
+//  Spotify 播放后端 (Web Playback SDK) — Phase 3
+//  Spotify 整曲走 SDK 播放（DRM 合规），不经过 audio 元素；
+//  进度/seek/暂停由 SDK 状态驱动。可视化 PCM 由 loopback 提供（Phase 4）。
+// ============================================================
+var playbackMode = 'audio'; // 'audio' | 'spotify'
+var spotifySdkLoading = false;
+var spotifySdkReady = false;
+var spotifySdkLoadPromise = null;
+var spotifyPlayer = null;
+var spotifyDeviceId = '';
+var spotifyConnectPromise = null;
+var spotifyState = { positionMs: 0, durationMs: 0, paused: true, uri: '', syncAt: 0, trackName: '' };
+var spotifyEndHandled = false;
+
+function spotifyIsActive() { return playbackMode === 'spotify'; }
+
+function loadSpotifySdk() {
+  if (spotifySdkReady) return Promise.resolve(true);
+  if (spotifySdkLoadPromise) return spotifySdkLoadPromise;
+  spotifySdkLoading = true;
+  spotifySdkLoadPromise = new Promise(function(resolve){
+    window.onSpotifyWebPlaybackSDKReady = function(){ spotifySdkReady = true; resolve(true); };
+    var s = document.createElement('script');
+    s.src = 'https://sdk.scdn.co/spotify-player.js';
+    s.async = true;
+    s.onerror = function(){ spotifySdkLoading = false; spotifySdkLoadPromise = null; resolve(false); };
+    document.head.appendChild(s);
+  });
+  return spotifySdkLoadPromise;
+}
+
+async function spotifyFetchToken() {
+  var data = await apiJson('/api/spotify/token');
+  if (!data || data.error || !data.accessToken) throw new Error((data && data.error) || 'NO_TOKEN');
+  return data.accessToken;
+}
+
+function onSpotifyStateChanged(state) {
+  if (!state) return;
+  spotifyState.positionMs = state.position || 0;
+  spotifyState.durationMs = state.duration || 0;
+  spotifyState.paused = !!state.paused;
+  spotifyState.syncAt = performance.now();
+  var t = state.track_window && state.track_window.current_track;
+  if (t) { spotifyState.uri = t.uri || spotifyState.uri; spotifyState.trackName = t.name || ''; }
+  if (spotifyIsActive()) { playing = !state.paused; setPlayIcon(!state.paused); }
+  // 整曲结束：Spotify 在曲尾会 paused 且 position 归 0
+  if (spotifyIsActive() && state.paused && (state.position || 0) === 0 && spotifyState.durationMs > 0 && !spotifyEndHandled) {
+    spotifyEndHandled = true;
+    setTimeout(onSpotifyTrackEnded, 0);
+  } else if ((state.position || 0) > 0) {
+    spotifyEndHandled = false;
+  }
+}
+
+function onSpotifyTrackEnded() {
+  if (!spotifyIsActive()) return;
+  try { finalizeListenSession(true); } catch (e) {}
+  if (playMode === 'single') playQueueAt(currentIdx, { autoRepeat: true });
+  else nextTrack();
+}
+
+async function ensureSpotifyPlayer() {
+  if (spotifyPlayer && spotifyDeviceId) return true;
+  var ok = await loadSpotifySdk();
+  if (!ok || typeof Spotify === 'undefined') throw new Error('SPOTIFY_SDK_LOAD_FAILED');
+  if (!spotifyPlayer) {
+    spotifyPlayer = new Spotify.Player({
+      name: 'Mineradio',
+      getOAuthToken: function(cb){ spotifyFetchToken().then(cb).catch(function(e){ console.warn('[Spotify] token cb failed', e); }); },
+      volume: (typeof targetVolume === 'number' ? targetVolume : 0.8),
+    });
+    spotifyPlayer.addListener('ready', function(o){ spotifyDeviceId = o.device_id; console.log('[Spotify] ready', o.device_id); });
+    spotifyPlayer.addListener('not_ready', function(o){ console.warn('[Spotify] device offline', o.device_id); });
+    spotifyPlayer.addListener('initialization_error', function(o){ console.error('[Spotify] init_error', o.message); });
+    spotifyPlayer.addListener('authentication_error', function(o){ console.error('[Spotify] auth_error', o.message); showToast('Spotify 鉴权失败，请重新登录'); });
+    spotifyPlayer.addListener('account_error', function(o){ console.error('[Spotify] account_error', o.message); });
+    spotifyPlayer.addListener('playback_error', function(o){ console.error('[Spotify] playback_error', o.message); });
+    spotifyPlayer.addListener('player_state_changed', onSpotifyStateChanged);
+    spotifyConnectPromise = spotifyPlayer.connect();
+  }
+  if (spotifyConnectPromise) { try { await spotifyConnectPromise; } catch (e) {} }
+  if (!spotifyDeviceId) await waitForSpotifyDevice(9000);
+  return !!spotifyDeviceId;
+}
+
+function waitForSpotifyDevice(timeoutMs) {
+  return new Promise(function(resolve){
+    var start = Date.now();
+    (function poll(){
+      if (spotifyDeviceId) return resolve(true);
+      if (Date.now() - start > timeoutMs) return resolve(false);
+      setTimeout(poll, 150);
+    })();
+  });
+}
+
+async function spotifyWebApi(method, endpoint, body) {
+  var token = await spotifyFetchToken();
+  var resp = await fetch('https://api.spotify.com/v1' + endpoint, {
+    method: method,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok && resp.status !== 204) { var txt = await resp.text(); throw new Error('HTTP ' + resp.status + ' ' + txt); }
+}
+
+async function spotifyPlayUri(uri) {
+  var ready = await ensureSpotifyPlayer();
+  if (!ready) throw new Error('SPOTIFY_DEVICE_NOT_READY');
+  spotifyEndHandled = false;
+  await spotifyWebApi('PUT', '/me/player/play?device_id=' + encodeURIComponent(spotifyDeviceId), { uris: [uri] });
+}
+
+async function spotifyTogglePlay() { if (spotifyPlayer) { try { await spotifyPlayer.togglePlay(); } catch (e) {} } }
+async function spotifyPausePlayback() { if (spotifyPlayer) { try { await spotifyPlayer.pause(); } catch (e) {} } }
+function spotifySeekMs(ms) {
+  ms = Math.max(0, Math.round(ms));
+  if (spotifyPlayer) { try { spotifyPlayer.seek(ms); } catch (e) {} }
+  spotifyState.positionMs = ms; spotifyState.syncAt = performance.now();
+}
+function spotifyCurrentPositionMs() {
+  if (spotifyState.paused) return spotifyState.positionMs;
+  var pos = spotifyState.positionMs + Math.max(0, performance.now() - spotifyState.syncAt);
+  if (spotifyState.durationMs > 0) pos = Math.min(pos, spotifyState.durationMs);
+  return pos;
+}
+
+async function playSpotifyTrack(song, token, opts) {
+  opts = opts || {};
+  try {
+    playbackMode = 'spotify';
+    if (audio) { try { audioFadeSerial++; clearAudioFadeTimers(); audio.onended = null; audio.pause(); audio.removeAttribute('src'); } catch (e) {} }
+    safePlaybackStep('spotify-reset-visual', resetAudioVisualState);
+    var uri = song.uri || (song.id ? 'spotify:track:' + song.id : '');
+    if (!uri) throw new Error('NO_SPOTIFY_URI');
+    if (!hasPlatformLogin('spotify')) { hideLoading(); forcePlaybackControlsInteractive(); showToast('请先登录 Spotify'); openProviderLogin('spotify'); return; }
+    spotifyState = { positionMs: 0, durationMs: (normalizePlaybackDurationSeconds(song.duration || 0) * 1000) || 0, paused: false, uri: uri, syncAt: performance.now(), trackName: song.name || '' };
+    await spotifyPlayUri(uri);
+    if (token !== trackSwitchToken) return;
+    playing = true; setPlayIcon(true);
+    forcePlaybackControlsInteractive();
+    hideLoading();
+    updatePlaybackProgressUi();
+    safePlaybackStep('spotify-session-begin', function(){ beginListenSession(song, opts.context || null); });
+    safeRenderQueuePanel('spotify-play');
+    scheduleShelfRebuild('spotify-play', true);
+  } catch (err) {
+    console.error('[SpotifyPlay]', err);
+    hideLoading();
+    forcePlaybackControlsInteractive();
+    playbackMode = 'audio';
+    var raw = String((err && err.message) || err || '');
+    showToast(/Premium|account_error|403/i.test(raw) ? 'Spotify 整曲播放需要 Premium 账号' : 'Spotify 播放失败');
+  }
 }
 
 async function playQueueAt(idx, opts) {
@@ -18487,6 +18645,13 @@ async function playQueueAt(idx, opts) {
     });
   }
 
+  // Spotify：整曲走 Web Playback SDK，保留上面的封面/标题/歌词 UI，跳过 audio/url/beatmap。
+  if (songProviderKey(song) === 'spotify') {
+    await playSpotifyTrack(song, token, opts);
+    return;
+  }
+  // 非 Spotify：从 Spotify 模式切回普通音频时复位并暂停 SDK。
+  if (playbackMode === 'spotify') { playbackMode = 'audio'; spotifyPausePlayback(); }
   try {
     markPlayPhase('source-url');
     var isQQPlayback = songProviderKey(song) === 'qq';
@@ -18697,6 +18862,11 @@ async function togglePlay() {
   playToggleBusy = true;
   try {
     forcePlaybackControlsInteractive();
+    if (spotifyIsActive()) {
+      await spotifyTogglePlay();
+      hideLoading();
+      return;
+    }
     if ((!audio || !audio.src) && playQueue.length && currentIdx >= 0) {
       await playQueueAt(currentIdx, { manual: true });
       return;
@@ -19923,10 +20093,12 @@ function playbackDurationFromSong(song) {
   return normalizePlaybackDurationSeconds(song.duration || song.durationMs || song.dt || 0);
 }
 function getPlaybackDurationSeconds() {
+  if (spotifyIsActive()) return spotifyState.durationMs > 0 ? spotifyState.durationMs / 1000 : playbackDurationFromSong(currentCoverSong());
   if (audio && isFinite(audio.duration) && audio.duration > 0) return audio.duration;
   return playbackDurationFromSong(currentCoverSong());
 }
 function getPlaybackCurrentSeconds() {
+  if (spotifyIsActive()) return spotifyCurrentPositionMs() / 1000;
   return audio && isFinite(audio.currentTime) && audio.currentTime > 0 ? audio.currentTime : 0;
 }
 function setProgressVisual(percent) {
@@ -19973,18 +20145,24 @@ function emitProgressDragParticles(x, y) {
 }
 function seekFromProgressPointer(e, emitParticles) {
   var durationSec = getPlaybackDurationSeconds();
-  if (!audio || !durationSec) return;
+  if (!durationSec) return;
+  if (!spotifyIsActive() && !audio) return;
   var bar = document.getElementById('progress-bar');
   var rect = bar.getBoundingClientRect();
   var ratio = clampRange((e.clientX - rect.left) / rect.width, 0, 1);
-  audio.currentTime = ratio * durationSec;
+  if (spotifyIsActive()) {
+    spotifySeekMs(ratio * durationSec * 1000);
+  } else {
+    audio.currentTime = ratio * durationSec;
+    syncBeatMapPlaybackCursor(audio.currentTime);
+  }
   setProgressVisual(ratio * 100);
-  syncBeatMapPlaybackCursor(audio.currentTime);
   if (emitParticles) emitProgressDragParticles(e.clientX, rect.top + rect.height / 2);
 }
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function(e){
-  if (!audio || !audio.duration) return;
+  if (!spotifyIsActive() && (!audio || !audio.duration)) return;
+  if (spotifyIsActive() && !(spotifyState.durationMs > 0)) return;
   progressDragState.active = true;
   progressBar.classList.add('is-dragging');
   try { progressBar.setPointerCapture(e.pointerId); } catch (err) {}
