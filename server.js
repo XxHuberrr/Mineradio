@@ -55,6 +55,7 @@ const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
 const { evaluateLocalRequest, requiredMethodFor } = require('./lib/security/local-request-policy');
 const { safeFetch } = require('./lib/security/proxy-target-policy');
+const { directMetadataCandidates, assertMirrorPayloadVerifiable } = require('./lib/security/update-trust-policy');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -709,7 +710,7 @@ function parseLatestYmlUpdateInfo(text, reason) {
 async function fetchLatestYmlUpdateInfo(reason) {
   if (!UPDATE_CONFIG.configured || UPDATE_CONFIG.provider !== 'github') throw updateError('UPDATE_REPOSITORY_NOT_CONFIGURED');
   const latestYmlUrl = `https://github.com/${encodeURIComponent(UPDATE_CONFIG.owner)}/${encodeURIComponent(UPDATE_CONFIG.repo)}/releases/latest/download/latest.yml`;
-  const candidates = uniqueDownloadCandidates(latestYmlUrl);
+  const candidates = directMetadataCandidates(latestYmlUrl);
   const result = await fetchTextFromCandidates(candidates, 6500);
   return parseLatestYmlUpdateInfo(result.text, reason);
 }
@@ -986,9 +987,11 @@ function prepareUpdateJobAttempt(job, candidate, index, total) {
   job.updatedAt = Date.now();
 }
 function ensureMirrorCanBeVerified(job, candidate) {
-  if (!candidate || !candidate.mirrored) return;
-  if (job.sha256 || job.sha512) return;
-  throw updateError('MIRROR_HASH_MISSING', 'Mirror download skipped because no digest is available');
+  try {
+    assertMirrorPayloadVerifiable(candidate, job);
+  } catch (err) {
+    throw updateError(err.message || 'MIRROR_HASH_MISSING', 'Mirror download skipped because no digest is available');
+  }
 }
 async function downloadUpdateAssetWithMirrors(job) {
   const tmpPath = job.filePath + '.download';
