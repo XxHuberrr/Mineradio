@@ -3,6 +3,10 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const {
+  isSafeExternalUrl,
+  isTrustedLoginUrl,
+} = require('../lib/security/external-url-policy');
 
 let mainWindow = null;
 let localServer = null;
@@ -36,6 +40,8 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const NETEASE_LOGIN_DOMAINS = Object.freeze(['163.com', 'netease.com']);
+const QQ_LOGIN_DOMAINS = Object.freeze(['qq.com']);
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -120,6 +126,16 @@ function waitForServer(server) {
   return new Promise((resolve, reject) => {
     server.once('listening', resolve);
     server.once('error', reject);
+  });
+}
+
+function openSafeExternalUrl(url) {
+  if (!isSafeExternalUrl(url)) {
+    console.warn('Blocked unsafe external URL');
+    return;
+  }
+  shell.openExternal(url).catch((error) => {
+    console.warn('External URL open failed:', error.message);
   });
 }
 
@@ -448,10 +464,10 @@ async function openNeteaseMusicLoginWindow(owner) {
     };
 
     loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\/([^/]+\.)?(163|music\.163|netease)\.com/i.test(url)) {
+      if (isTrustedLoginUrl(url, NETEASE_LOGIN_DOMAINS)) {
         loginWindow.loadURL(url).catch((e) => console.warn('Netease login popup navigation failed:', e.message));
-      } else if (/^https?:\/\//i.test(url)) {
-        shell.openExternal(url).catch(() => {});
+      } else {
+        openSafeExternalUrl(url);
       }
       return { action: 'deny' };
     });
@@ -557,10 +573,10 @@ async function openQQMusicLoginWindow(owner) {
     };
 
     loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
+      if (isTrustedLoginUrl(url, QQ_LOGIN_DOMAINS)) {
         loginWindow.loadURL(url).catch((e) => console.warn('QQ login popup navigation failed:', e.message));
       } else {
-        shell.openExternal(url).catch(() => {});
+        openSafeExternalUrl(url);
       }
       return { action: 'deny' };
     });
@@ -954,6 +970,7 @@ function createDesktopLyricsWindow(payload = {}) {
   });
   desktopLyricsWindow.webContents.once('did-finish-load', sendDesktopLyricsState);
   desktopLyricsWindow.on('closed', () => {
+    stopDesktopLyricsMousePoller();
     desktopLyricsWindow = null;
     desktopLyricsMouseIgnored = null;
   });
@@ -1368,7 +1385,7 @@ async function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openSafeExternalUrl(url);
     return { action: 'deny' };
   });
 
