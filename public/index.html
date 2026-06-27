@@ -818,9 +818,12 @@ body.login-guide-active #login-guide-canvas{opacity:1}
 .qq-login-mark b{font-size:22px;letter-spacing:.08em}
 .qq-login-mark span{font-size:10.5px;color:rgba(255,255,255,.46);letter-spacing:.5px}
 .qq-cookie-panel{display:none;margin-top:12px;padding:12px;border-radius:14px;border:1px solid rgba(191,214,107,.18);background:rgba(255,255,255,.035)}
+.qq-cookie-panel.netease{border-color:rgba(217,91,103,.24);background:rgba(217,91,103,.035)}
+.qq-cookie-panel.qq{border-color:rgba(191,214,107,.18);background:rgba(255,255,255,.035)}
 .qq-cookie-panel.show{display:block}
 .qq-cookie-input{width:100%;height:74px;resize:none;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(0,0,0,.22);color:rgba(255,255,255,.82);padding:10px 11px;font-family:inherit;font-size:11px;line-height:1.45;outline:none}
 .qq-cookie-input:focus{border-color:rgba(191,214,107,.42);box-shadow:0 0 0 1px rgba(191,214,107,.10)}
+.qq-cookie-panel.netease .qq-cookie-input:focus{border-color:rgba(217,91,103,.46);box-shadow:0 0 0 1px rgba(217,91,103,.12)}
 .qq-cookie-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px}
 .qq-cookie-note{font-size:10.5px;color:rgba(255,255,255,.36);line-height:1.45;text-align:left}
 .qq-cookie-panel .modal-btn{padding:8px 12px;white-space:nowrap}
@@ -2482,17 +2485,17 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     </div>
     <div id="qr-status">正在生成二维码…</div>
     <div id="qq-cookie-panel" class="qq-cookie-panel">
-      <textarea id="qq-cookie-input" class="qq-cookie-input" spellcheck="false" autocomplete="off" placeholder="uin=...; qqmusic_key=...; qm_keyst=..."></textarea>
+      <textarea id="qq-cookie-input" class="qq-cookie-input" spellcheck="false" autocomplete="off" placeholder="MUSIC_U=...; __csrf=..."></textarea>
       <div class="qq-cookie-actions">
-        <div class="qq-cookie-note">从 y.qq.com 的登录会话导入。</div>
-        <button id="qq-cookie-save-btn" class="modal-btn primary" type="button" onclick="submitQQCookieLogin()">保存</button>
+        <div id="qq-cookie-note" class="qq-cookie-note">从 music.163.com 的登录会话导入。</div>
+        <button id="qq-cookie-save-btn" class="modal-btn primary" type="button" onclick="submitManualCookieLogin()">保存</button>
       </div>
     </div>
     <div class="btn-row">
       <button class="modal-btn" onclick="closeLoginModal()">取消</button>
       <button class="modal-btn" onclick="skipLoginAndFocusSearch()">先搜索一首歌</button>
       <button id="login-both-btn" class="modal-btn" onclick="requestDualLoginMode()">我两个都要</button>
-      <button id="qq-cookie-toggle-btn" class="modal-btn" type="button" onclick="toggleQQCookiePanel()">手动导入</button>
+      <button id="qq-cookie-toggle-btn" class="modal-btn" type="button" onclick="toggleManualCookiePanel()">手动导入</button>
       <button id="refresh-qr-btn" class="modal-btn primary" onclick="refreshQr()">刷新二维码</button>
     </div>
   </div>
@@ -2699,10 +2702,10 @@ var qqLoginWasLoggedIn = false;
 var loginProvider = 'netease';
 var activeAccountProvider = 'netease';
 var dualAccountMode = false;
-var qqCookieBusy = false;
+var manualCookieBusy = false;
 var neteaseWebLoginBusy = false;
 var qqWebLoginBusy = false;
-var qqManualCookieOpen = false;
+var manualCookieOpen = false;
 var loginStatusChecked = false, loginStatusCheckFailed = false;
 var qrPollTimer = null, qrKey = null;
 var volumeTween = null, trackSwitchToken = 0;
@@ -23443,6 +23446,8 @@ function updateLoginProviderUi() {
   var st = document.getElementById('qr-status');
   var refreshBtn = document.getElementById('refresh-qr-btn');
   var qqPanel = document.getElementById('qq-cookie-panel');
+  var qqInput = document.getElementById('qq-cookie-input');
+  var qqNote = document.getElementById('qq-cookie-note');
   var qqCookieToggle = document.getElementById('qq-cookie-toggle-btn');
   var qqCard = document.getElementById('qq-web-login-card');
   var neteaseBtn = document.getElementById('login-provider-netease');
@@ -23461,10 +23466,20 @@ function updateLoginProviderUi() {
     shell.classList.toggle('qq-preview', isQQ);
     shell.classList.toggle('netease-preview', !isQQ && canOpenNeteaseWeb);
   }
-  if (qqPanel) qqPanel.classList.toggle('show', isQQ && qqManualCookieOpen);
+  if (qqPanel) {
+    qqPanel.classList.toggle('show', manualCookieOpen);
+    qqPanel.classList.toggle('netease', !isQQ);
+    qqPanel.classList.toggle('qq', isQQ);
+  }
+  if (qqInput) qqInput.placeholder = isQQ
+    ? 'uin=...; qqmusic_key=...; qm_keyst=...'
+    : 'MUSIC_U=...; __csrf=...';
+  if (qqNote) qqNote.textContent = isQQ
+    ? '从 y.qq.com 的登录会话导入。'
+    : '从 music.163.com 的登录会话导入，至少需要 MUSIC_U。';
   if (qqCookieToggle) {
-    qqCookieToggle.classList.toggle('show', isQQ);
-    qqCookieToggle.textContent = qqManualCookieOpen ? '收起导入' : '手动导入';
+    qqCookieToggle.classList.add('show');
+    qqCookieToggle.textContent = manualCookieOpen ? '收起导入' : '手动导入';
   }
   if (qqCard) {
     qqCard.disabled = isQQ ? !!qqWebLoginBusy : !!neteaseWebLoginBusy;
@@ -23529,9 +23544,12 @@ async function refreshQr() {
 }
 function startQrPoll() { if (qrPollTimer) clearInterval(qrPollTimer); qrPollTimer = setInterval(checkQr, 2000); }
 function stopQrPoll() { if (qrPollTimer) { clearInterval(qrPollTimer); qrPollTimer = null; } }
-function toggleQQCookiePanel() {
-  qqManualCookieOpen = !qqManualCookieOpen;
+function toggleManualCookiePanel() {
+  manualCookieOpen = !manualCookieOpen;
   updateLoginProviderUi();
+}
+function toggleQQCookiePanel() {
+  toggleManualCookiePanel();
 }
 function openProviderWebLogin() {
   if (loginProvider === 'qq') return openQQWebLogin();
@@ -23587,7 +23605,7 @@ async function openQQWebLogin() {
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
   if (!api || !api.isDesktop || typeof api.openQQMusicLogin !== 'function') {
-    qqManualCookieOpen = true;
+    manualCookieOpen = true;
     updateLoginProviderUi();
     if (statusEl) { statusEl.textContent = '当前环境不支持自动网页登录，可先使用手动导入。'; statusEl.className = 'fail'; }
     return;
@@ -23610,7 +23628,7 @@ async function openQQWebLogin() {
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'QQ 会话不可用');
     qqLoginStatus = info;
     activeAccountProvider = 'qq';
-    qqManualCookieOpen = false;
+    manualCookieOpen = false;
     renderUserBtn();
     refreshUserPlaylists(true);
     var qqPlaybackReady = !!info.playbackKeyReady && !result.partial;
@@ -23630,43 +23648,57 @@ async function openQQWebLogin() {
     }
   }
 }
-async function submitQQCookieLogin() {
-  if (qqCookieBusy) return;
+async function submitManualCookieLogin() {
+  if (manualCookieBusy) return;
+  var isQQ = loginProvider === 'qq';
   var input = document.getElementById('qq-cookie-input');
   var statusEl = document.getElementById('qr-status');
   var saveBtn = document.getElementById('qq-cookie-save-btn');
   var cookie = input ? input.value.trim() : '';
   if (!cookie) {
-    if (statusEl) { statusEl.textContent = '先粘贴 QQ 音乐 cookie'; statusEl.className = 'fail'; }
+    if (statusEl) { statusEl.textContent = isQQ ? '先粘贴 QQ 音乐 cookie' : '先粘贴网易云 cookie'; statusEl.className = 'fail'; }
     return;
   }
-  qqCookieBusy = true;
+  manualCookieBusy = true;
   if (saveBtn) saveBtn.classList.add('busy');
-  if (statusEl) { statusEl.textContent = '正在保存 QQ 会话…'; statusEl.className = 'preview'; }
+  if (statusEl) { statusEl.textContent = isQQ ? '正在保存 QQ 会话…' : '正在保存网易云会话…'; statusEl.className = 'preview'; }
   try {
-    var info = await apiJson('/api/qq/login/cookie', {
+    var info = await apiJson(isQQ ? '/api/qq/login/cookie' : '/api/login/cookie', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cookie: cookie })
     });
-    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'QQ 会话不可用');
-    qqLoginStatus = info;
-    activeAccountProvider = 'qq';
+    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || (isQQ ? 'QQ 会话不可用' : '网易云会话不可用'));
+    if (isQQ) qqLoginStatus = info;
+    else loginStatus = info;
+    activeAccountProvider = isQQ ? 'qq' : 'netease';
+    manualCookieOpen = false;
     if (input) input.value = '';
     renderUserBtn();
     refreshUserPlaylists(true);
+    if (!isQQ) loadHomeDiscover(true);
     var manualQQPlaybackReady = !!info.playbackKeyReady;
-    if (statusEl) { statusEl.textContent = manualQQPlaybackReady ? 'QQ 音乐会话已保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源'; statusEl.className = 'scan'; }
+    if (statusEl) {
+      statusEl.textContent = isQQ
+        ? (manualQQPlaybackReady ? 'QQ 音乐会话已保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源')
+        : '网易云会话已保存';
+      statusEl.className = 'scan';
+    }
     setTimeout(function(){
       closeLoginModal();
-      showToast((manualQQPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || ''));
+      showToast(isQQ
+        ? ((manualQQPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || ''))
+        : ('网易云已登录: ' + (info.nickname || info.userId || '')));
     }, 420);
   } catch (e) {
-    if (statusEl) { statusEl.textContent = e && e.message ? e.message : 'QQ 会话保存失败'; statusEl.className = 'fail'; }
+    if (statusEl) { statusEl.textContent = e && e.message ? e.message : (isQQ ? 'QQ 会话保存失败' : '网易云会话保存失败'); statusEl.className = 'fail'; }
   } finally {
-    qqCookieBusy = false;
+    manualCookieBusy = false;
     if (saveBtn) saveBtn.classList.remove('busy');
   }
+}
+function submitQQCookieLogin() {
+  return submitManualCookieLogin();
 }
 async function checkQr() {
   if (!qrKey) return;
