@@ -54,6 +54,7 @@ const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
 const { evaluateLocalRequest, requiredMethodFor } = require('./lib/security/local-request-policy');
+const { safeFetch } = require('./lib/security/proxy-target-policy');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -4144,7 +4145,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---------- 封面代理 (带 CORS 头, 给 canvas 提取像素用) ----------
+  // ---------- 封面代理 (同源请求, 给 canvas 提取像素用) ----------
   if (pn === '/api/cover') {
     try {
       const coverUrl = url.searchParams.get('url');
@@ -4154,7 +4155,7 @@ const server = http.createServer(async (req, res) => {
         res.end('Invalid cover url');
         return;
       }
-      const resp = await fetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } });
+      const resp = await safeFetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } });
       const ct  = resp.headers.get('content-type') || 'image/jpeg';
       const cl  = resp.headers.get('content-length');
       const hdr = {
@@ -4167,7 +4168,11 @@ const server = http.createServer(async (req, res) => {
       const reader = resp.body.getReader();
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
-    } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Cover]', err);
+      res.writeHead(/^PROXY_/.test(err.message || '') ? 400 : 500);
+      res.end();
+    }
     return;
   }
 
@@ -4178,7 +4183,7 @@ const server = http.createServer(async (req, res) => {
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
       const hdr = audioProxyHeadersFor(audioUrl, range);
-      const up = await fetch(audioUrl, { headers: hdr });
+      const up = await safeFetch(audioUrl, { headers: hdr });
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Accept-Ranges': 'bytes',
@@ -4189,7 +4194,11 @@ const server = http.createServer(async (req, res) => {
       const reader = up.body.getReader();
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
-    } catch (err) { console.error('[Audio]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Audio]', err);
+      res.writeHead(/^PROXY_/.test(err.message || '') ? 400 : 500);
+      res.end();
+    }
     return;
   }
 
