@@ -17020,7 +17020,7 @@ async function toggleLikeSong(song) {
   safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
   refreshSearchResultActionStates();
   try {
-    var r = await apiJson('/api/song/like?id=' + encodeURIComponent(id) + '&like=' + encodeURIComponent(String(next)));
+    var r = await apiJson('/api/song/like?id=' + encodeURIComponent(id) + '&like=' + encodeURIComponent(String(next)), { method: 'POST' });
     if (r && r.error) throw new Error(r.error);
     likedSongMap[id] = next;
     showToast(next ? '已加入红心喜欢' : '已取消红心');
@@ -17103,7 +17103,7 @@ async function createPlaylistFromCollect() {
   var name = input ? input.value.trim() : '';
   if (!name) { showToast('先输入歌单名称'); return; }
   try {
-    var r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name));
+    var r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name), { method: 'POST' });
     if (r && r.error) throw new Error(r.error);
     if (input) input.value = '';
     showToast('歌单已创建');
@@ -23785,7 +23785,7 @@ function openProviderLogin(provider) {
 }
 async function logoutActiveAccount() {
   if (activeAccountProvider === 'qq') {
-    try { await apiJson('/api/qq/logout'); } catch (e) {}
+    try { await apiJson('/api/qq/logout', { method: 'POST' }); } catch (e) {}
     try {
       if (window.desktopWindow && typeof window.desktopWindow.clearQQMusicLogin === 'function') {
         await window.desktopWindow.clearQQMusicLogin();
@@ -23805,7 +23805,7 @@ async function logoutActiveAccount() {
   doLogout();
 }
 async function doLogout() {
-  await apiJson('/api/logout');
+  await apiJson('/api/logout', { method: 'POST' });
   try {
     if (window.desktopWindow && typeof window.desktopWindow.clearNeteaseMusicLogin === 'function') {
       await window.desktopWindow.clearNeteaseMusicLogin();

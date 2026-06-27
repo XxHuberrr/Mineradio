@@ -53,9 +53,10 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const { evaluateLocalRequest, requiredMethodFor } = require('./lib/security/local-request-policy');
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || '127.0.0.1';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
@@ -198,7 +199,6 @@ function serveStatic(res, filePath) {
 function sendJSON(res, data, status) {
   res.writeHead(status || 200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
@@ -3244,6 +3244,19 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  const access = evaluateLocalRequest(req, { port: Number(PORT) });
+  if (!access.ok) {
+    sendJSON(res, { ok: false, error: access.error }, 403);
+    return;
+  }
+
+  const requiredMethod = requiredMethodFor(pn);
+  if (requiredMethod && req.method !== requiredMethod) {
+    res.setHeader('Allow', requiredMethod);
+    sendJSON(res, { ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    return;
+  }
+
   if (pn === '/api/app/version') {
     sendJSON(res, {
       name: APP_PACKAGE.name || 'mineradio',
@@ -4137,7 +4150,7 @@ const server = http.createServer(async (req, res) => {
       const coverUrl = url.searchParams.get('url');
       // URL 校验: 必须是 http(s) 开头, 否则直接 404 (不要让 fetch 抛错)
       if (!coverUrl || !/^https?:\/\//i.test(coverUrl)) {
-        res.writeHead(400, { 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(400);
         res.end('Invalid cover url');
         return;
       }
@@ -4146,8 +4159,7 @@ const server = http.createServer(async (req, res) => {
       const cl  = resp.headers.get('content-length');
       const hdr = {
         'Content-Type': ct,
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
         'Cache-Control': 'public, max-age=86400',
       };
       if (cl) hdr['Content-Length'] = cl;
@@ -4169,7 +4181,6 @@ const server = http.createServer(async (req, res) => {
       const up = await fetch(audioUrl, { headers: hdr });
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
-        'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
       };
       const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;

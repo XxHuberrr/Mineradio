@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const {
   evaluateLocalRequest,
@@ -67,4 +69,9 @@ test('requires POST for state-changing routes', () => {
     assert.equal(requiredMethodFor(pathname), 'POST', pathname);
   }
   assert.equal(requiredMethodFor('/api/search'), '');
+});
+
+test('server responses do not enable wildcard CORS', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.doesNotMatch(source, /Access-Control-Allow-Origin['"]?\s*:\s*['"]\*['"]/);
 });
