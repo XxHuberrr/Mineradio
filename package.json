@@ -89,7 +89,7 @@
     "NeteaseCloudMusicApi": "^4.32.0"
   },
   "devDependencies": {
-    "electron": "^42.4.1",
+    "electron": "https://github.com/castlabs/electron-releases#v42.3.3+wvcus",
     "electron-builder": "^26.15.3",
     "rcedit": "^5.0.2"
   }

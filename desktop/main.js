@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, components } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -1439,6 +1439,16 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    // castLabs Electron: 等 Widevine CDM 就绪后再开窗口（Spotify 全曲播放依赖）。
+    // 标准 Electron 没有 components，会被跳过，保证非 castLabs 环境不回归。
+    try {
+      if (components && typeof components.whenReady === 'function') {
+        await components.whenReady();
+        console.log('[Widevine] components ready:', JSON.stringify(components.status ? components.status() : {}));
+      }
+    } catch (e) {
+      console.error('[Widevine] components init failed:', e && e.message);
+    }
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
