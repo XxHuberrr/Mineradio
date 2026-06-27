@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openUpdateInstaller: (filePath) => ipcRenderer.invoke('mineradio-open-update-installer', filePath),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
+  getPlatformInfo: () => ipcRenderer.invoke('mineradio-platform-info'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
@@ -47,6 +48,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 });
 
 window.addEventListener('DOMContentLoaded', () => {
+  document.documentElement.classList.add(`platform-${process.platform}`);
   document.documentElement.classList.add('desktop-shell-root');
+  document.body.classList.add(`platform-${process.platform}`);
   document.body.classList.add('desktop-shell');
 });
