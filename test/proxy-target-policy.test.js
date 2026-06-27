@@ -30,6 +30,10 @@ test('classifies private and special-purpose addresses as unsafe', () => {
   assert.equal(isPublicAddress('2606:4700:4700::1111'), true);
 });
 
+test('allows the 198.18 fake-IP range used by local TUN proxies', () => {
+  assert.equal(isPublicAddress('198.18.26.235'), true);
+});
+
 test('rejects invalid schemes and URL credentials', async () => {
   await assert.rejects(assertSafeProxyUrl('file:///etc/passwd'), /PROXY_TARGET_INVALID/);
   await assert.rejects(assertSafeProxyUrl('https://user:pass@media.example/song'), /PROXY_TARGET_INVALID/);
