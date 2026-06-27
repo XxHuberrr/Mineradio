@@ -1327,6 +1327,9 @@ async function createWindow() {
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  // Spotify token 与 cookie 同样存进共享 userData（直装版/开发版互通）。
+  // SPOTIFY_CLIENT_ID 走 passthrough：开发期由启动 shell 注入，不硬编码进仓库。
+  process.env.SPOTIFY_TOKEN_FILE = path.join(app.getPath('userData'), '.spotify-token');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
