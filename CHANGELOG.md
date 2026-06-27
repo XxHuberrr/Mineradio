@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add macOS Apple Silicon packaging support for M1 / M1 Pro / M2 / M3 / M4 Macs.
+- Add `npm run build:mac` and `npm run build:mac:dir` scripts for arm64 DMG/ZIP and local `.app` builds.
+- Use Metal instead of Windows-only D3D11 for Chromium GPU acceleration on macOS.
+- Move the custom desktop window controls to the macOS-style top-left position on Apple Silicon builds.
+- Document unsigned macOS build distribution notes.
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

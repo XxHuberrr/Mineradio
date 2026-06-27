@@ -8,6 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "build:mac": "electron-builder --mac dmg zip --arm64",
+    "build:mac:dir": "electron-builder --mac dir --arm64",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
@@ -45,6 +47,24 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Mineradio-${version}-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

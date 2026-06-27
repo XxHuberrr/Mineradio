@@ -1,0 +1,46 @@
+name: Build macOS Apple Silicon
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build macOS arm64 package
+        run: npm run build:mac
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          shasum -a 256 Mineradio-*-mac-arm64.dmg Mineradio-*-mac-arm64.zip > Mineradio-mac-arm64-SHA256SUMS.txt
+
+      - name: Upload macOS arm64 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mineradio-macos-arm64
+          path: |
+            dist/Mineradio-*-mac-arm64.dmg
+            dist/Mineradio-*-mac-arm64.zip
+            dist/Mineradio-mac-arm64-SHA256SUMS.txt
+          if-no-files-found: error

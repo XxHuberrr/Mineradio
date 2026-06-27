@@ -18,8 +18,26 @@
 - 运行语法检查：`git diff --check`、`node --check server.js`、前端内联脚本解析。
 - 运行 Git 跟踪风险残留检查，确认没有跟踪 `.exe/.dll/.scr/.bat/.cmd/.ps1/.vbs/.jse/.wsf/.hta/.xlsm` 等可执行/脚本残留。
 - 从当前源码执行 `npm run build:win` 生成 Windows 安装包。
+- 在 Apple Silicon Mac 上执行 `npm run build:mac` 生成 macOS arm64 DMG/ZIP。
 - 对新生成的安装包和当前源码执行安全扫描。
 - 生成并记录新安装包 SHA256。
+
+## macOS Apple Silicon 发布
+
+macOS arm64 构建适用于 M1 / M1 Pro / M2 / M3 / M4 芯片：
+
+```bash
+npm install
+npm run build:mac
+```
+
+建议上传资产：
+
+- `dist/Mineradio-x.y.z-mac-arm64.dmg`
+- `dist/Mineradio-x.y.z-mac-arm64.zip`
+- `dist/Mineradio-x.y.z-mac-arm64-SHA256SUMS.txt`
+
+没有 Apple Developer ID 时，产物不会签名或 notarize。Release 正文必须明确提示这是未签名开源构建，首次打开时可能需要 Finder 右键“打开”或到系统设置的“隐私与安全性”中允许打开。正式面向普通用户分发前，建议使用 Apple Developer ID 完成签名和 notarization。
 
 ## GitHub Release
 

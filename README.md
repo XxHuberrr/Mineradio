@@ -65,15 +65,27 @@ Windows 用户可以在 GitHub Releases 中下载安装包。
 
 已经安装过旧版本的用户，建议卸载旧版本、隔离旧安装包后，再使用 `v1.1.1` 安装包纯净安装。
 
+### macOS Apple Silicon 版本
+
+仓库现在支持在 Apple Silicon Mac 上构建原生 arm64 版本，适用于 M1 / M1 Pro / M2 / M3 / M4 芯片：
+
+```bash
+npm install
+npm run build:mac
+```
+
+构建产物位于 `dist/`，文件名形如 `Mineradio-1.1.1-mac-arm64.dmg` 和 `Mineradio-1.1.1-mac-arm64.zip`。如果没有 Apple Developer ID，生成的 macOS 包是未签名版本；首次打开时可能需要在 Finder 中右键应用选择“打开”，或在系统设置的“隐私与安全性”中允许打开。
+
 ## 开发运行
 
 ```bash
 npm install
 npm start
 npm run build:win
+npm run build:mac
 ```
 
-桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
+桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包；`npm run build:mac` 会生成 macOS Apple Silicon 的 DMG 和 ZIP，产物位于 `dist/`。
 
 ## 更新机制
 
