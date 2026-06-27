@@ -4106,8 +4106,19 @@ const server = http.createServer(async (req, res) => {
       // 新版本 NeteaseCloudMusicApi 通常提供 playlist_track_all；旧版本退回 playlist_detail。
       if (typeof playlist_track_all === 'function') {
         try {
-          const all = await playlist_track_all({ id, limit: 500, offset: 0, cookie: userCookie, timestamp: Date.now() });
-          rawTracks = (all.body && (all.body.songs || all.body.tracks)) || [];
+          // playlist_track_all 内部按 trackIds.slice(offset, offset+limit) 取歌，
+          // 单次 limit 会截断大歌单（#40：1000+ 首只加载 500 首），这里按 offset 翻页取全。
+          const pageSize = 1000;
+          let offset = 0;
+          for (;;) {
+            const page = await playlist_track_all({ id, limit: pageSize, offset, cookie: userCookie, timestamp: Date.now() });
+            const songs = (page.body && (page.body.songs || page.body.tracks)) || [];
+            if (!songs.length) break;
+            rawTracks = rawTracks.concat(songs);
+            if (songs.length < pageSize) break;
+            offset += pageSize;
+            if (offset >= 50000) break; // 安全上限，避免异常情况下无限翻页
+          }
         } catch (err) {
           console.warn('[PlaylistTracks] playlist_track_all failed, fallback to detail:', err.message);
         }
