@@ -68,3 +68,54 @@ test('dual-account transitions persist and render only two authenticated account
     /if \(dualAccountMode && hasPlatformLogin\('netease'\) && hasPlatformLogin\('qq'\)\)/,
   );
 });
+
+function createQueueContext(overrides) {
+  const calls = [];
+  return Object.assign({
+    calls,
+    playlist: [{ name: 'Song' }],
+    podcastPrograms: [{ name: 'Podcast' }],
+    playQueue: [],
+    currentIdx: -1,
+    playSearchResult(index) { calls.push(['play-song', index]); },
+    playPodcastProgram(index) { calls.push(['play-podcast', index]); },
+    queueSongNext(song) { calls.push(['queue-next', song.name]); },
+    showToast(message) { calls.push(['toast', message]); },
+  }, overrides || {});
+}
+
+test('search add actions start playback when no current queue item exists', () => {
+  const context = createQueueContext();
+  vm.runInNewContext(
+    `${extractFunction('queueSearchResult')}; ${extractFunction('queuePodcastProgram')};`,
+    context,
+  );
+
+  context.queueSearchResult(0);
+  context.queuePodcastProgram(0);
+
+  assert.deepEqual(context.calls, [['play-song', 0], ['play-podcast', 0]]);
+});
+
+test('search add actions preserve insert-next behavior with a current item', () => {
+  const context = createQueueContext({ playQueue: [{ name: 'Current' }], currentIdx: 0 });
+  vm.runInNewContext(
+    `${extractFunction('queueSearchResult')}; ${extractFunction('queuePodcastProgram')};`,
+    context,
+  );
+
+  context.queueSearchResult(0);
+  context.queuePodcastProgram(0);
+
+  assert.deepEqual(context.calls, [
+    ['queue-next', 'Song'],
+    ['toast', '已设为下一首: Song'],
+    ['queue-next', 'Podcast'],
+    ['toast', '已设为下一首: Podcast'],
+  ]);
+});
+
+test('song and podcast playback adapters select from their own result lists', () => {
+  assert.match(source, /function playSearchResult[\s\S]*?playSearchSong\(song\)/);
+  assert.match(source, /function playPodcastProgram[\s\S]*?playSearchSong\(item\)/);
+});

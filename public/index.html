@@ -17453,12 +17453,16 @@ function renderPodcastPrograms() {
 }
 function queuePodcastProgram(i) {
   var item = podcastPrograms[i]; if (!item) return;
+  if (!playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) {
+    playPodcastProgram(i);
+    return;
+  }
   queueSongNext(item);
   showToast('已设为下一首: ' + item.name);
 }
 function playPodcastProgram(i) {
   var item = podcastPrograms[i]; if (!item) return;
-  playSearchResult(i);
+  playSearchSong(item);
 }
 
 $input.addEventListener('input', function(){
@@ -18105,6 +18109,10 @@ function queueSongNext(song) {
 }
 function queueSearchResult(i) {
   var song = playlist[i]; if (!song) return;
+  if (!playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) {
+    playSearchResult(i);
+    return;
+  }
   queueSongNext(song);
   showToast('已设为下一首: ' + song.name);
 }
@@ -18136,6 +18144,9 @@ function moveQueueIndexToTop(idx) {
 }
 function playSearchResult(i) {
   var song = playlist[i]; if (!song) return;
+  playSearchSong(song);
+}
+function playSearchSong(song) {
   homeForcedOpen = false;
   homeSuppressed = false;
   setHomeControlsLocked(false);
