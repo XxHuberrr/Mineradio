@@ -149,6 +149,7 @@ function collectCookieInput(input, picked) {
     return;
   }
   String(input).split(/\r?\n/).forEach(line => {
+    line = String(line || '').trim().replace(/^cookie\s*:\s*/i, '');
     line.split(';').forEach(part => {
       const raw = String(part || '').trim();
       const idx = raw.indexOf('=');
