@@ -23424,8 +23424,9 @@ function startQQLoginStatusAutoRefresh() {
 function renderUserBtn() {
   var btn = document.getElementById('user-btn');
   if (!btn) return;
+  var dualViewActive = dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq');
   btn.classList.remove('multi-account');
-  if (dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq')) {
+  if (dualViewActive) {
     activeAccountProvider = firstLoggedProvider();
     btn.classList.add('logged-in', 'multi-account');
     btn.classList.remove('logged-out');
@@ -23437,7 +23438,7 @@ function renderUserBtn() {
     var meta = platformMeta(activeAccountProvider);
     btn.classList.add('logged-in');
     btn.classList.remove('logged-out');
-    btn.title = dualAccountMode ? '账号信息 · 已启用双平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
+    btn.title = dualViewActive ? '账号信息 · 已启用双平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
     btn.innerHTML = '<img id="user-avatar" src="' + escAttr(providerAvatarSrc(activeAccountProvider, st)) + '">' +
                     '<span>' + escHtml(st.nickname || meta.label) + '</span>' +
                     providerVipBadge(activeAccountProvider, st, 'user-vip-tag');

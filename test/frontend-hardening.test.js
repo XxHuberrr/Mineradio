@@ -65,8 +65,18 @@ test('dual-account transitions persist and render only two authenticated account
   assert.match(source, /async function doLogout[\s\S]*?setDualAccountMode\(false\)/);
   assert.match(
     source,
-    /if \(dualAccountMode && hasPlatformLogin\('netease'\) && hasPlatformLogin\('qq'\)\)/,
+    /var dualViewActive = dualAccountMode && hasPlatformLogin\('netease'\) && hasPlatformLogin\('qq'\)/,
   );
+});
+
+test('account button labels use the effective authenticated dual-account state', () => {
+  const renderUserBtn = extractFunction('renderUserBtn');
+  assert.match(
+    renderUserBtn,
+    /var dualViewActive = dualAccountMode && hasPlatformLogin\('netease'\) && hasPlatformLogin\('qq'\)/,
+  );
+  assert.match(renderUserBtn, /if \(dualViewActive\)/);
+  assert.match(renderUserBtn, /btn\.title = dualViewActive \?/);
 });
 
 function createQueueContext(overrides) {
