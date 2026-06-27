@@ -68,7 +68,8 @@ function applyPlatformWindowChrome() {
       position: absolute;
       top: 7px;
       left: 14px;
-      right: 14px;
+      right: auto;
+      width: 108px;
       height: 30px;
       display: block;
       gap: 0;
@@ -79,34 +80,52 @@ function applyPlatformWindowChrome() {
       width: 28px;
       height: 28px;
       border-radius: 999px;
+      color: rgba(18, 18, 18, .70);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.36), 0 8px 22px rgba(0,0,0,.18);
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-window-btn.close {
       left: 0;
+      background: #ff5f57;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-window-btn[data-window-action="minimize"] {
       left: 36px;
+      background: #ffbd2e;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-window-btn[data-window-action="maximize"] {
       left: 72px;
+      background: #28c840;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-window-btn svg {
       width: 12px;
       height: 12px;
+      opacity: .78;
+      stroke-width: 2.2;
+    }
+    body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-window-btn:hover {
+      color: rgba(0, 0, 0, .86);
+      transform: translateY(-1px);
+      filter: brightness(1.05);
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar #diy-mode-btn {
-      position: absolute;
-      top: 0;
-      right: 0;
+      position: fixed;
+      top: 7px;
+      right: 14px;
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar #visual-guide-btn {
-      position: absolute;
-      top: 0;
+      position: fixed;
+      top: 7px;
       right: 88px;
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar #update-entry {
-      position: absolute;
-      top: 0;
+      position: fixed;
+      top: 7px;
       right: 124px;
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
     }
     body.desktop-shell.desktop-shell-darwin #desktop-titlebar .desktop-mode-btn {
       margin-left: 0;
