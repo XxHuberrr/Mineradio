@@ -1718,7 +1718,7 @@ async function handleDiscoverHome() {
     dailySongs = (Array.isArray(raw) ? raw : [])
       .map(mapSongRecord)
       .filter(song => song.id && song.name)
-      .slice(0, 12);
+      .slice(0, 100);
   }
 
   return {
