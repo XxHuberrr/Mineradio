@@ -33,3 +33,38 @@ test('dynamic image src templates use attribute-context escaping', () => {
 
   assert.deepEqual(unsafeLines, []);
 });
+
+test('dual-account preference reads and writes safe versioned values', () => {
+  const declarations = source.match(/var DUAL_ACCOUNT_STORE_KEY[\s\S]*?var dualAccountMode = loadDualAccountPreference\(\);/);
+  assert.ok(declarations, 'dual-account preference helpers must be defined');
+
+  const stored = new Map([['mineradio-dual-account-mode-v1', '1']]);
+  const context = {
+    localStorage: {
+      getItem(key) { return stored.get(key); },
+      setItem(key, value) { stored.set(key, value); },
+    },
+  };
+  vm.runInNewContext(`${declarations[0]}; this.api = { loadDualAccountPreference, saveDualAccountPreference, dualAccountMode };`, context);
+
+  assert.equal(context.api.dualAccountMode, true);
+  context.api.saveDualAccountPreference(false);
+  assert.equal(stored.get('mineradio-dual-account-mode-v1'), '0');
+  stored.set('mineradio-dual-account-mode-v1', 'invalid');
+  assert.equal(context.api.loadDualAccountPreference(), false);
+
+  const throwingContext = { localStorage: { getItem() { throw new Error('disabled'); } } };
+  vm.runInNewContext(`${declarations[0]}; this.loaded = dualAccountMode;`, throwingContext);
+  assert.equal(throwingContext.loaded, false);
+});
+
+test('dual-account transitions persist and render only two authenticated accounts', () => {
+  assert.match(source, /function setActiveAccountProvider[\s\S]*?setDualAccountMode\(false\)/);
+  assert.match(source, /function enableDualAccountView[\s\S]*?setDualAccountMode\(true\)/);
+  assert.match(source, /async function logoutActiveAccount[\s\S]*?setDualAccountMode\(false\)/);
+  assert.match(source, /async function doLogout[\s\S]*?setDualAccountMode\(false\)/);
+  assert.match(
+    source,
+    /if \(dualAccountMode && hasPlatformLogin\('netease'\) && hasPlatformLogin\('qq'\)\)/,
+  );
+});

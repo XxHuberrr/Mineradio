@@ -2698,7 +2698,20 @@ var qqLoginAutoRefreshTimer = null;
 var qqLoginWasLoggedIn = false;
 var loginProvider = 'netease';
 var activeAccountProvider = 'netease';
-var dualAccountMode = false;
+var DUAL_ACCOUNT_STORE_KEY = 'mineradio-dual-account-mode-v1';
+function loadDualAccountPreference() {
+  try { return localStorage.getItem(DUAL_ACCOUNT_STORE_KEY) === '1'; }
+  catch (e) { return false; }
+}
+function saveDualAccountPreference(enabled) {
+  try { localStorage.setItem(DUAL_ACCOUNT_STORE_KEY, enabled ? '1' : '0'); }
+  catch (e) {}
+}
+var dualAccountMode = loadDualAccountPreference();
+function setDualAccountMode(enabled) {
+  dualAccountMode = !!enabled;
+  saveDualAccountPreference(dualAccountMode);
+}
 var qqCookieBusy = false;
 var neteaseWebLoginBusy = false;
 var qqWebLoginBusy = false;
@@ -23401,7 +23414,7 @@ function renderUserBtn() {
   var btn = document.getElementById('user-btn');
   if (!btn) return;
   btn.classList.remove('multi-account');
-  if (dualAccountMode && hasAnyPlatformLogin()) {
+  if (dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq')) {
     activeAccountProvider = firstLoggedProvider();
     btn.classList.add('logged-in', 'multi-account');
     btn.classList.remove('logged-out');
@@ -23708,6 +23721,7 @@ async function checkQr() {
 }
 function updateUserModalUi() {
   activeAccountProvider = firstLoggedProvider();
+  var dualViewActive = dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq');
   var st = platformStatus(activeAccountProvider);
   var meta = platformMeta(activeAccountProvider);
   var chip = document.getElementById('account-provider-chip');
@@ -23738,12 +23752,12 @@ function updateUserModalUi() {
   }
   ['netease','qq','both'].forEach(function(key){
     var btn = document.getElementById('user-provider-' + key);
-    if (btn) btn.classList.toggle('active', key === 'both' ? dualAccountMode : (!dualAccountMode && activeAccountProvider === key));
+    if (btn) btn.classList.toggle('active', key === 'both' ? dualViewActive : (!dualViewActive && activeAccountProvider === key));
   });
   if (addNetease) addNetease.style.display = hasPlatformLogin('netease') ? 'none' : '';
   if (addQQ) addQQ.textContent = hasPlatformLogin('qq') ? '查看 QQ 音乐' : '补登 QQ 音乐';
   if (logoutBtn) logoutBtn.textContent = activeAccountProvider === 'qq' ? '退出 QQ 音乐' : '退出网易云';
-  if (hint) hint.textContent = dualAccountMode
+  if (hint) hint.textContent = dualViewActive
     ? '右上角已切换为双平台并排展示。'
     : '可切换右上角展示的平台；“我两个都要”会并排放两个登录状态。';
 }
@@ -23760,7 +23774,7 @@ function setActiveAccountProvider(provider) {
     return;
   }
   activeAccountProvider = provider;
-  dualAccountMode = false;
+  setDualAccountMode(false);
   renderUserBtn();
   updateUserModalUi();
 }
@@ -23777,7 +23791,7 @@ function enableDualAccountView() {
     openProviderLogin('qq');
     return;
   }
-  dualAccountMode = true;
+  setDualAccountMode(true);
   renderUserBtn();
   updateUserModalUi();
   showToast('已启用双平台账号展示');
@@ -23802,7 +23816,7 @@ async function logoutActiveAccount() {
     qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
     qqPlaylists = [];
     userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'qq'; });
-    dualAccountMode = false;
+    setDualAccountMode(false);
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
@@ -23820,7 +23834,7 @@ async function doLogout() {
     }
   } catch (e) {}
   loginStatus = { loggedIn: false };
-  if (!hasPlatformLogin('netease') || !hasPlatformLogin('qq')) dualAccountMode = false;
+  setDualAccountMode(false);
   activeAccountProvider = firstLoggedProvider();
   userPlaylists = qqPlaylists.slice();
   myPodcastCollections = [];
