@@ -7,7 +7,7 @@
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"

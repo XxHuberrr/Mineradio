@@ -35,7 +35,7 @@
 Add this entry to `package.json`:
 
 ```json
-"test": "node --test test/*.test.js"
+"test": "node --test"
 ```
 
 - [ ] **Step 2: Write failing request-policy tests**
