@@ -2698,7 +2698,20 @@ var qqLoginAutoRefreshTimer = null;
 var qqLoginWasLoggedIn = false;
 var loginProvider = 'netease';
 var activeAccountProvider = 'netease';
-var dualAccountMode = false;
+var DUAL_ACCOUNT_STORE_KEY = 'mineradio-dual-account-mode-v1';
+function loadDualAccountPreference() {
+  try { return localStorage.getItem(DUAL_ACCOUNT_STORE_KEY) === '1'; }
+  catch (e) { return false; }
+}
+function saveDualAccountPreference(enabled) {
+  try { localStorage.setItem(DUAL_ACCOUNT_STORE_KEY, enabled ? '1' : '0'); }
+  catch (e) {}
+}
+var dualAccountMode = loadDualAccountPreference();
+function setDualAccountMode(enabled) {
+  dualAccountMode = !!enabled;
+  saveDualAccountPreference(dualAccountMode);
+}
 var qqCookieBusy = false;
 var neteaseWebLoginBusy = false;
 var qqWebLoginBusy = false;
@@ -15098,6 +15111,14 @@ async function apiJson(url, opts) {
   }
 }
 function escHtml(s){ var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function normalizePlaybackQuality(value) {
   value = String(value || '').toLowerCase();
   if (value === 'jymaster' || value === 'master' || value === 'svip') return 'jymaster';
@@ -15546,7 +15567,7 @@ function renderHomeTiles() {
     var tone = homeToneForItem(item, i);
     var coverClass = 'home-tile-cover' + (cover ? ' has-cover' : '');
     return '<button class="home-tile' + (!cover && homeDiscoverState.loading ? ' home-skeleton' : '') + '" data-home-tone="' + escHtml(tone) + '" type="button" onclick="handleHomeTileClick(' + i + ')">' +
-      '<div class="' + coverClass + '" style="' + (cover ? 'background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
+      '<div class="' + coverClass + '" style="' + (cover ? 'background-image:url(&quot;' + escAttr(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
       '<div class="home-tile-title">' + escHtml(item.title || '') + '</div>' +
       '<div class="home-tile-sub">' + escHtml(item.sub || '') + '</div>' +
     '</button>';
@@ -16403,7 +16424,7 @@ function renderDetailComments(comments) {
     var user = c.user || {};
     var avatar = user.avatar ? coverUrlWithSize(user.avatar, 64) : '';
     return '<div class="comment-item">' +
-      (avatar ? '<img class="comment-avatar" src="' + avatar + '" alt="">' : '<div class="comment-avatar"></div>') +
+      (avatar ? '<img class="comment-avatar" src="' + escAttr(avatar) + '" alt="">' : '<div class="comment-avatar"></div>') +
       '<div class="comment-main"><div class="comment-meta">' + escHtml(user.nickname || '音乐用户') + (c.likedCount ? (' · ' + c.likedCount + ' 赞') : '') + (c.time ? (' · ' + escHtml(commentTimeLabel(c.time))) : '') + '</div>' +
       '<div class="comment-text">' + escHtml(c.content || '') + '</div></div>' +
     '</div>';
@@ -16414,7 +16435,7 @@ function renderArtistSongList(songs) {
   if (!detailArtistSongs.length) return '<div class="detail-empty">暂无热门歌曲</div>';
   return '<div class="detail-scroll">' + detailArtistSongs.map(function(s, i){
     var cover = songCoverSrc(s, 80);
-    var coverHtml = cover ? '<img class="artist-song-cover" src="' + escHtml(cover) + '" alt="" onerror="this.style.opacity=0.18">' : '<div class="artist-song-cover"></div>';
+    var coverHtml = cover ? '<img class="artist-song-cover" src="' + escAttr(cover) + '" alt="" onerror="this.style.opacity=0.18">' : '<div class="artist-song-cover"></div>';
     var actionsHtml = '<div class="artist-song-actions">' +
       '<button class="artist-song-action collect" type="button" title="收藏到歌单" aria-label="收藏到歌单" onclick="event.stopPropagation();collectArtistDetailSong(' + i + ')">' + artistCollectTrayIconSvg() + '</button>' +
       '<button class="artist-song-action next" type="button" title="下一首播放" aria-label="下一首播放" onclick="event.stopPropagation();queueArtistDetailSongNext(' + i + ')">' + artistNextPlusIconSvg() + '</button>' +
@@ -16464,7 +16485,7 @@ function openTrackDetailModal(type, songOverride) {
   var body = document.getElementById('track-detail-body');
   if (!heading || !body) return;
   var cover = songCoverSrc(song, 180);
-  var coverHtml = cover ? '<img class="detail-cover" src="' + cover + '" alt="">' : '<div class="detail-cover"></div>';
+  var coverHtml = cover ? '<img class="detail-cover" src="' + escAttr(cover) + '" alt="">' : '<div class="detail-cover"></div>';
   var title = song.name || '当前歌曲';
   var artists = currentArtistNames(song);
   var seq = ++trackDetailSeq;
@@ -17020,7 +17041,7 @@ async function toggleLikeSong(song) {
   safeRenderQueuePanel('like-toggle-optimistic', { scrollCurrent: miniQueueOpen });
   refreshSearchResultActionStates();
   try {
-    var r = await apiJson('/api/song/like?id=' + encodeURIComponent(id) + '&like=' + encodeURIComponent(String(next)));
+    var r = await apiJson('/api/song/like?id=' + encodeURIComponent(id) + '&like=' + encodeURIComponent(String(next)), { method: 'POST' });
     if (r && r.error) throw new Error(r.error);
     likedSongMap[id] = next;
     showToast(next ? '已加入红心喜欢' : '已取消红心');
@@ -17066,7 +17087,7 @@ function renderCollectModal() {
   if (!current || !list) return;
   var song = collectTargetSong || {};
   var cover = songCoverSrc(song, 80);
-  current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
+  current.innerHTML = (cover ? '<img src="' + escAttr(cover) + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
   if (!loginStatus.loggedIn) {
     list.innerHTML = '<div class="collect-empty">登录后显示你的歌单</div>';
@@ -17084,7 +17105,7 @@ function renderCollectModal() {
   list.innerHTML = mine.map(function(pl){
     var thumb = pl.cover ? coverUrlWithSize(pl.cover, 80) : '';
     return '<div class="collect-item" data-collect-pid="' + escHtml(String(pl.id || '')) + '" onclick="addCollectTargetToPlaylist(this.getAttribute(\'data-collect-pid\'))">' +
-      (thumb ? '<img src="' + thumb + '" alt="">' : '<div class="cover-placeholder"></div>') +
+      (thumb ? '<img src="' + escAttr(thumb) + '" alt="">' : '<div class="cover-placeholder"></div>') +
       '<div style="min-width:0"><div class="collect-title">' + escHtml(pl.name || '') + '</div><div class="collect-sub">' + (pl.trackCount || 0) + ' 首</div></div>' +
     '</div>';
   }).join('');
@@ -17103,7 +17124,7 @@ async function createPlaylistFromCollect() {
   var name = input ? input.value.trim() : '';
   if (!name) { showToast('先输入歌单名称'); return; }
   try {
-    var r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name));
+    var r = await apiJson('/api/playlist/create?name=' + encodeURIComponent(name), { method: 'POST' });
     if (r && r.error) throw new Error(r.error);
     if (input) input.value = '';
     showToast('歌单已创建');
@@ -17334,7 +17355,7 @@ function programMetaText(item) {
 }
 function searchThumbHtml(src) {
   return src
-    ? '<img src="' + coverUrlWithSize(src, 80) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+    ? '<img src="' + escAttr(coverUrlWithSize(src, 80)) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
     : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
 }
 function renderPodcastRadios(items, label) {
@@ -17432,12 +17453,16 @@ function renderPodcastPrograms() {
 }
 function queuePodcastProgram(i) {
   var item = podcastPrograms[i]; if (!item) return;
+  if (!playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) {
+    playPodcastProgram(i);
+    return;
+  }
   queueSongNext(item);
   showToast('已设为下一首: ' + item.name);
 }
 function playPodcastProgram(i) {
   var item = podcastPrograms[i]; if (!item) return;
-  playSearchResult(i);
+  playSearchSong(item);
 }
 
 $input.addEventListener('input', function(){
@@ -17671,7 +17696,7 @@ function renderSongSearchResults(songs) {
     var sourceClass = songProviderKey(s) + '-source';
     var thumb = songCoverSrc(s, 80);
     var imgTag = thumb
-      ? '<img src="' + thumb + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
+      ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" onerror="this.style.opacity=0.2">'
       : '<div style="width:40px;height:40px;border-radius:6px;background:rgba(255,255,255,0.06);flex-shrink:0"></div>';
     return '<div class="search-result ' + sourceClass + '">' +
       '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0" onclick="playSearchResult(' + i + ')">' +
@@ -18084,6 +18109,10 @@ function queueSongNext(song) {
 }
 function queueSearchResult(i) {
   var song = playlist[i]; if (!song) return;
+  if (!playQueue.length || currentIdx < 0 || currentIdx >= playQueue.length) {
+    playSearchResult(i);
+    return;
+  }
   queueSongNext(song);
   showToast('已设为下一首: ' + song.name);
 }
@@ -18115,6 +18144,9 @@ function moveQueueIndexToTop(idx) {
 }
 function playSearchResult(i) {
   var song = playlist[i]; if (!song) return;
+  playSearchSong(song);
+}
+function playSearchSong(song) {
   homeForcedOpen = false;
   homeSuppressed = false;
   setHomeControlsLocked(false);
@@ -19368,7 +19400,7 @@ function renderMiniQueuePanel(opts) {
   }
   $list.innerHTML = playQueue.map(function(song, i){
     var thumb = songCoverSrc(song, 60);
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
+    var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
     return '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="mini-queue-info"><div class="mini-queue-name">' + escHtml(song.name) + '</div><div class="mini-queue-sub">' + escHtml(song.artist || '') + '</div></div>' +
@@ -19402,7 +19434,7 @@ function renderQueuePanel(opts) {
   }
   $ql.innerHTML = playQueue.map(function(song, i){
     var thumb = songCoverSrc(song, 60);
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
+    var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
     return '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" onclick="playQueueAt(' + i + ')">' +
       imgTag +
       '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub"><button class="queue-artist-link" type="button" onclick="event.stopPropagation();openQueueArtist(' + i + ')">' + escHtml(song.artist || '未知歌手') + '</button></div></div>' +
@@ -19471,7 +19503,7 @@ function playlistPanelDetailHtml(pl, provider) {
   var tracks = playlistPanelDetailState.tracks || [];
   var loading = playlistPanelDetailState.loading;
   var cover = pl && pl.cover ? (provider === 'qq' ? pl.cover : (pl.cover + '?param=96y96')) : '';
-  var img = cover ? '<img class="pl-detail-cover" src="' + escHtml(cover) + '" alt="" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="pl-detail-cover"></div>';
+  var img = cover ? '<img class="pl-detail-cover" src="' + escAttr(cover) + '" alt="" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="pl-detail-cover"></div>';
   var renderLimit = loading ? 0 : Math.max(PLAYLIST_DETAIL_INITIAL_RENDER, playlistPanelDetailState.renderLimit || PLAYLIST_DETAIL_INITIAL_RENDER);
   renderLimit = Math.min(tracks.length, renderLimit);
   var visibleTracks = loading ? [] : tracks.slice(0, renderLimit);
@@ -19479,7 +19511,7 @@ function playlistPanelDetailHtml(pl, provider) {
     ? '<div class="pl-detail-row"><div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06)"></div><div style="flex:1;min-width:0"><div class="pl-detail-row-title">正在载入歌单</div><div class="pl-detail-row-artist">请稍候</div></div></div>'
     : visibleTracks.map(function(song, i){
         var thumb = songCoverSrc(song, 60);
-        var imgTag = thumb ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06);flex:0 0 auto"></div>';
+        var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06);flex:0 0 auto"></div>';
         return '<div class="pl-detail-row" data-pl-detail-row="' + i + '">' +
           imgTag +
           '<div style="flex:1;min-width:0"><div class="pl-detail-row-title">' + escHtml(song.name || '') + '</div>' +
@@ -19641,7 +19673,7 @@ function renderUserPlaylistsList(opts) {
     var provider = pl.provider === 'qq' ? 'qq' : 'netease';
     var providerLabel = provider === 'qq' ? 'QQ' : 'NE';
     var thumb = pl.cover ? (provider === 'qq' ? pl.cover : (pl.cover + '?param=88y88')) : '';
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
+    var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
     var key = playlistPanelKey(provider, pl.id);
     var expanded = playlistPanelDetailState.key === key ? ' expanded' : '';
     return '<div class="pl-card' + expanded + '" data-playlist-provider="' + provider + '" data-playlist-id="' + escHtml(String(pl.id || '')) + '" data-playlist-title="' + escHtml(pl.name || '') + '">' +
@@ -19688,7 +19720,7 @@ function renderMyPodcastCollections(opts) {
   }
   $pod.innerHTML = items.map(function(pc){
     var thumb = pc.cover ? coverUrlWithSize(pc.cover, 88) : '';
-    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(0,245,212,.07);flex-shrink:0"></div>';
+    var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(0,245,212,.07);flex-shrink:0"></div>';
     return '<div class="pl-card podcast-card" data-podcast-key="' + escHtml(pc.key || '') + '" data-podcast-title="' + escHtml(pc.title || '') + '">' +
       imgTag +
       '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(pc.title || '') + '</div><div class="pl-sub">' + (pc.count || 0) + ' 项 · ' + escHtml(pc.sub || '') + '</div></div>' +
@@ -19773,7 +19805,7 @@ function renderMyPodcastRadioItems(key, title, items) {
   $pod.innerHTML = '<div class="podcast-inline-head"><div class="pl-section-label">' + escHtml(title || '我的播客') + '</div><button class="fx-mini-btn ghost" data-podcast-back="1" style="height:24px;padding:0 9px;font-size:10.5px">返回</button></div>' +
     items.map(function(r){
       var thumb = r.cover ? coverUrlWithSize(r.cover, 88) : '';
-      var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(0,245,212,.07);flex-shrink:0"></div>';
+      var imgTag = thumb ? '<img src="' + escAttr(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(0,245,212,.07);flex-shrink:0"></div>';
       return '<div class="pl-card podcast-card podcast-child" data-podcast-radio-id="' + escHtml(String(r.id || r.radioId || '')) + '" data-podcast-title="' + escHtml(r.name || '') + '">' +
         imgTag +
         '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(r.name || '') + '</div><div class="pl-sub">' + escHtml((r.djName || r.artist || 'Podcast') + (r.programCount ? (' · ' + r.programCount + ' 集') : '')) + '</div></div>' +
@@ -23297,7 +23329,7 @@ function renderTopAccountPill(provider) {
   var displayName = (provider === 'qq' && st.preview) ? '待接入' : (st.nickname || meta.label);
   var vipTag = providerVipBadge(provider, st);
   return '<span class="top-account-pill">' +
-    '<img src="' + providerAvatarSrc(provider, st) + '" alt="">' +
+    '<img src="' + escAttr(providerAvatarSrc(provider, st)) + '" alt="">' +
     '<span class="top-account-name">' + escHtml(displayName) + '</span>' +
     vipTag +
   '</span>';
@@ -23392,8 +23424,9 @@ function startQQLoginStatusAutoRefresh() {
 function renderUserBtn() {
   var btn = document.getElementById('user-btn');
   if (!btn) return;
+  var dualViewActive = dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq');
   btn.classList.remove('multi-account');
-  if (dualAccountMode && hasAnyPlatformLogin()) {
+  if (dualViewActive) {
     activeAccountProvider = firstLoggedProvider();
     btn.classList.add('logged-in', 'multi-account');
     btn.classList.remove('logged-out');
@@ -23405,8 +23438,8 @@ function renderUserBtn() {
     var meta = platformMeta(activeAccountProvider);
     btn.classList.add('logged-in');
     btn.classList.remove('logged-out');
-    btn.title = dualAccountMode ? '账号信息 · 已启用双平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
-    btn.innerHTML = '<img id="user-avatar" src="' + providerAvatarSrc(activeAccountProvider, st) + '">' +
+    btn.title = dualViewActive ? '账号信息 · 已启用双平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
+    btn.innerHTML = '<img id="user-avatar" src="' + escAttr(providerAvatarSrc(activeAccountProvider, st)) + '">' +
                     '<span>' + escHtml(st.nickname || meta.label) + '</span>' +
                     providerVipBadge(activeAccountProvider, st, 'user-vip-tag');
   } else {
@@ -23700,6 +23733,7 @@ async function checkQr() {
 }
 function updateUserModalUi() {
   activeAccountProvider = firstLoggedProvider();
+  var dualViewActive = dualAccountMode && hasPlatformLogin('netease') && hasPlatformLogin('qq');
   var st = platformStatus(activeAccountProvider);
   var meta = platformMeta(activeAccountProvider);
   var chip = document.getElementById('account-provider-chip');
@@ -23730,12 +23764,12 @@ function updateUserModalUi() {
   }
   ['netease','qq','both'].forEach(function(key){
     var btn = document.getElementById('user-provider-' + key);
-    if (btn) btn.classList.toggle('active', key === 'both' ? dualAccountMode : (!dualAccountMode && activeAccountProvider === key));
+    if (btn) btn.classList.toggle('active', key === 'both' ? dualViewActive : (!dualViewActive && activeAccountProvider === key));
   });
   if (addNetease) addNetease.style.display = hasPlatformLogin('netease') ? 'none' : '';
   if (addQQ) addQQ.textContent = hasPlatformLogin('qq') ? '查看 QQ 音乐' : '补登 QQ 音乐';
   if (logoutBtn) logoutBtn.textContent = activeAccountProvider === 'qq' ? '退出 QQ 音乐' : '退出网易云';
-  if (hint) hint.textContent = dualAccountMode
+  if (hint) hint.textContent = dualViewActive
     ? '右上角已切换为双平台并排展示。'
     : '可切换右上角展示的平台；“我两个都要”会并排放两个登录状态。';
 }
@@ -23752,7 +23786,7 @@ function setActiveAccountProvider(provider) {
     return;
   }
   activeAccountProvider = provider;
-  dualAccountMode = false;
+  setDualAccountMode(false);
   renderUserBtn();
   updateUserModalUi();
 }
@@ -23769,7 +23803,7 @@ function enableDualAccountView() {
     openProviderLogin('qq');
     return;
   }
-  dualAccountMode = true;
+  setDualAccountMode(true);
   renderUserBtn();
   updateUserModalUi();
   showToast('已启用双平台账号展示');
@@ -23785,7 +23819,7 @@ function openProviderLogin(provider) {
 }
 async function logoutActiveAccount() {
   if (activeAccountProvider === 'qq') {
-    try { await apiJson('/api/qq/logout'); } catch (e) {}
+    try { await apiJson('/api/qq/logout', { method: 'POST' }); } catch (e) {}
     try {
       if (window.desktopWindow && typeof window.desktopWindow.clearQQMusicLogin === 'function') {
         await window.desktopWindow.clearQQMusicLogin();
@@ -23794,7 +23828,7 @@ async function logoutActiveAccount() {
     qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
     qqPlaylists = [];
     userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'qq'; });
-    dualAccountMode = false;
+    setDualAccountMode(false);
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
@@ -23805,14 +23839,14 @@ async function logoutActiveAccount() {
   doLogout();
 }
 async function doLogout() {
-  await apiJson('/api/logout');
+  await apiJson('/api/logout', { method: 'POST' });
   try {
     if (window.desktopWindow && typeof window.desktopWindow.clearNeteaseMusicLogin === 'function') {
       await window.desktopWindow.clearNeteaseMusicLogin();
     }
   } catch (e) {}
   loginStatus = { loggedIn: false };
-  if (!hasPlatformLogin('netease') || !hasPlatformLogin('qq')) dualAccountMode = false;
+  setDualAccountMode(false);
   activeAccountProvider = firstLoggedProvider();
   userPlaylists = qqPlaylists.slice();
   myPodcastCollections = [];
