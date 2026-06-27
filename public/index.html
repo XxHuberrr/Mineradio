@@ -48,6 +48,8 @@ body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-window-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
 .desktop-window-btn:hover{background:rgba(244,210,138,.14);color:#fff1bd;transform:translateY(-1px)}
 .desktop-window-btn.close:hover{background:rgba(255,86,100,.86);color:#fff}
+body.platform-darwin #desktop-titlebar{padding-left:92px}
+body.platform-darwin .desktop-window-btn{display:none}
 .desktop-mode-btn{height:30px;min-width:78px;padding:0 12px;border:1px solid rgba(255,255,255,.08);border-radius:999px;background:rgba(4,8,10,.42);color:rgba(224,250,255,.70);font-family:inherit;font-size:11px;font-weight:760;letter-spacing:.08em;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:background .18s,color .18s,transform .18s,border-color .18s,box-shadow .18s}
 .desktop-mode-btn::before{content:'';width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.28);box-shadow:0 0 0 rgba(255,83,103,0);transition:background .18s,box-shadow .18s}
 .desktop-mode-btn:hover{background:rgba(255,83,103,.10);border-color:rgba(255,83,103,.34);color:#fff;transform:translateY(-1px)}
@@ -2155,7 +2157,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；解锁后可拖动调整位置"><span>桌面歌词锁定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
         <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
@@ -2848,7 +2850,7 @@ var updatePreviewState = {
   patchFallbackTried: false,
   hero: '当前版本，更新检测已就绪。',
   notes: [
-    '安装包文字对比修复',
+    '安装文件文字对比修复',
     '安装目录可自由选择',
     '单实例与快捷方式修复'
   ]
@@ -21361,7 +21363,7 @@ function setRange(id, value) {
 function updateDevelopmentFxControls() {
   [
     ['desktopLyrics', 't-desktopLyrics', '全屏幕置顶歌词'],
-    ['desktopLyricsClickThrough', 't-desktopLyricsClickThrough', '锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁'],
+    ['desktopLyricsClickThrough', 't-desktopLyricsClickThrough', '锁定后防误触；解锁后可拖动调整位置'],
     ['desktopLyricsCinema', 't-desktopLyricsCinema', '桌面歌词绑定鼓点电影震动，基础漂浮始终保留'],
     ['desktopLyricsHighlight', 't-desktopLyricsHighlight', '桌面歌词按播放进度高亮'],
     ['wallpaperMode', 't-wallpaperMode', '开发中，暂不可用']
@@ -22789,25 +22791,25 @@ function syncUpdatePreviewStateClass() {
   var canOpenRelease = updatePreviewState.configured && updatePreviewState.updateAvailable && !updatePreviewState.downloadUrl && updatePreviewState.releaseUrl;
   if (label) {
     if (isDownloading) label.textContent = (isPatch ? '快速补丁 ' : '正在下载 ') + Math.round(updatePreviewState.progress) + '%';
-    else if (isOpening) label.textContent = '正在打开安装包';
-    else if (isError && updatePreviewState.mode === 'patch' && updatePreviewState.downloadUrl) label.textContent = '下载完整安装包';
+    else if (isOpening) label.textContent = '正在打开安装文件';
+    else if (isError && updatePreviewState.mode === 'patch' && updatePreviewState.downloadUrl) label.textContent = '下载完整安装文件';
     else if (isError) label.textContent = updatePreviewState.mode === 'installer' ? '重试下载' : '重试更新';
     else if (isReady && isPatch && updatePreviewState.restartRequired) label.textContent = '重启生效';
     else if (isReady && isPatch) label.textContent = '补丁已应用';
-    else if (isReady && updatePreviewState.installerOpened) label.textContent = '安装包已打开';
-    else if (isReady && updatePreviewState.installerPath) label.textContent = updatePreviewState.cached ? '打开已下载安装包' : '打开安装包';
-    else if (isReady) label.textContent = updatePreviewState.configured ? '打开安装包' : '预览完成';
-    else label.textContent = updatePreviewState.patchAvailable ? '安装快速补丁' : ((canDownloadUpdate || canOpenRelease) ? '下载完整安装包' : '立即更新');
+    else if (isReady && updatePreviewState.installerOpened) label.textContent = '安装文件已打开';
+    else if (isReady && updatePreviewState.installerPath) label.textContent = updatePreviewState.cached ? '打开已下载安装文件' : '打开安装文件';
+    else if (isReady) label.textContent = updatePreviewState.configured ? '打开安装文件' : '预览完成';
+    else label.textContent = updatePreviewState.patchAvailable ? '安装快速补丁' : ((canDownloadUpdate || canOpenRelease) ? '下载完整安装文件' : '立即更新');
   }
   if (btn) btn.disabled = false;
   var foot = document.getElementById('update-footnote');
   if (foot) {
-    if (isDownloading) foot.textContent = (updatePreviewState.message || (isPatch ? '正在下载快速补丁' : '正在下载完整安装包')) + (updateProgressDetailText() ? ' · ' + updateProgressDetailText() : '');
+    if (isDownloading) foot.textContent = (updatePreviewState.message || (isPatch ? '正在下载快速补丁' : '正在下载完整安装文件')) + (updateProgressDetailText() ? ' · ' + updateProgressDetailText() : '');
     else if (isError) foot.textContent = '下载失败：' + (updatePreviewState.errorReason || updatePreviewState.errorDetail || updatePreviewState.message || '请稍后重试') + (updatePreviewState.failedAttempts && updatePreviewState.failedAttempts.length ? ' · 已尝试 ' + updatePreviewState.failedAttempts.length + ' 条线路' : '');
     else if (isReady && isPatch) foot.textContent = updatePreviewState.restartRequired ? '快速补丁已应用，重启 Mineradio 后生效。' : '快速补丁已应用。';
-    else if (isReady) foot.textContent = updatePreviewState.cached ? '已复用上次校验通过的安装包，不会重复下载。' : '安装包已准备好，点击按钮后再打开安装。';
-    else if (updatePreviewState.patchAvailable) foot.textContent = '优先使用轻量补丁，只更新缺失或变更的资源文件；不适用时可下载完整安装包。';
-    else foot.textContent = updatePreviewState.updateAvailable ? '没有可用快速补丁时会下载完整安装包。' : '当前版本已是最新。';
+    else if (isReady) foot.textContent = updatePreviewState.cached ? '已复用上次校验通过的安装文件，不会重复下载。' : '安装文件已准备好，点击按钮后再打开安装。';
+    else if (updatePreviewState.patchAvailable) foot.textContent = '优先使用轻量补丁，只更新缺失或变更的资源文件；不适用时可下载完整安装文件。';
+    else foot.textContent = updatePreviewState.updateAvailable ? '没有可用快速补丁时会下载完整安装文件。' : '当前版本已是最新。';
   }
 }
 
@@ -22894,7 +22896,7 @@ async function startRealUpdateDownload() {
   updatePreviewState.errorReason = '';
   updatePreviewState.errorDetail = '';
   updatePreviewState.failedAttempts = [];
-  updatePreviewState.message = '正在下载完整安装包';
+  updatePreviewState.message = '正在下载完整安装文件';
   updateUpdatePreviewProgress(0);
   try {
     var job = await apiJson('/api/update/download', { method: 'POST' });
@@ -22956,7 +22958,7 @@ async function startRealUpdatePatch() {
     updatePreviewState.message = updatePreviewState.errorReason;
     updateUpdatePreviewProgress(0);
     updatePreviewState.patchFallbackTried = true;
-    showToast('快速补丁不可用，可手动下载完整安装包');
+    showToast('快速补丁不可用，可手动下载完整安装文件');
   }
 }
 
@@ -23013,7 +23015,7 @@ function applyUpdateDownloadJob(job) {
     updateUpdatePreviewProgress(job && job.progress || updatePreviewState.progress || 0);
     if (updatePreviewState.mode === 'patch' && updatePreviewState.downloadUrl && !updatePreviewState.patchFallbackTried) {
       updatePreviewState.patchFallbackTried = true;
-      showToast('快速补丁失败，可手动下载完整安装包：' + updatePreviewState.errorReason);
+      showToast('快速补丁失败，可手动下载完整安装文件：' + updatePreviewState.errorReason);
       return;
     }
     showToast('更新下载失败：' + updatePreviewState.errorReason);
@@ -23050,7 +23052,7 @@ function applyUpdateDownloadJob(job) {
     if (updatePreviewState.mode === 'patch') {
       showToast(updatePreviewState.restartRequired ? '快速补丁已应用，重启后生效' : '快速补丁已应用');
     } else if (updatePreviewState.installerPath) {
-      showToast(updatePreviewState.cached ? '已复用上次下载的安装包' : '安装包已下载，点击按钮打开');
+      showToast(updatePreviewState.cached ? '已复用上次下载的安装文件' : '安装文件已下载，点击按钮打开');
     }
   }
 }
@@ -23077,7 +23079,7 @@ async function openDownloadedUpdateInstaller(filePath) {
       updatePreviewState.installerOpened = true;
       updatePreviewState.status = 'ready';
       syncUpdatePreviewStateClass();
-      showToast('安装包已打开');
+      showToast('安装文件已打开');
       return;
     }
     throw new Error('DESKTOP_BRIDGE_MISSING');
@@ -23085,7 +23087,7 @@ async function openDownloadedUpdateInstaller(filePath) {
     updatePreviewState.status = 'ready';
     syncUpdatePreviewStateClass();
     if (updatePreviewState.releaseUrl) window.open(updatePreviewState.releaseUrl, '_blank');
-    showToast('无法自动打开安装包，已尝试打开更新页面');
+    showToast('无法自动打开安装文件，已尝试打开更新页面');
   }
 }
 

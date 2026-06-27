@@ -75,6 +75,19 @@ npm run build:win
 
 桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
 
+### macOS 测试构建
+
+当前 fork 已加入 macOS 本地测试构建配置。无 Apple Developer 证书时可以使用：
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac:dir
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:mac
+```
+
+macOS 公开分发前仍需要签名与公证。更多说明见 [docs/MAC_BUILD.md](./docs/MAC_BUILD.md)。
+
+如果 Electron 或 DMG 工具包下载较慢，可以按文档里的镜像源命令构建。
+
 ## 更新机制
 
 Mineradio 会请求 GitHub Releases latest 检测新版本。远端版本高于本地版本时，应用内更新入口会展示 Release 内容、下载安装包到本机用户数据目录，并通过系统打开安装包。

@@ -8,6 +8,12 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "prebuild:mac": "mkdir -p dist && touch dist/.metadata_never_index",
+    "build:mac": "electron-builder --mac dmg zip",
+    "postbuild:mac": "touch dist/.metadata_never_index",
+    "prebuild:mac:dir": "mkdir -p dist && touch dist/.metadata_never_index",
+    "build:mac:dir": "electron-builder --mac dir",
+    "postbuild:mac:dir": "touch dist/.metadata_never_index",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
@@ -45,6 +51,27 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "artifactName": "Mineradio-${version}-mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

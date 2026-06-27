@@ -32,6 +32,8 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -48,8 +50,8 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (IS_WINDOWS) CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -273,9 +275,24 @@ function getUpdateDownloadDir() {
 }
 
 function shouldEnsureDesktopShortcut() {
-  if (process.platform !== 'win32') return false;
+  if (!IS_WINDOWS) return false;
   if (process.env.MINERADIO_NO_DESKTOP_SHORTCUT === '1') return false;
   return app.isPackaged || process.env.MINERADIO_CREATE_DESKTOP_SHORTCUT === '1';
+}
+
+function platformInfo() {
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    isWindows: IS_WINDOWS,
+    isMac: IS_MAC,
+    capabilities: {
+      desktopShortcut: IS_WINDOWS,
+      desktopLyrics: true,
+      desktopLyricsMiddleClickToggle: IS_WINDOWS,
+      wallpaperMode: IS_WINDOWS,
+    },
+  };
 }
 
 function ensureDesktopShortcut() {
@@ -811,7 +828,7 @@ function handleDesktopLyricsGlobalMiddleClick() {
 }
 
 function startDesktopLyricsMousePoller() {
-  if (process.platform !== 'win32' || desktopLyricsMousePoller) return;
+  if (!IS_WINDOWS || desktopLyricsMousePoller) return;
   const script = `
 $ErrorActionPreference = "SilentlyContinue"
 Add-Type @"
@@ -983,7 +1000,7 @@ function nativeWindowHandleDecimal(win) {
 }
 
 function attachWallpaperToWorkerW(win) {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  if (!IS_WINDOWS || !win || win.isDestroyed()) return;
   const hwnd = nativeWindowHandleDecimal(win);
   const script = `
 $ErrorActionPreference = "Stop"
@@ -1201,6 +1218,8 @@ ipcMain.handle('mineradio-restart-app', async () => {
   }
 });
 
+ipcMain.handle('mineradio-platform-info', async () => platformInfo());
+
 ipcMain.handle('mineradio-desktop-lyrics-set-enabled', async (_event, enabled, payload) => {
   try {
     if (enabled) {
@@ -1291,6 +1310,10 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
 
 ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
   try {
+    if (enabled && !IS_WINDOWS) {
+      closeWallpaperWindow();
+      return { ok: false, unsupported: true, platform: process.platform, error: 'WALLPAPER_UNSUPPORTED_PLATFORM' };
+    }
     if (enabled) createWallpaperWindow(payload || {});
     else closeWallpaperWindow();
     return { ok: true };
@@ -1301,6 +1324,11 @@ ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payloa
 
 ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   try {
+    if ((payload && payload.enabled) && !IS_WINDOWS) {
+      closeWallpaperWindow();
+      wallpaperState = { ...wallpaperState, ...(payload || {}), enabled: false };
+      return { ok: false, unsupported: true, platform: process.platform, error: 'WALLPAPER_UNSUPPORTED_PLATFORM' };
+    }
     wallpaperState = { ...wallpaperState, ...(payload || {}) };
     if (wallpaperState.enabled) {
       createWallpaperWindow(wallpaperState);
@@ -1350,7 +1378,11 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    frame: IS_MAC,
+    ...(IS_MAC ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 20, y: 17 },
+    } : {}),
     fullscreen: false,
     transparent: true,
     backgroundColor: '#00000000',
