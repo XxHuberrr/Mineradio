@@ -15567,7 +15567,7 @@ function renderHomeTiles() {
     var tone = homeToneForItem(item, i);
     var coverClass = 'home-tile-cover' + (cover ? ' has-cover' : '');
     return '<button class="home-tile' + (!cover && homeDiscoverState.loading ? ' home-skeleton' : '') + '" data-home-tone="' + escHtml(tone) + '" type="button" onclick="handleHomeTileClick(' + i + ')">' +
-      '<div class="' + coverClass + '" style="' + (cover ? 'background-image:url(&quot;' + escHtml(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
+      '<div class="' + coverClass + '" style="' + (cover ? 'background-image:url(&quot;' + escAttr(cssImageUrl(cover)) + '&quot;)' : '') + '"></div>' +
       '<div class="home-tile-title">' + escHtml(item.title || '') + '</div>' +
       '<div class="home-tile-sub">' + escHtml(item.sub || '') + '</div>' +
     '</button>';

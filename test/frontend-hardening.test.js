@@ -34,6 +34,13 @@ test('dynamic image src templates use attribute-context escaping', () => {
   assert.deepEqual(unsafeLines, []);
 });
 
+test('dynamic inline background images use attribute-context escaping', () => {
+  assert.match(
+    source,
+    /background-image:url\(&quot;' \+ escAttr\(cssImageUrl\(cover\)\) \+ '&quot;\)/,
+  );
+});
+
 test('dual-account preference reads and writes safe versioned values', () => {
   const declarations = source.match(/var DUAL_ACCOUNT_STORE_KEY[\s\S]*?var dualAccountMode = loadDualAccountPreference\(\);/);
   assert.ok(declarations, 'dual-account preference helpers must be defined');
