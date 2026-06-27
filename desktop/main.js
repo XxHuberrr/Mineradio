@@ -48,8 +48,8 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
-];
+  process.platform === 'win32' ? ['use-angle', 'd3d11'] : null,
+].filter(Boolean);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -1351,9 +1351,15 @@ async function createWindow() {
     minHeight: 540,
     show: false,
     frame: false,
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : undefined,
+    trafficLightPosition: process.platform === 'darwin' ? { x: 18, y: 14 } : undefined,
     fullscreen: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: process.platform !== 'darwin',
+    backgroundColor: process.platform === 'darwin' ? '#010304' : '#00000000',
+    resizable: true,
+    maximizable: true,
+    minimizable: true,
+    fullscreenable: true,
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
@@ -1384,6 +1390,9 @@ async function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => {
+    if (process.platform === 'darwin') {
+      mainWindow.setFullScreenable(true);
+    }
     mainWindow.show();
     sendWindowState(mainWindow);
   });
