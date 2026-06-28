@@ -78,6 +78,21 @@ sudo apt install libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 \
 
 > AppImage 用户通常无需手动安装，AppImage 会自带大部分依赖。
 
+### 常见问题：双击没反应 / 启动秒退
+
+deb 安装后双击没反应，通常是 Electron 的 `chrome-sandbox` 权限不对。一条命令修复：
+
+```bash
+sudo chown root:root /opt/Mineradio/chrome-sandbox && sudo chmod 4755 /opt/Mineradio/chrome-sandbox
+```
+
+> AppImage 用户如果也遇到，先解包再执行相同操作：
+> ```bash
+> ./Mineradio-*.AppImage --appimage-extract
+> sudo chown root:root squashfs-root/chrome-sandbox && sudo chmod 4755 squashfs-root/chrome-sandbox
+> ./squashfs-root/AppRun
+> ```
+
 ### 从源码构建
 
 如果 Release 里没有你需要的包，可从源码自行构建：
