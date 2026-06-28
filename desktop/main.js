@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, powerMonitor } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
-const { execFile, spawn } = require('child_process');
+const os = require('os');
+const { execFile, execFileSync, spawn } = require('child_process');
 
 let mainWindow = null;
 let localServer = null;
@@ -31,7 +32,10 @@ const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_ICON_PNG = path.join(__dirname, '..', 'build', 'icon.png');
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -39,17 +43,27 @@ const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
-  ['ignore-gpu-blocklist'],
-  ['enable-gpu-rasterization'],
-  ['enable-oop-rasterization'],
-  ['enable-zero-copy'],
-  ['enable-accelerated-2d-canvas'],
   ['disable-background-timer-throttling'],
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+
+// ANGLE backends are platform-specific. Forcing D3D11 on macOS makes the GPU
+// process exit repeatedly and can leave the transparent Electron window visible
+// but unable to repaint or respond to pointer input.
+if (IS_WINDOWS) {
+  CHROMIUM_PERFORMANCE_SWITCHES.push(
+    ['ignore-gpu-blocklist'],
+    ['enable-gpu-rasterization'],
+    ['enable-oop-rasterization'],
+    ['enable-zero-copy'],
+    ['enable-accelerated-2d-canvas'],
+    ['force_high_performance_gpu'],
+    ['use-angle', 'd3d11'],
+  );
+} else if (IS_MAC) {
+  CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'metal']);
+}
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -242,12 +256,14 @@ function getWindowState(win) {
     hasDisplayOnRight: false,
     displayBounds: null,
   };
+  const isNativeFullScreen = win.isFullScreen()
+    || (IS_MAC && typeof win.isSimpleFullScreen === 'function' && win.isSimpleFullScreen());
   return {
     isMaximized: win.isMaximized(),
-    isNativeFullScreen: win.isFullScreen(),
+    isNativeFullScreen,
     isHtmlFullScreen: htmlFullscreenActive,
     isWindowFullScreen: windowFullscreenActive,
-    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive,
+    isFullScreen: isNativeFullScreen || htmlFullscreenActive || windowFullscreenActive,
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
@@ -257,6 +273,47 @@ function getWindowState(win) {
 
 function getSenderWindow(event) {
   return BrowserWindow.fromWebContents(event.sender);
+}
+
+function getPerformanceProfile() {
+  const cpus = os.cpus() || [];
+  const cpuModel = cpus[0] && cpus[0].model ? String(cpus[0].model) : '';
+  let hardwareModel = '';
+  if (IS_MAC) {
+    try {
+      hardwareModel = execFileSync('/usr/sbin/sysctl', ['-n', 'hw.model'], {
+        encoding: 'utf8',
+        timeout: 1000,
+      }).trim();
+    } catch (_) {}
+  }
+  let display = null;
+  try { display = screen.getPrimaryDisplay(); } catch (_) {}
+  let thermalState = 'unknown';
+  let onBattery = false;
+  try { thermalState = powerMonitor.getCurrentThermalState(); } catch (_) {}
+  try { onBattery = powerMonitor.isOnBatteryPower(); } catch (_) {}
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    hardwareModel,
+    cpuModel,
+    logicalCores: cpus.length,
+    memoryGB: Math.round(os.totalmem() / 1073741824),
+    onBattery,
+    thermalState,
+    display: display ? {
+      width: display.bounds.width,
+      height: display.bounds.height,
+      scaleFactor: display.scaleFactor || 1,
+      frequency: display.displayFrequency || 0,
+    } : null,
+  };
+}
+
+function broadcastPerformanceProfile() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('mineradio-performance-profile', getPerformanceProfile());
 }
 
 function focusMainWindow() {
@@ -667,36 +724,57 @@ function applyWindowedBounds(win) {
   sendWindowState(win);
 }
 
+function isPlatformFullScreen(win) {
+  if (!win || win.isDestroyed()) return false;
+  if (IS_MAC && typeof win.isSimpleFullScreen === 'function') {
+    return win.isSimpleFullScreen();
+  }
+  return win.isFullScreen();
+}
+
+function setPlatformFullScreen(win, enabled) {
+  if (!win || win.isDestroyed()) return;
+  if (IS_MAC && typeof win.setSimpleFullScreen === 'function') {
+    win.setSimpleFullScreen(!!enabled);
+    return;
+  }
+  win.setFullScreen(!!enabled);
+}
+
 function exitFullscreenToWindow(win) {
   if (!win || win.isDestroyed()) return;
   windowFullscreenActive = false;
 
-  if (!win.isFullScreen()) {
+  if (!isPlatformFullScreen(win)) {
     applyWindowedBounds(win);
     return;
   }
 
   let applied = false;
   const applyOnce = () => {
-    if (applied || !win || win.isDestroyed() || win.isFullScreen()) return;
+    if (applied || !win || win.isDestroyed() || isPlatformFullScreen(win)) return;
     applied = true;
     applyWindowedBounds(win);
   };
 
-  win.once('leave-full-screen', () => setTimeout(applyOnce, 50));
-  win.setFullScreen(false);
-  setTimeout(applyOnce, 500);
+  if (!IS_MAC) win.once('leave-full-screen', () => setTimeout(applyOnce, 50));
+  setPlatformFullScreen(win, false);
+  setTimeout(applyOnce, IS_MAC ? 80 : 500);
+  setTimeout(() => sendWindowState(win), IS_MAC ? 100 : 520);
 }
 
 function toggleFullscreen(win) {
   if (!win || win.isDestroyed()) return;
-  if (win.isFullScreen() || windowFullscreenActive) {
+  if (isPlatformFullScreen(win) || windowFullscreenActive) {
     exitFullscreenToWindow(win);
     return;
   }
   windowFullscreenActive = true;
-  win.setFullScreen(true);
+  setPlatformFullScreen(win, true);
+  // Native fullscreen transitions are asynchronous. Send an optimistic state
+  // immediately, then reconcile it after macOS/Windows has applied the change.
   sendWindowState(win);
+  setTimeout(() => sendWindowState(win), IS_MAC ? 100 : 500);
 }
 
 function overlayUrl(page) {
@@ -1117,6 +1195,8 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('mineradio-performance-profile', () => getPerformanceProfile());
+
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
@@ -1352,12 +1432,15 @@ async function createWindow() {
     show: false,
     frame: false,
     fullscreen: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    fullscreenable: true,
+    // Opaque windows are substantially more reliable for pointer hit-testing
+    // and WebGL composition on macOS. Windows keeps the original glass shell.
+    transparent: !IS_MAC,
+    backgroundColor: IS_MAC ? '#050608' : '#00000000',
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: IS_MAC ? APP_ICON_PNG : APP_ICON_ICO,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1446,6 +1529,10 @@ if (!gotSingleInstanceLock) {
     });
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
+    powerMonitor.on('on-ac', broadcastPerformanceProfile);
+    powerMonitor.on('on-battery', broadcastPerformanceProfile);
+    powerMonitor.on('thermal-state-change', broadcastPerformanceProfile);
+    powerMonitor.on('speed-limit-change', broadcastPerformanceProfile);
     await createWindow();
   });
 

@@ -2,11 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
+  platform: process.platform,
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
   exitFullscreenWindowed: () => ipcRenderer.invoke('desktop-window-exit-fullscreen-windowed'),
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
+  getPerformanceProfile: () => ipcRenderer.invoke('mineradio-performance-profile'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
   openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
@@ -43,6 +45,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on('desktop-window-state', listener);
     return () => ipcRenderer.removeListener('desktop-window-state', listener);
+  },
+  onPerformanceProfile: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, profile) => callback(profile || {});
+    ipcRenderer.on('mineradio-performance-profile', listener);
+    return () => ipcRenderer.removeListener('mineradio-performance-profile', listener);
   },
 });
 
