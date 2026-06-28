@@ -1870,6 +1870,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <path class="update-arrow" d="M8.7 10.7 12 7.4l3.3 3.3"></path>
       </svg>
     </button>
+    <button id="custom-source-btn" class="desktop-mode-btn" type="button" onclick="openCustomSourceModal()" title="洛雪自定义音源" aria-label="洛雪自定义音源">源</button>
     <button id="diy-mode-btn" class="desktop-mode-btn" type="button" onclick="toggleDiyMode()" title="开启 DIY 玩家模式" aria-label="开启 DIY 玩家模式" aria-pressed="false">DIY</button>
     <button class="desktop-window-btn" data-window-action="minimize" title="最小化" aria-label="最小化">
       <svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg>
@@ -2003,7 +2004,6 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   <button id="home-btn" class="icon-btn" onclick="goHome()" title="回到 Home" aria-label="回到 Home">
     <svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8"/><path d="M5 10v10h14V10"/><path d="M9.5 20v-5h5v5"/></svg>
   </button>
-  <button id="custom-source-btn" class="icon-btn" type="button" onclick="openCustomSourceModal()" title="洛雪自定义音源" aria-label="洛雪自定义音源">源</button>
   <button id="user-btn" class="icon-btn logged-out" onclick="onUserBtnClick()" title="登录账号">
     <span class="login-word">登录</span>
   </button>
@@ -22015,11 +22015,7 @@ function setCustomSourceUpdateAlert(id, enabled) {
 }
 function bindCustomSourceManager() {
   var api = getDesktopWindowApi();
-  var button = document.getElementById('custom-source-btn');
-  if (!api || typeof api.listCustomSources !== 'function') {
-    if (button) button.style.display = 'none';
-    return;
-  }
+  if (!api || typeof api.listCustomSources !== 'function') return;
   var modal = document.getElementById('custom-source-modal');
   if (modal) modal.addEventListener('click', function(event){ if (event.target === modal) closeCustomSourceModal(); });
   if (!customSourceStatusUnsubscribe && typeof api.onCustomSourceStatus === 'function') {

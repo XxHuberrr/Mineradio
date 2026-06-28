@@ -75,6 +75,23 @@ function parseHttpBody(raw) {
   }
 }
 
+function normalizeUpdateUrl(updateUrl) {
+  if (typeof updateUrl !== 'string' || updateUrl === '') return undefined;
+  if (updateUrl.length > 1024 || updateUrl !== updateUrl.trim()) {
+    throw new Error('UPDATE_ALERT_FAILED: Invalid update URL');
+  }
+  let parsed;
+  try {
+    parsed = new URL(updateUrl);
+  } catch {
+    throw new Error('UPDATE_ALERT_FAILED: Invalid update URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('UPDATE_ALERT_FAILED: Invalid update URL');
+  }
+  return updateUrl;
+}
+
 function errorResult(error) {
   return { error: String(error?.message || error).slice(0, 1024) };
 }
@@ -477,9 +494,7 @@ class LxSourceRuntime {
     }
     const result = {
       log: safe.log.slice(0, 1024),
-      updateUrl: typeof safe.updateUrl === 'string' && safe.updateUrl.length <= 1024
-        ? safe.updateUrl
-        : undefined,
+      updateUrl: normalizeUpdateUrl(safe.updateUrl),
     };
     if (this.onUpdateAlert) this.onUpdateAlert(result);
     return undefined;

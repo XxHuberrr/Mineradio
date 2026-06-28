@@ -24,6 +24,7 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let appQuitting = false;
 const registeredGlobalHotkeys = new Map();
 const CUSTOM_SOURCE_MAX_SCRIPT_BYTES = 5 * 1024 * 1024;
 
@@ -1497,6 +1498,7 @@ async function createWindow() {
     }
     closeOverlayWindows();
     mainWindow = null;
+    if (process.platform !== 'darwin' && !appQuitting) app.quit();
   });
   mainWindow.on('enter-full-screen', () => {
     windowFullscreenActive = true;
@@ -1551,6 +1553,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    appQuitting = true;
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (customSourceManager) void customSourceManager.dispose();

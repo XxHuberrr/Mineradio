@@ -554,6 +554,28 @@ test('zlib bridge preflights oversized string input before Buffer allocation', a
   await assert.rejects(started, /stopped/i);
 });
 
+test('update alerts only accept http and https update URLs', () => {
+  const { LxSourceRuntime } = loadRuntime();
+  const alerts = [];
+  const runtime = new LxSourceRuntime({
+    script: 'x',
+    currentScriptInfo: {},
+    onUpdateAlert: alert => alerts.push(alert),
+    electron: { BrowserWindow: FakeBrowserWindow, ipcMain: new FakeIpcMain(), app: { isPackaged: false } },
+  });
+
+  assert.doesNotThrow(() => runtime.handleUpdateAlert({
+    log: 'new version',
+    updateUrl: 'https://example.com/source.js',
+  }));
+  assert.equal(alerts[0].updateUrl, 'https://example.com/source.js');
+
+  assert.throws(
+    () => runtime.handleUpdateAlert({ log: 'unsafe', updateUrl: 'file:///C:/secret.js' }),
+    /UPDATE_ALERT_FAILED: Invalid update URL/,
+  );
+});
+
 test('preload defines the exact LX v2 bridge and indirect script evaluation', () => {
   const preload = fs.readFileSync(path.join(__dirname, '../../desktop/custom-source/runtime-preload.js'), 'utf8');
   assert.match(preload, /version:\s*['"]2\.0\.0['"]/);
