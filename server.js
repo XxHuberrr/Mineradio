@@ -325,7 +325,8 @@ function spotifyCallbackHtml(msg) {
 
 function spotifyEnsureCallbackServer() {
   if (spotifyCallbackServer) return Promise.resolve();
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
+    let settled = false;
     const cb = http.createServer(async (req, res) => {
       try {
         const u = new URL(req.url, SPOTIFY_REDIRECT_URI);
@@ -346,8 +347,18 @@ function spotifyEnsureCallbackServer() {
         res.end(spotifyCallbackHtml('登录处理失败：' + (e && e.message)));
       }
     });
-    cb.on('error', e => { console.error('[SpotifyCallbackServer]', e.message); resolve(); });
-    cb.listen(SPOTIFY_REDIRECT_PORT, '127.0.0.1', () => { spotifyCallbackServer = cb; resolve(); });
+    // 绑定失败（最常见 EADDRINUSE：8888 被其他程序/残留进程占用）必须明确报错，
+    // 否则回调会被占用端口的旧进程接走，表现为诡异的 state 校验失败。
+    cb.on('error', e => {
+      console.error('[SpotifyCallbackServer]', e.message);
+      if (!settled) {
+        settled = true;
+        const err = new Error(e.code === 'EADDRINUSE' ? 'SPOTIFY_CALLBACK_PORT_BUSY' : ('SPOTIFY_CALLBACK_SERVER_ERROR: ' + e.message));
+        err.code = e.code;
+        reject(err);
+      }
+    });
+    cb.listen(SPOTIFY_REDIRECT_PORT, '127.0.0.1', () => { settled = true; spotifyCallbackServer = cb; resolve(); });
   });
 }
 
@@ -3828,7 +3839,12 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, { provider: 'spotify', authUrl, redirectUri: SPOTIFY_REDIRECT_URI });
     } catch (err) {
       console.error('[SpotifyLogin]', err);
-      sendJSON(res, { provider: 'spotify', error: err.message }, 500);
+      const busy = err.code === 'EADDRINUSE' || err.message === 'SPOTIFY_CALLBACK_PORT_BUSY';
+      sendJSON(res, {
+        provider: 'spotify',
+        error: err.message,
+        message: busy ? '回调端口 8888 被其他程序占用，请关闭占用它的程序后重试' : undefined,
+      }, busy ? 409 : 500);
     }
     return;
   }
