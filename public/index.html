@@ -18018,6 +18018,12 @@ function bindVolumeControls() {
   if (wrap) {
     wrap.addEventListener('mouseenter', keepVolumePanelOpen);
     wrap.addEventListener('mouseleave', closeVolumePanelSoon);
+    wrap.addEventListener('wheel', function(e){
+      e.preventDefault();
+      var step = e.deltaY < 0 ? 0.05 : -0.05;
+      setVolume(clampRange(targetVolume + step, 0, 1), true);
+      updateVolumeUi();
+    }, { passive: false });
   }
   if (slider) {
     slider.addEventListener('input', function(){ setVolume(slider.value, true); });
