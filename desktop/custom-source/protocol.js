@@ -24,7 +24,7 @@ function parseScriptInfo(script) {
   }
   for (const [key, limit] of Object.entries(META_LIMITS)) {
     values[key] = String(values[key] || '');
-    if (values[key].length > limit) values[key] = values[key].slice(0, limit) + '...';
+    if (values[key].length > limit) values[key] = values[key].slice(0, limit - 3) + '...';
   }
   values.name ||= `user_api_${Date.now()}`;
   return values;
@@ -55,7 +55,18 @@ function selectLxQuality(target, supported) {
 
 function validateActionResponse(action, value) {
   if (action === 'musicUrl' || action === 'pic') {
-    if (typeof value !== 'string' || value.length > 2048 || !/^https?:/i.test(value)) {
+    let url;
+    try {
+      url = typeof value === 'string' && /^https?:\/\//i.test(value) ? new URL(value) : null;
+    } catch {
+      url = null;
+    }
+    if (
+      !url ||
+      value.length > 2048 ||
+      !['http:', 'https:'].includes(url.protocol) ||
+      !url.hostname
+    ) {
       throw new Error('INVALID_RESPONSE: Expected an HTTP URL');
     }
     return value;

@@ -21,6 +21,22 @@ test('parses LX metadata with LX length limits', () => {
   assert.equal(LX_API_VERSION, '2.0.0');
 });
 
+test('truncates long LX metadata within advertised maximum lengths', () => {
+  const info = parseScriptInfo(`/**
+ * @name ${'n'.repeat(100)}
+ * @description ${'d'.repeat(100)}
+ * @version ${'1'.repeat(100)}
+ * @author ${'a'.repeat(100)}
+ * @homepage https://example.com/${'h'.repeat(1100)}
+ */`);
+  assert.equal(info.name.length, 24);
+  assert.ok(info.name.endsWith('...'));
+  assert.ok(info.description.length <= 36);
+  assert.ok(info.version.length <= 36);
+  assert.ok(info.author.length <= 56);
+  assert.ok(info.homepage.length <= 1024);
+});
+
 test('filters source actions and quality values to the LX contract', () => {
   const result = filterInitPayload({
     sources: {
@@ -43,4 +59,11 @@ test('validates URL and lyric responses', () => {
   assert.equal(validateActionResponse('musicUrl', 'https://example.com/a.mp3'), 'https://example.com/a.mp3');
   assert.throws(() => validateActionResponse('musicUrl', 'file:///tmp/a.mp3'), /INVALID_RESPONSE/);
   assert.equal(validateActionResponse('lyric', { lyric: '[00:00.00]a' }).lyric, '[00:00.00]a');
+});
+
+test('rejects malformed http-ish URL responses', () => {
+  assert.equal(validateActionResponse('musicUrl', 'http://example.com/a.mp3'), 'http://example.com/a.mp3');
+  assert.equal(validateActionResponse('pic', 'https://example.com/a.jpg'), 'https://example.com/a.jpg');
+  assert.throws(() => validateActionResponse('musicUrl', 'https:foo'), /INVALID_RESPONSE/);
+  assert.throws(() => validateActionResponse('pic', 'http:/bad'), /INVALID_RESPONSE/);
 });
