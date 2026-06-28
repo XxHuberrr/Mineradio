@@ -13,6 +13,31 @@ test('initializes an empty index file on construction', () => {
   assert.deepEqual(JSON.parse(fs.readFileSync(indexFile, 'utf8')), { activeId: '', items: [] });
 });
 
+test('propagates non-ENOENT index read errors without overwriting the index', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const indexFile = path.join(root, 'sources.json');
+  const original = JSON.stringify({ activeId: '', items: [] });
+  fs.writeFileSync(indexFile, original, 'utf8');
+  const originalReadFileSync = fs.readFileSync;
+
+  try {
+    fs.readFileSync = function readFileSync(file, options) {
+      if (String(file) === indexFile) {
+        const error = new Error('access denied');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalReadFileSync.apply(this, arguments);
+    };
+
+    assert.throws(() => new CustomSourceStore(root), /access denied/);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+
+  assert.equal(fs.readFileSync(indexFile, 'utf8'), original);
+});
+
 test('backs up invalid index before initializing defaults', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
   const invalid = '{not json';
@@ -71,6 +96,67 @@ test('keeps status sources isolated from caller and returned copies', () => {
   fromList.sources.platforms.tx = false;
   fromList.sources.list.push('b');
   assert.deepEqual(store.get(first.id).sources, { platforms: { tx: true }, list: ['a'] });
+});
+
+test('setActive rolls back its in-memory mutation when saving fails', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const first = store.importScript('a.js', '/**\n * @name A\n */\nvoid 0');
+  const indexFile = path.join(root, 'sources.json');
+  const originalRenameSync = fs.renameSync;
+
+  try {
+    fs.renameSync = function renameSync(from, to) {
+      if (String(to) === indexFile) throw new Error('save failed');
+      return originalRenameSync.apply(this, arguments);
+    };
+    assert.throws(() => store.setActive(first.id), /save failed/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.equal(store.getActive(), null);
+});
+
+test('setStatus rolls back its in-memory mutation when saving fails', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const first = store.importScript('a.js', '/**\n * @name A\n */\nvoid 0');
+  const before = store.get(first.id);
+  const indexFile = path.join(root, 'sources.json');
+  const originalRenameSync = fs.renameSync;
+
+  try {
+    fs.renameSync = function renameSync(from, to) {
+      if (String(to) === indexFile) throw new Error('save failed');
+      return originalRenameSync.apply(this, arguments);
+    };
+    assert.throws(() => store.setStatus(first.id, 'ready', 'changed', { tx: true }), /save failed/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.deepEqual(store.get(first.id), before);
+});
+
+test('setAllowUpdateAlert rolls back its in-memory mutation when saving fails', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const first = store.importScript('a.js', '/**\n * @name A\n */\nvoid 0');
+  const indexFile = path.join(root, 'sources.json');
+  const originalRenameSync = fs.renameSync;
+
+  try {
+    fs.renameSync = function renameSync(from, to) {
+      if (String(to) === indexFile) throw new Error('save failed');
+      return originalRenameSync.apply(this, arguments);
+    };
+    assert.throws(() => store.setAllowUpdateAlert(first.id, false), /save failed/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.equal(store.get(first.id).allowUpdateAlert, true);
 });
 
 test('imports scripts through a temporary file rename', () => {
@@ -154,6 +240,37 @@ test('replaceScript restores in-memory metadata and script file when index save 
   assert.equal(store.getScript(first.id), firstScript);
 });
 
+test('replaceScript restores the old script by rename when writes keep failing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const firstScript = '/**\n * @name A\n * @version 1\n */\nvoid 0';
+  const secondScript = '/**\n * @name A\n * @version 2\n */\nvoid 0';
+  const first = store.importScript('a.js', firstScript);
+  const originalWriteFileSync = fs.writeFileSync;
+  let writes = 0;
+
+  try {
+    fs.writeFileSync = function writeFileSync(file, data, options) {
+      writes += 1;
+      if (writes > 1) {
+        const error = new Error('disk full');
+        error.code = 'ENOSPC';
+        throw error;
+      }
+      assert.equal(path.basename(String(file)), `${first.id}.js.next`);
+      return originalWriteFileSync.apply(this, arguments);
+    };
+
+    assert.throws(() => store.replaceScript(first.id, secondScript), /disk full/);
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+  }
+
+  assert.equal(writes, 2);
+  assert.equal(store.get(first.id).version, '1');
+  assert.equal(store.getScript(first.id), firstScript);
+});
+
 test('imports, lists, activates, replaces, and removes scripts', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
   const store = new CustomSourceStore(root);
@@ -165,6 +282,58 @@ test('imports, lists, activates, replaces, and removes scripts', () => {
   assert.equal(store.get(first.id).version, '2');
   store.remove(first.id);
   assert.deepEqual(store.list(), []);
+});
+
+test('remove rejects unknown and traversal ids without deleting files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const victim = path.join(root, 'victim.js');
+  fs.writeFileSync(victim, 'keep me', 'utf8');
+
+  assert.throws(() => store.remove('../victim'), /SOURCE_NOT_FOUND/);
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'keep me');
+  assert.throws(() => store.remove('missing'), /SOURCE_NOT_FOUND/);
+});
+
+test('remove cannot escape scripts through a traversal id loaded from the index', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const victim = path.join(root, 'victim.js');
+  fs.writeFileSync(victim, 'keep me', 'utf8');
+  fs.writeFileSync(
+    path.join(root, 'sources.json'),
+    JSON.stringify({ activeId: '', items: [{ id: '../victim' }] }),
+    'utf8',
+  );
+  const store = new CustomSourceStore(root);
+
+  assert.throws(() => store.remove('../victim'), /SOURCE_NOT_FOUND/);
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'keep me');
+});
+
+test('remove restores memory, index, and script when saving the index fails', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-source-'));
+  const store = new CustomSourceStore(root);
+  const script = '/**\n * @name A\n */\nvoid 0';
+  const first = store.importScript('a.js', script);
+  store.setActive(first.id);
+  const indexFile = path.join(root, 'sources.json');
+  const originalIndex = fs.readFileSync(indexFile, 'utf8');
+  const originalRenameSync = fs.renameSync;
+
+  try {
+    fs.renameSync = function renameSync(from, to) {
+      if (String(to) === indexFile) throw new Error('save failed');
+      return originalRenameSync.apply(this, arguments);
+    };
+    assert.throws(() => store.remove(first.id), /save failed/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
+
+  assert.equal(store.get(first.id).id, first.id);
+  assert.equal(store.getActive().id, first.id);
+  assert.equal(fs.readFileSync(indexFile, 'utf8'), originalIndex);
+  assert.equal(store.getScript(first.id), script);
 });
 
 test('rejects identical content', () => {
