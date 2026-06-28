@@ -3430,6 +3430,10 @@ var desktopRuntimeState = {
   focused: true,
   fullscreen: false
 };
+var nativePerformanceProfile = {
+  platform: '', arch: '', hardwareModel: '', cpuModel: '', logicalCores: 0, memoryGB: 0,
+  onBattery: false, thermalState: 'unknown', display: null
+};
 var renderPowerState = { mode: '', width: 0, height: 0, pixelRatio: 0 };
 var backgroundCacheTrimTimer = 0;
 var runtimePerfState = {
@@ -3687,6 +3691,20 @@ function updateDesktopRuntimeState(state) {
   if (wasDeep && !isDeepBackgroundMode()) recoverVisualsAfterBackground('desktop-runtime-state');
   if (desktopRuntimeState.fullscreen !== wasFullscreen) scheduleMainRendererViewportRefresh('desktop-runtime-state');
 }
+function isM4MacBookProProfile() {
+  return nativePerformanceProfile.platform === 'darwin'
+    && nativePerformanceProfile.arch === 'arm64'
+    && nativePerformanceProfile.hardwareModel === 'Mac16,1'
+    && /Apple M4(?:$|\s)/i.test(nativePerformanceProfile.cpuModel || '')
+    && nativePerformanceProfile.logicalCores >= 10
+    && nativePerformanceProfile.memoryGB >= 16;
+}
+function updateNativePerformanceProfile(profile) {
+  nativePerformanceProfile = Object.assign({}, nativePerformanceProfile, profile || {});
+  document.documentElement.classList.toggle('macbook-pro-14-m4', isM4MacBookProProfile());
+  if (typeof renderer !== 'undefined' && renderer) applyRendererPowerMode();
+  if (typeof renderPerfState !== 'undefined' && renderPerfState) renderPerfState.lastRenderAt = 0;
+}
 function installRenderPowerHooks() {
   updateRenderPowerClasses();
   document.addEventListener('visibilitychange', function(){
@@ -3710,6 +3728,12 @@ function installRenderPowerHooks() {
     if (typeof window.desktopWindow.getState === 'function') {
       window.desktopWindow.getState().then(updateDesktopRuntimeState).catch(function(){});
     }
+  }
+  if (window.desktopWindow && typeof window.desktopWindow.onPerformanceProfile === 'function') {
+    window.desktopWindow.onPerformanceProfile(updateNativePerformanceProfile);
+  }
+  if (window.desktopWindow && typeof window.desktopWindow.getPerformanceProfile === 'function') {
+    window.desktopWindow.getPerformanceProfile().then(updateNativePerformanceProfile).catch(function(){});
   }
 }
 
@@ -3735,10 +3759,31 @@ var renderInteractionBoostUntil = 0;
 var renderInteractionReason = '';
 function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
-  if (quality === 'eco') return { cap: 0.95, min: 0.56, budget: 2400000 };
-  if (quality === 'balanced') return { cap: 1.12, min: 0.66, budget: 3800000 };
-  if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
-  return { cap: RENDER_DPR_CAP, min: RENDER_MIN_DPR, budget: RENDER_PIXEL_BUDGET };
+  var profile;
+  if (quality === 'eco') profile = { cap: 0.95, min: 0.56, budget: 2400000 };
+  else if (quality === 'balanced') profile = { cap: 1.12, min: 0.66, budget: 3800000 };
+  else if (quality === 'ultra') profile = { cap: 1.75, min: 0.85, budget: 7800000 };
+  else profile = { cap: RENDER_DPR_CAP, min: RENDER_MIN_DPR, budget: RENDER_PIXEL_BUDGET };
+
+  // The 14-inch M4 panel is Retina/ProMotion. Give the 10-core GPU a little
+  // more resolution headroom on AC, without ever rendering at the raw 2x DPR.
+  if (isM4MacBookProProfile()) {
+    if (quality === 'high') profile = { cap: 1.45, min: 0.78, budget: 6200000 };
+    if (quality === 'ultra') profile = { cap: 1.75, min: 0.90, budget: 8200000 };
+  }
+
+  var thermal = String(nativePerformanceProfile.thermalState || '').toLowerCase();
+  var scale = nativePerformanceProfile.onBattery ? 0.84 : 1;
+  if (thermal === 'serious') scale = Math.min(scale, 0.72);
+  if (thermal === 'critical') scale = Math.min(scale, 0.56);
+  if (scale < 1) {
+    profile = {
+      cap: Math.max(profile.min, profile.cap * Math.sqrt(scale)),
+      min: Math.max(0.50, profile.min * Math.sqrt(scale)),
+      budget: Math.round(profile.budget * scale)
+    };
+  }
+  return profile;
 }
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
@@ -26378,6 +26423,23 @@ var desktopWindowState = {};
 
 function toggleFullscreen() {
   var api = window.desktopWindow;
+  // On macOS, Electron's native/simple fullscreen is unreliable for this
+  // frameless WebGL window. The HTML Fullscreen API uses Electron's supported
+  // renderer transition and correctly resizes both the window and canvas.
+  if (api && api.isDesktop && api.platform === 'darwin') {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(function(){
+        if (typeof api.exitFullscreenWindowed === 'function') api.exitFullscreenWindowed();
+      });
+    } else {
+      document.documentElement.requestFullscreen().catch(function(){
+        if (typeof api.toggleFullscreen === 'function') api.toggleFullscreen();
+        else showToast('全屏被系统拒绝');
+      });
+    }
+    scheduleMainRendererViewportRefresh('mac-document-fullscreen-toggle');
+    return;
+  }
   if (api && api.isDesktop && typeof api.toggleFullscreen === 'function') {
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(function(){});
@@ -26581,6 +26643,10 @@ function isMainSceneCoveredBySplash() {
 }
 function getAdaptiveRenderFps() {
   if (isDeepBackgroundMode()) return 1;
+  var thermal = String(nativePerformanceProfile.thermalState || '').toLowerCase();
+  if (thermal === 'critical') return 30;
+  if (thermal === 'serious') return 45;
+  if (nativePerformanceProfile.onBattery) return 60;
   if (RENDER_VISIBLE_VSYNC) return 0;
   var tier = (typeof getRenderLoadTier === 'function') ? getRenderLoadTier() : 0;
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) {
