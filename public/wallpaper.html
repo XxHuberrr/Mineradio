@@ -22,6 +22,14 @@
     };
     var coverImg = null, coverSrc = '';
     var particles = [];
+    var lastDrawAt = 0;
+    function isMacOverlay(){
+      return !!(window.desktopOverlay && (window.desktopOverlay.isMac || window.desktopOverlay.platform === 'darwin'));
+    }
+    function wallpaperFrameIntervalMs(){
+      if (!isMacOverlay()) return 0;
+      return 1000 / (state.playing ? 30 : 24);
+    }
     function hexToRgb(hex, fallback){
       hex = String(hex || fallback || '#9cffdf').trim();
       if (/^#[0-9a-f]{3}$/i.test(hex)) hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
@@ -34,7 +42,10 @@
     }
     function rand(seed){ return Math.abs(Math.sin(seed * 3187.917) * 43758.5453) % 1; }
     function ensureParticles(){
-      var target = Math.min(760, Math.max(420, Math.round((innerWidth * innerHeight) / 4200)));
+      var mac = isMacOverlay();
+      var target = mac
+        ? Math.min(620, Math.max(360, Math.round((innerWidth * innerHeight) / 5200)))
+        : Math.min(760, Math.max(420, Math.round((innerWidth * innerHeight) / 4200)));
       while (particles.length < target) {
         var i = particles.length + 1;
         particles.push({ seed:i * 11.37, x:rand(i), y:rand(i * 2.7), lane:rand(i * 5.9), z:rand(i * 8.1), size:.6 + rand(i * 4.2) * 2.4 });
@@ -82,6 +93,12 @@
       ctx.restore();
     }
     function draw(nowMs){
+      var interval = wallpaperFrameIntervalMs();
+      if (interval > 0 && lastDrawAt && nowMs - lastDrawAt < Math.max(4, interval - 1.25)) {
+        requestAnimationFrame(draw);
+        return;
+      }
+      lastDrawAt = nowMs;
       var now = nowMs * .001;
       ensureParticles();
       var opacity = Math.max(.35, Math.min(1, state.opacity || 1));

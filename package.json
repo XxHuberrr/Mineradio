@@ -8,8 +8,11 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "profile:mac": "node scripts/profile-macos-runtime.js",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "build:mac": "electron-builder --mac dmg zip --arm64",
+    "build:mac:dir": "electron-builder --mac dir --arm64"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -43,6 +46,52 @@
           "arch": [
             "x64"
           ]
+        }
+      ]
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Mineradio-${version}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "LSMinimumSystemVersion": "12.0",
+        "NSMicrophoneUsageDescription": "Mineradio may request microphone access only if Chromium audio features need it.",
+        "NSCameraUsageDescription": "Mineradio does not use the camera directly; this permission text prevents a blank system prompt if a third-party login page requests it.",
+        "NSBluetoothAlwaysUsageDescription": "Mineradio does not use Bluetooth directly; this permission text prevents a blank system prompt if Chromium requests it.",
+        "NSLocalNetworkUsageDescription": "Mineradio runs a local playback and API service on 127.0.0.1."
+      }
+    },
+    "dmg": {
+      "artifactName": "Mineradio-${version}-${arch}.${ext}",
+      "backgroundColor": "#050608",
+      "contents": [
+        {
+          "x": 160,
+          "y": 220
+        },
+        {
+          "x": 420,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
         }
       ]
     },

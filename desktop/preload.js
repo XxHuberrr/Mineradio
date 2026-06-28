@@ -2,11 +2,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
+  platform: process.platform,
+  arch: process.arch,
+  isMac: process.platform === 'darwin',
+  isWindows: process.platform === 'win32',
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
   exitFullscreenWindowed: () => ipcRenderer.invoke('desktop-window-exit-fullscreen-windowed'),
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
+  getPlatform: () => ipcRenderer.invoke('mineradio-runtime-platform'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
   openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
@@ -49,4 +54,10 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 window.addEventListener('DOMContentLoaded', () => {
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');
+  document.documentElement.classList.add(`desktop-platform-${process.platform}`);
+  document.body.classList.add(`desktop-platform-${process.platform}`);
+  if (process.platform === 'darwin') {
+    document.documentElement.classList.add('desktop-mac');
+    document.body.classList.add('desktop-mac');
+  }
 });

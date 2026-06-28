@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Menu } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -32,6 +32,10 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_ICON_PNG = path.join(__dirname, '..', 'build', 'icon.png');
+const IS_MAC = process.platform === 'darwin';
+const IS_WINDOWS = process.platform === 'win32';
+const APP_ICON = IS_MAC && fs.existsSync(APP_ICON_PNG) ? APP_ICON_PNG : APP_ICON_ICO;
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -48,8 +52,8 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (IS_WINDOWS) CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -121,6 +125,126 @@ function waitForServer(server) {
     server.once('listening', resolve);
     server.once('error', reject);
   });
+}
+
+function getRuntimePlatformInfo() {
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    isMac: IS_MAC,
+    isWindows: IS_WINDOWS,
+    isPackaged: app.isPackaged,
+    appName: APP_NAME,
+    updateAssetExts: IS_MAC
+      ? ['.dmg', '.zip']
+      : (IS_WINDOWS ? ['.exe', '.msi', '.zip', '.7z'] : ['.AppImage', '.deb', '.rpm', '.zip', '.tar.gz']),
+  };
+}
+
+function createBrowserWindow(options, fallbackLabel) {
+  try {
+    return new BrowserWindow(options);
+  } catch (error) {
+    const maybeMacTypedWindow = IS_MAC && options && Object.prototype.hasOwnProperty.call(options, 'type');
+    if (!maybeMacTypedWindow) throw error;
+    const fallbackOptions = { ...options };
+    delete fallbackOptions.type;
+    console.warn(`${fallbackLabel || 'BrowserWindow'} macOS typed window fallback:`, error.message);
+    return new BrowserWindow(fallbackOptions);
+  }
+}
+
+function toggleDesktopLyricsLockFromMenu() {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+  desktopLyricsState = {
+    ...desktopLyricsState,
+    clickThrough: desktopLyricsState.clickThrough === false,
+  };
+  if (desktopLyricsState.clickThrough !== false) desktopLyricsPointerCapture = false;
+  else desktopLyricsPointerCapture = true;
+  applyDesktopLyricsMouseBehavior();
+  broadcastDesktopLyricsLockState();
+}
+
+function configureApplicationMenu() {
+  if (!IS_MAC) {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
+  const template = [
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: 'about', label: `关于 ${APP_NAME}` },
+        { type: 'separator' },
+        {
+          label: '显示主窗口',
+          accelerator: 'Command+0',
+          click: () => focusMainWindow(),
+        },
+        { type: 'separator' },
+        { role: 'services', label: '服务' },
+        { type: 'separator' },
+        { role: 'hide', label: `隐藏 ${APP_NAME}` },
+        { role: 'hideOthers', label: '隐藏其他' },
+        { role: 'unhide', label: '全部显示' },
+        { type: 'separator' },
+        { role: 'quit', label: `退出 ${APP_NAME}` },
+      ],
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: '播放',
+      submenu: [
+        {
+          label: '锁定/解锁桌面歌词',
+          accelerator: 'Command+Shift+L',
+          click: () => toggleDesktopLyricsLockFromMenu(),
+        },
+        {
+          label: '关闭桌面歌词',
+          accelerator: 'Command+Shift+W',
+          click: () => closeDesktopLyricsWindow(),
+        },
+      ],
+    },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        {
+          label: '进入/退出全屏',
+          accelerator: 'Ctrl+Command+F',
+          click: () => toggleFullscreen(mainWindow),
+        },
+        { role: 'front', label: '全部置前' },
+      ],
+    },
+    {
+      label: '帮助',
+      submenu: [
+        {
+          label: '打开项目主页',
+          click: () => shell.openExternal('https://github.com/XxHuberrr/Mineradio').catch(() => {}),
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function sendWindowState(win) {
@@ -273,7 +397,7 @@ function getUpdateDownloadDir() {
 }
 
 function shouldEnsureDesktopShortcut() {
-  if (process.platform !== 'win32') return false;
+  if (!IS_WINDOWS) return false;
   if (process.env.MINERADIO_NO_DESKTOP_SHORTCUT === '1') return false;
   return app.isPackaged || process.env.MINERADIO_CREATE_DESKTOP_SHORTCUT === '1';
 }
@@ -406,7 +530,7 @@ async function openNeteaseMusicLoginWindow(owner) {
     let settled = false;
     let pollTimer = null;
 
-    const loginWindow = new BrowserWindow({
+    const loginWindow = createBrowserWindow({
       width: 940,
       height: 760,
       minWidth: 780,
@@ -417,14 +541,14 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
       },
-    });
+    }, 'Netease login window');
 
     const finish = async (result) => {
       if (settled) return;
@@ -508,7 +632,7 @@ async function openQQMusicLoginWindow(owner) {
     let pollTimer = null;
     let warmupStarted = false;
 
-    const loginWindow = new BrowserWindow({
+    const loginWindow = createBrowserWindow({
       width: 900,
       height: 720,
       minWidth: 760,
@@ -519,14 +643,14 @@ async function openQQMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
       },
-    });
+    }, 'QQ login window');
 
     const finish = async (result) => {
       if (settled) return;
@@ -811,7 +935,7 @@ function handleDesktopLyricsGlobalMiddleClick() {
 }
 
 function startDesktopLyricsMousePoller() {
-  if (process.platform !== 'win32' || desktopLyricsMousePoller) return;
+  if (!IS_WINDOWS || desktopLyricsMousePoller) return;
   const script = `
 $ErrorActionPreference = "SilentlyContinue"
 Add-Type @"
@@ -917,9 +1041,10 @@ function createDesktopLyricsWindow(payload = {}) {
     return desktopLyricsWindow;
   }
 
-  desktopLyricsWindow = new BrowserWindow({
+  desktopLyricsWindow = createBrowserWindow({
     width: 920,
     height: 190,
+    ...(IS_MAC ? { type: 'panel' } : {}),
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -937,10 +1062,13 @@ function createDesktopLyricsWindow(payload = {}) {
       sandbox: false,
       backgroundThrottling: false,
     },
-  });
+  }, 'Desktop lyrics window');
   try {
-    desktopLyricsWindow.setAlwaysOnTop(true, 'screen-saver');
-    desktopLyricsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    desktopLyricsWindow.setAlwaysOnTop(true, IS_MAC ? 'floating' : 'screen-saver');
+    desktopLyricsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+    if (IS_MAC && typeof desktopLyricsWindow.setHiddenInMissionControl === 'function') {
+      desktopLyricsWindow.setHiddenInMissionControl(true);
+    }
   } catch (e) {
     console.warn('Desktop lyrics topmost setup skipped:', e.message);
   }
@@ -983,7 +1111,7 @@ function nativeWindowHandleDecimal(win) {
 }
 
 function attachWallpaperToWorkerW(win) {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  if (!IS_WINDOWS || !win || win.isDestroyed()) return;
   const hwnd = nativeWindowHandleDecimal(win);
   const script = `
 $ErrorActionPreference = "Stop"
@@ -1047,8 +1175,9 @@ function createWallpaperWindow(payload = {}) {
     return wallpaperWindow;
   }
   const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow = new BrowserWindow({
+  wallpaperWindow = createBrowserWindow({
     ...bounds,
+    ...(IS_MAC ? { type: 'desktop' } : {}),
     frame: false,
     transparent: false,
     backgroundColor: '#050608',
@@ -1066,8 +1195,18 @@ function createWallpaperWindow(payload = {}) {
       sandbox: false,
       backgroundThrottling: false,
     },
-  });
+  }, 'Wallpaper window');
   wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
+  try {
+    if (IS_MAC) {
+      wallpaperWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+      if (typeof wallpaperWindow.setHiddenInMissionControl === 'function') {
+        wallpaperWindow.setHiddenInMissionControl(true);
+      }
+    }
+  } catch (e) {
+    console.warn('Wallpaper macOS workspace setup skipped:', e.message);
+  }
   wallpaperWindow.once('ready-to-show', () => {
     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
     positionWallpaperWindow();
@@ -1116,6 +1255,8 @@ ipcMain.handle('desktop-window-exit-fullscreen-windowed', (event) => {
 ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
+
+ipcMain.handle('mineradio-runtime-platform', () => getRuntimePlatformInfo());
 
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
@@ -1328,6 +1469,9 @@ async function createWindow() {
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  process.env.MINERADIO_UPDATE_PLATFORM = process.platform;
+  process.env.MINERADIO_UPDATE_ARCH = process.arch;
+  process.env.MINERADIO_BEAT_CACHE_DIR = path.join(app.getPath('userData'), 'beatmaps');
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -1345,19 +1489,23 @@ async function createWindow() {
 
   const initialBounds = getWindowedBounds();
 
-  mainWindow = new BrowserWindow({
+  mainWindow = createBrowserWindow({
     ...initialBounds,
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    frame: IS_MAC ? true : false,
+    ...(IS_MAC ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 18, y: 16 },
+    } : {}),
     fullscreen: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: !IS_MAC,
+    backgroundColor: IS_MAC ? '#000000' : '#00000000',
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1365,7 +1513,7 @@ async function createWindow() {
       sandbox: false,
       backgroundThrottling: false,
     },
-  });
+  }, 'Main window');
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -1427,7 +1575,7 @@ async function createWindow() {
 }
 
 app.setName(APP_NAME);
-if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+if (IS_WINDOWS) app.setAppUserModelId(APP_USER_MODEL_ID);
 
 if (!gotSingleInstanceLock) {
   app.quit();
@@ -1439,6 +1587,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    configureApplicationMenu();
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
