@@ -54,6 +54,33 @@ const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
 
+// i18n for server-side strings
+const I18N_DIR = path.join(__dirname, 'public', 'locales');
+const serverTranslations = {};
+let serverLang = 'zh-CN';
+function loadServerLang(lang) {
+  try {
+    const file = path.join(I18N_DIR, lang + '.json');
+    if (fs.existsSync(file)) {
+      serverTranslations[lang] = JSON.parse(fs.readFileSync(file, 'utf8'));
+      serverLang = lang;
+    }
+  } catch (e) {}
+}
+function st(key, params) {
+  let dict = serverTranslations[serverLang] || {};
+  let val = dict[key];
+  if (val === undefined && serverLang !== 'zh-CN') {
+    val = (serverTranslations['zh-CN'] || {})[key];
+  }
+  if (val === undefined) val = key;
+  if (params) {
+    Object.keys(params).forEach(k => { val = val.replace(new RegExp('\\{' + k + '\\}', 'g'), params[k]); });
+  }
+  return val;
+}
+loadServerLang('zh-CN');
+
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -77,6 +104,10 @@ const UPDATE_FALLBACK_NOTES = [
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const WEATHER_IP_LOCATION_URL = 'http://ip-api.com/json/';
+const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
+const SPOTIFY_SEARCH_URL = 'https://api.spotify.com/v1/search';
+const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET || '';
 const WEATHER_DEFAULT_LOCATION = {
   name: '上海',
   country: 'China',
@@ -86,6 +117,7 @@ const WEATHER_DEFAULT_LOCATION = {
 };
 
 const updateDownloadJobs = new Map();
+const spotifyTokenCache = { token: '', expiresAt: 0 };
 
 function applySystemCertificateAuthorities() {
   try {
@@ -309,7 +341,7 @@ function uniqueDownloadCandidates(urls, opts) {
   });
   const direct = directUrls.map(url => ({
     url,
-    label: directSet.has(url.toLowerCase()) ? 'GitHub 直连' : '下载线路',
+    label: directSet.has(url.toLowerCase()) ? 'GitHub 直连' : st('server_download_source'),
     mirrored: false,
   }));
   const ordered = UPDATE_CONFIG.preferMirrors === false ? direct.concat(mirrored) : mirrored.concat(direct);
@@ -477,7 +509,7 @@ function normalizeManifestUpdateInfo(data) {
       asset: assetInfo,
       patch: patchInfo,
       patchAvailable: !!(patchInfo && patchInfo.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
-      summary: release.summary || data.summary || notes[0] || '发现新版本，建议更新。',
+      summary: release.summary || data.summary || notes[0] || st('server_update_available'),
       notes,
     },
     source: 'manifest',
@@ -584,7 +616,7 @@ function localUpdateFallback(reason, opts) {
       version: APP_VERSION,
       htmlUrl: '',
       downloadUrl: '',
-      summary: '当前版本，更新检测已就绪。',
+      summary: st('server_current_ready'),
       notes: UPDATE_FALLBACK_NOTES,
     },
     reason: reason || '',
@@ -599,31 +631,31 @@ function updateError(code, message, cause) {
 function classifyUpdateError(err) {
   const code = String(err && err.code || '').trim();
   const message = String(err && err.message || err || '').trim();
-  const detail = message || code || '未知错误';
+  const detail = message || code || st('server_unknown_error');
   if (/HASH|DIGEST|CHECKSUM/i.test(code + ' ' + message)) {
-    return { code: code || 'UPDATE_HASH_MISMATCH', reason: '文件校验失败，可能是线路缓存异常，已拦截该安装包。', detail };
+    return { code: code || 'UPDATE_HASH_MISMATCH', reason: st('server_hash_fail'), detail };
   }
   if (/SIZE_MISMATCH|content length/i.test(code + ' ' + message)) {
-    return { code: code || 'UPDATE_SIZE_MISMATCH', reason: '下载文件大小不一致，可能是网络中断或线路缓存不完整。', detail };
+    return { code: code || 'UPDATE_SIZE_MISMATCH', reason: st('server_size_mismatch'), detail };
   }
   if (/AbortError|TIMEOUT|ETIMEDOUT|timeout/i.test(code + ' ' + message)) {
-    return { code: code || 'UPDATE_TIMEOUT', reason: '连接超时，当前网络到更新线路不稳定。', detail };
+    return { code: code || 'UPDATE_TIMEOUT', reason: st('server_timeout'), detail };
   }
   if (/ENOTFOUND|EAI_AGAIN|DNS|fetch failed|getaddrinfo/i.test(code + ' ' + message)) {
-    return { code: code || 'UPDATE_DNS_FAILED', reason: '域名解析失败，可能是当前网络无法连接该更新线路。', detail };
+    return { code: code || 'UPDATE_DNS_FAILED', reason: st('server_dns_fail'), detail };
   }
   if (/ECONNRESET|ECONNREFUSED|socket|network/i.test(code + ' ' + message)) {
-    return { code: code || 'UPDATE_NETWORK_FAILED', reason: '网络连接被中断，已尝试切换更新线路。', detail };
+    return { code: code || 'UPDATE_NETWORK_FAILED', reason: st('server_network_interrupted'), detail };
   }
   const http = message.match(/\bHTTP[_\s-]?(\d{3})\b/i) || message.match(/\b(\d{3})\b/);
   if (http) {
     const status = Number(http[1]);
-    if (status === 403) return { code: code || 'UPDATE_HTTP_403', reason: '更新线路返回 403，可能被限流或拦截。', detail };
-    if (status === 404) return { code: code || 'UPDATE_HTTP_404', reason: '更新文件不存在，可能 release 资源还没有同步完成。', detail };
-    if (status >= 500) return { code: code || 'UPDATE_HTTP_5XX', reason: '更新线路服务器异常，请稍后重试。', detail };
-    return { code: code || ('UPDATE_HTTP_' + status), reason: '更新线路返回 HTTP ' + status + '。', detail };
+    if (status === 403) return { code: code || 'UPDATE_HTTP_403', reason: st('server_http_403'), detail };
+    if (status === 404) return { code: code || 'UPDATE_HTTP_404', reason: st('server_http_404'), detail };
+    if (status >= 500) return { code: code || 'UPDATE_HTTP_5XX', reason: st('server_http_5xx'), detail };
+    return { code: code || ('UPDATE_HTTP_' + status), reason: st('server_http_error', { status: status }), detail };
   }
-  return { code: code || 'UPDATE_FAILED', reason: '更新失败：' + detail, detail };
+  return { code: code || 'UPDATE_FAILED', reason: st('server_update_failed', { detail: detail }), detail };
 }
 async function fetchWithTimeout(url, opts, timeoutMs) {
   const controller = new AbortController();
@@ -698,8 +730,8 @@ function parseLatestYmlUpdateInfo(text, reason) {
       asset,
       patch: null,
       patchAvailable: false,
-      summary: '发现新版本，已启用备用更新线路。',
-      notes: ['更新检测已切换到备用线路', '下载时会自动选择国内加速线路', '下载失败会显示具体原因和当前速度'],
+      summary: st('server_update_fallback'),
+      notes: [st('server_update_fallback_notes'), st('server_download_fallback_notes'), st('server_download_fail_notes')],
     },
     source: 'latest-yml',
     reason: reason || '',
@@ -751,7 +783,7 @@ async function fetchLatestUpdateInfo() {
         asset,
         patch,
         patchAvailable: !!(patch && patch.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
-        summary: notes[0] || '发现新版本，建议更新。',
+        summary: notes[0] || st('server_update_available'),
         notes,
       },
     };
@@ -830,7 +862,7 @@ async function downloadUpdateAsset(job) {
     job.progress = 0;
     job.speedBps = 0;
     job.etaSeconds = 0;
-    job.message = job.total ? '正在下载完整安装包' : '正在下载完整安装包，等待服务器返回大小';
+    job.message = job.total ? st('server_downloading_full') : st('server_downloading_full') + '，等待服务器返回大小';
     job.updatedAt = Date.now();
     let speedWindowAt = Date.now();
     let speedWindowBytes = 0;
@@ -857,7 +889,7 @@ async function downloadUpdateAsset(job) {
           const kb = Math.max(1, job.received / 1024);
           job.progress = Math.max(1, Math.min(88, Math.round(Math.log10(kb + 1) * 24)));
         }
-        job.message = job.total > 0 ? '正在下载完整安装包' : '正在下载完整安装包，服务器未提供总大小';
+        job.message = job.total > 0 ? st('server_downloading_full') : st('server_downloading_full') + '，服务器未提供总大小';
         job.updatedAt = Date.now();
         if (!writer.write(buf)) await once(writer, 'drain');
       }
@@ -870,7 +902,7 @@ async function downloadUpdateAsset(job) {
     fs.renameSync(tmpPath, job.filePath);
     job.status = 'ready';
     job.progress = 100;
-    job.message = '安装包已下载';
+    job.message = st('server_download_done');
     job.updatedAt = Date.now();
   } catch (e) {
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
@@ -932,11 +964,11 @@ function reuseVerifiedInstallerJob(opts) {
     total: opts.expectedSize || stat.size || 0,
     speedBps: 0,
     etaSeconds: 0,
-    sourceLabel: '本地缓存',
+    sourceLabel: st('server_local_cache'),
     attempt: 0,
     attempts: opts.attempts || 0,
     mode: 'installer',
-    message: '安装包已下载，可直接打开安装',
+    message: st('server_download_done_install'),
     fileName: opts.fileName || path.basename(opts.filePath),
     filePath: opts.filePath,
     version: opts.version || '',
@@ -973,7 +1005,7 @@ function setUpdateJobError(job, err, fallbackMessage) {
 }
 function prepareUpdateJobAttempt(job, candidate, index, total) {
   job.status = 'downloading';
-  job.sourceLabel = candidate.label || '下载线路';
+  job.sourceLabel = candidate.label || st('server_download_source');
   job.attempt = index + 1;
   job.attempts = total;
   job.received = 0;
@@ -1002,7 +1034,7 @@ async function downloadUpdateAssetWithMirrors(job) {
       try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
       ensureMirrorCanBeVerified(job, candidate);
       prepareUpdateJobAttempt(job, candidate, i, candidates.length);
-      job.message = job.total ? '正在下载完整安装包' : '正在下载完整安装包，等待服务器返回大小';
+      job.message = job.total ? st('server_downloading_full') : st('server_downloading_full') + '，等待服务器返回大小';
 
       const resp = await fetchWithTimeout(candidate.url, {
         headers: { 'User-Agent': `Mineradio/${APP_VERSION}` },
@@ -1038,7 +1070,7 @@ async function downloadUpdateAssetWithMirrors(job) {
             const kb = Math.max(1, job.received / 1024);
             job.progress = Math.max(1, Math.min(88, Math.round(Math.log10(kb + 1) * 24)));
           }
-          job.message = job.total > 0 ? '正在下载完整安装包' : '正在下载完整安装包，服务器未提供总大小';
+          job.message = job.total > 0 ? st('server_downloading_full') : st('server_downloading_full') + '，服务器未提供总大小';
           job.updatedAt = Date.now();
           if (!writer.write(buf)) await once(writer, 'drain');
         }
@@ -1053,17 +1085,17 @@ async function downloadUpdateAssetWithMirrors(job) {
       job.status = 'ready';
       job.progress = 100;
       job.etaSeconds = 0;
-      job.message = '安装包已下载';
+      job.message = st('server_download_done');
       job.updatedAt = Date.now();
       return;
     } catch (err) {
       try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
       const info = classifyUpdateError(err);
-      failures.push({ source: candidate.label || '下载线路', reason: info.reason, detail: info.detail });
+      failures.push({ source: candidate.label || st('server_download_source'), reason: info.reason, detail: info.detail });
       job.failedAttempts = failures.slice(-6);
-      job.message = i < candidates.length - 1 ? ((candidate.label || '当前线路') + '失败，正在切换线路') : info.reason;
+      job.message = i < candidates.length - 1 ? ((candidate.label || st('server_current_source')) + st('server_source_switching')) : info.reason;
       job.updatedAt = Date.now();
-      if (i >= candidates.length - 1) setUpdateJobError(job, err, '下载失败：' + info.reason);
+      if (i >= candidates.length - 1) setUpdateJobError(job, err, st('server_download_fail') + info.reason);
     }
   }
 }
@@ -1199,7 +1231,7 @@ async function downloadAndApplyPatch(job) {
     fs.mkdirSync(UPDATE_DOWNLOAD_DIR, { recursive: true });
     job.status = 'downloading';
     job.mode = 'patch';
-    job.message = '正在下载快速补丁';
+    job.message = st('server_downloading_patch');
     job.updatedAt = Date.now();
 
     const resp = await fetch(job.downloadUrl, {
@@ -1228,7 +1260,7 @@ async function downloadAndApplyPatch(job) {
     if (expectedPatchHash && sha256Hex(raw) !== expectedPatchHash) throw new Error('PATCH_PACKAGE_HASH_MISMATCH');
     const patch = normalizePatchPayload(JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')));
     job.version = patch.to;
-    job.message = '正在应用快速补丁';
+    job.message = st('server_applying_patch');
     job.progress = 88;
     job.updatedAt = Date.now();
     const changed = [];
@@ -1237,12 +1269,12 @@ async function downloadAndApplyPatch(job) {
     job.status = 'ready';
     job.progress = 100;
     job.restartRequired = patch.restartRequired;
-    job.message = patch.restartRequired ? '快速补丁已应用，重启后生效' : '快速补丁已应用';
+    job.message = patch.restartRequired ? st('server_patch_applied') : st('server_patch_applied_short');
     job.updatedAt = Date.now();
   } catch (e) {
     job.status = 'error';
     job.error = e.message || 'PATCH_APPLY_FAILED';
-    job.message = '快速补丁失败，可改用完整安装包';
+    job.message = st('server_patch_fallback');
     job.updatedAt = Date.now();
   }
 }
@@ -1250,7 +1282,7 @@ async function downloadPatchBufferFromCandidate(job, candidate, index, total) {
   ensureMirrorCanBeVerified(job, candidate);
   prepareUpdateJobAttempt(job, candidate, index, total);
   job.mode = 'patch';
-  job.message = '正在下载快速补丁';
+  job.message = st('server_downloading_patch');
   job.progress = 0;
   job.updatedAt = Date.now();
 
@@ -1301,7 +1333,7 @@ async function downloadAndApplyPatchWithMirrors(job) {
       const raw = await downloadPatchBufferFromCandidate(job, candidate, i, candidates.length);
       const patch = normalizePatchPayload(JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')));
       job.version = patch.to;
-      job.message = '正在应用快速补丁';
+      job.message = st('server_applying_patch');
       job.progress = 88;
       job.etaSeconds = 0;
       job.updatedAt = Date.now();
@@ -1311,16 +1343,16 @@ async function downloadAndApplyPatchWithMirrors(job) {
       job.status = 'ready';
       job.progress = 100;
       job.restartRequired = patch.restartRequired;
-      job.message = patch.restartRequired ? '快速补丁已应用，重启后生效' : '快速补丁已应用';
+      job.message = patch.restartRequired ? st('server_patch_applied') : st('server_patch_applied_short');
       job.updatedAt = Date.now();
       return;
     } catch (err) {
       const info = classifyUpdateError(err);
-      failures.push({ source: candidate.label || '下载线路', reason: info.reason, detail: info.detail });
+      failures.push({ source: candidate.label || st('server_download_source'), reason: info.reason, detail: info.detail });
       job.failedAttempts = failures.slice(-6);
-      job.message = i < candidates.length - 1 ? ((candidate.label || '当前线路') + '失败，正在切换线路') : info.reason;
+      job.message = i < candidates.length - 1 ? ((candidate.label || st('server_current_source')) + st('server_source_switching')) : info.reason;
       job.updatedAt = Date.now();
-      if (i >= candidates.length - 1) setUpdateJobError(job, err, '快速补丁失败：' + info.reason);
+      if (i >= candidates.length - 1) setUpdateJobError(job, err, st('server_patch_fail') + info.reason);
     }
   }
 }
@@ -1361,7 +1393,7 @@ function startUpdatePatchJob(info) {
     attempt: 0,
     attempts: downloadCandidates.length,
     failedAttempts: [],
-    message: '等待下载快速补丁',
+    message: st('server_waiting_patch'),
     createdAt: now,
     updatedAt: now,
     error: '',
@@ -1493,21 +1525,21 @@ function classifyNeteasePlaybackRestriction(lastData, loginInfo) {
   const code = Number(lastData && lastData.code);
   const freeTrial = lastData && lastData.freeTrialInfo;
   if (!loggedIn) {
-    return playbackRestriction('netease', 'login_required', '网易云需要登录后尝试获取完整播放地址', 'login', { code, fee });
+    return playbackRestriction('netease', 'login_required', st('server_netease_need_login'), 'login', { code, fee });
   }
   if (freeTrial) {
-    return playbackRestriction('netease', 'trial_only', '网易云仅返回试听片段，完整播放需要会员或购买', 'upgrade', { code, fee });
+    return playbackRestriction('netease', 'trial_only', st('server_netease_trial_only'), 'upgrade', { code, fee });
   }
   if (fee === 1) {
-    return playbackRestriction('netease', 'vip_required', '网易云歌曲需要 VIP 权限，当前无法获取完整播放地址', 'upgrade', { code, fee });
+    return playbackRestriction('netease', 'vip_required', st('server_netease_vip_required'), 'upgrade', { code, fee });
   }
   if (fee === 4 || fee === 8) {
-    return playbackRestriction('netease', 'paid_required', '网易云歌曲需要单曲、专辑购买或更高权限', 'purchase', { code, fee });
+    return playbackRestriction('netease', 'paid_required', st('server_netease_paid_required'), 'purchase', { code, fee });
   }
   if (code === 404 || code === 403) {
-    return playbackRestriction('netease', 'copyright_unavailable', '网易云版权暂不可播，换源或稍后重试会更稳', 'switch_source', { code, fee });
+    return playbackRestriction('netease', 'copyright_unavailable', st('server_netease_copyright'), 'switch_source', { code, fee });
   }
-  return playbackRestriction('netease', 'url_unavailable', '网易云没有返回可播放地址，可能是版权、会员或地区限制', loggedIn ? 'switch_source' : 'login', { code, fee });
+  return playbackRestriction('netease', 'url_unavailable', st('server_netease_url_unavailable'), loggedIn ? 'switch_source' : 'login', { code, fee });
 }
 function classifyQQPlaybackRestriction(info, session) {
   const hasSession = typeof session === 'object' ? !!session.hasSession : !!session;
@@ -1516,32 +1548,32 @@ function classifyQQPlaybackRestriction(info, session) {
   const code = Number((info && (info.result || info.code || info.errtype)) || 0);
   const lower = rawMsg.toLowerCase();
   if (!hasSession) {
-    return playbackRestriction('qq', 'login_required', 'QQ 音乐需要登录或授权后才能获取播放地址', 'login', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'login_required', st('server_qq_need_login'), 'login', { code, rawMessage: rawMsg });
   }
   if (!hasPlaybackKey && code === 104003) {
-    return playbackRestriction('qq', 'login_required', 'QQ 音乐当前只拿到了网页登录状态，还缺少播放授权，请重新打开官方 QQ 音乐登录窗口完成授权', 'login', { code, rawMessage: rawMsg, missingPlaybackKey: true });
+    return playbackRestriction('qq', 'login_required', st('server_qq_need_auth'), 'login', { code, rawMessage: rawMsg, missingPlaybackKey: true });
   }
   if (code === 104003) {
-    return playbackRestriction('qq', 'copyright_unavailable', 'QQ 音乐没有给当前版本返回播放地址，通常是版权、会员或官方版本限制，可以换一个搜索结果或切到网易云源', 'switch_source', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'copyright_unavailable', st('server_qq_copyright'), 'switch_source', { code, rawMessage: rawMsg });
   }
   if (/vip|会员|付费|购买|数字专辑|专辑|pay/.test(lower + rawMsg)) {
-    return playbackRestriction('qq', 'paid_required', 'QQ 音乐歌曲需要会员、购买或数字专辑权限', 'upgrade', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'paid_required', st('server_qq_paid_required'), 'upgrade', { code, rawMessage: rawMsg });
   }
   if (code && code !== 0) {
-    return playbackRestriction('qq', 'copyright_unavailable', rawMsg || 'QQ 音乐版权暂不可播或仅官方客户端可播', 'switch_source', { code, rawMessage: rawMsg });
+    return playbackRestriction('qq', 'copyright_unavailable', rawMsg || st('server_qq_copyright_fallback'), 'switch_source', { code, rawMessage: rawMsg });
   }
-  return playbackRestriction('qq', 'url_unavailable', 'QQ 音乐没有返回播放地址，可能受版权、会员或官方客户端限制', 'switch_source', { code, rawMessage: rawMsg });
+  return playbackRestriction('qq', 'url_unavailable', st('server_qq_url_unavailable'), 'switch_source', { code, rawMessage: rawMsg });
 }
 const NETEASE_QUALITY_CANDIDATES = [
-  { level: 'jymaster', br: 1999000, label: '超清母带', svip: true },
-  { level: 'hires',    br: 1999000, label: '高清臻音' },
-  { level: 'lossless', br: 1411000, label: '无损' },
-  { level: 'exhigh',   br: 999000,  label: '极高' },
-  { level: 'standard', br: 128000,  label: '标准' },
+  { level: 'jymaster', br: 1999000, label: st('quality_jymaster'), svip: true },
+  { level: 'hires',    br: 1999000, label: st('quality_hires') },
+  { level: 'lossless', br: 1411000, label: st('quality_lossless') },
+  { level: 'exhigh',   br: 999000,  label: st('quality_exhigh') },
+  { level: 'standard', br: 128000,  label: st('quality_standard') },
 ];
 const QQ_QUALITY_CANDIDATE_TEMPLATES = [
   { prefix: 'RS01', ext: '.flac', level: 'hires', label: 'Hi-Res FLAC' },
-  { prefix: 'F000', ext: '.flac', level: 'lossless', label: '无损 FLAC' },
+  { prefix: 'F000', ext: '.flac', level: 'lossless', label: st('quality_lossless_flac') },
   { prefix: 'M800', ext: '.mp3', level: 'exhigh', label: '320k MP3' },
   { prefix: 'M500', ext: '.mp3', level: 'standard', label: '128k MP3' },
   { prefix: 'C400', ext: '.m4a', level: 'aac', label: 'AAC/M4A' },
@@ -1788,19 +1820,19 @@ function clampNumber(value, min, max, fallback) {
 
 function openMeteoWeatherLabel(code) {
   code = Number(code);
-  if (code === 0) return '晴';
-  if (code === 1 || code === 2) return '少云';
-  if (code === 3) return '阴';
-  if (code === 45 || code === 48) return '雾';
-  if (code === 51 || code === 53 || code === 55) return '毛毛雨';
-  if (code === 56 || code === 57) return '冻雨';
-  if (code === 61 || code === 63 || code === 65) return '雨';
-  if (code === 66 || code === 67) return '冻雨';
-  if (code === 71 || code === 73 || code === 75 || code === 77) return '雪';
-  if (code === 80 || code === 81 || code === 82) return '阵雨';
-  if (code === 85 || code === 86) return '阵雪';
-  if (code === 95 || code === 96 || code === 99) return '雷雨';
-  return '天气';
+  if (code === 0) return st('weather_sunny');
+  if (code === 1 || code === 2) return st('weather_partly_cloudy');
+  if (code === 3) return st('weather_cloudy');
+  if (code === 45 || code === 48) return st('weather_fog');
+  if (code === 51 || code === 53 || code === 55) return st('weather_drizzle');
+  if (code === 56 || code === 57) return st('weather_freezing_rain');
+  if (code === 61 || code === 63 || code === 65) return st('weather_rain');
+  if (code === 66 || code === 67) return st('weather_freezing_rain');
+  if (code === 71 || code === 73 || code === 75 || code === 77) return st('weather_snow');
+  if (code === 80 || code === 81 || code === 82) return st('weather_shower');
+  if (code === 85 || code === 86) return st('weather_snow_shower');
+  if (code === 95 || code === 96 || code === 99) return st('weather_thunderstorm');
+  return st('weather_default');
 }
 
 function buildWeatherMood(weather, date) {
@@ -1823,8 +1855,8 @@ function buildWeatherMood(weather, date) {
 
   let mood = {
     key: 'clear',
-    title: '晴朗电台',
-    tagline: '让节奏亮一点，像窗边的光',
+    title: st('radio_clear_title'),
+    tagline: st('radio_clear_tagline'),
     energy: 0.62,
     warmth: 0.58,
     focus: 0.48,
@@ -1834,8 +1866,8 @@ function buildWeatherMood(weather, date) {
   if (isStorm) {
     mood = {
       key: 'storm',
-      title: '雷雨电台',
-      tagline: '低频更厚，适合把世界关小一点',
+      title: st('radio_storm_title'),
+      tagline: st('radio_storm_tagline'),
       energy: 0.46,
       warmth: 0.34,
       focus: 0.66,
@@ -1845,8 +1877,8 @@ function buildWeatherMood(weather, date) {
   } else if (isRain) {
     mood = {
       key: 'rain',
-      title: '雨天电台',
-      tagline: '留一点潮湿的空间给旋律',
+      title: st('radio_rain_title'),
+      tagline: st('radio_rain_tagline'),
       energy: 0.38,
       warmth: 0.42,
       focus: 0.64,
@@ -1856,8 +1888,8 @@ function buildWeatherMood(weather, date) {
   } else if (isSnow || feels <= 3) {
     mood = {
       key: 'snow',
-      title: '冷空气电台',
-      tagline: '干净、慢速、带一点冬天的颗粒感',
+      title: st('radio_snow_title'),
+      tagline: st('radio_snow_tagline'),
       energy: 0.34,
       warmth: 0.28,
       focus: 0.72,
@@ -1867,8 +1899,8 @@ function buildWeatherMood(weather, date) {
   } else if (feels >= 31 || humidity >= 78) {
     mood = {
       key: 'humid',
-      title: '闷热电台',
-      tagline: '降低密度，留出一点呼吸',
+      title: st('radio_humid_title'),
+      tagline: st('radio_humid_tagline'),
       energy: 0.48,
       warmth: 0.76,
       focus: 0.46,
@@ -1878,8 +1910,8 @@ function buildWeatherMood(weather, date) {
   } else if (isCloud) {
     mood = {
       key: 'cloudy',
-      title: '阴天电台',
-      tagline: '不急着明亮，先让声音变软',
+      title: st('radio_cloudy_title'),
+      tagline: st('radio_cloudy_tagline'),
       energy: 0.40,
       warmth: 0.46,
       focus: 0.58,
@@ -1890,18 +1922,18 @@ function buildWeatherMood(weather, date) {
 
   if (isNight) {
     mood.key += '-night';
-    mood.title = mood.key.startsWith('clear') ? '夜色电台' : mood.title.replace('电台', '夜听');
-    mood.tagline = '音量放低一点，让夜色参与编曲';
+    mood.title = mood.key.startsWith('clear') ? st('radio_night_title') : mood.title.replace('电台', '夜听');
+    mood.tagline = st('radio_night_tagline');
     mood.energy = Math.min(mood.energy, 0.42);
     mood.focus = Math.max(mood.focus, 0.68);
     mood.melancholy = Math.max(mood.melancholy, 0.52);
     mood.keywords = ['夜晚 R&B', 'late night jazz', 'ambient', 'lofi sleep', '夜跑 歌单'].concat(mood.keywords.slice(0, 3));
   } else if (isMorning) {
-    mood.title = mood.key.startsWith('rain') ? '雨晨电台' : '早晨电台';
+    mood.title = mood.key.startsWith('rain') ? st('radio_morning_rain_title') : st('radio_morning_title');
     mood.energy = Math.max(mood.energy, 0.52);
     mood.keywords = ['早晨 通勤', 'morning acoustic', '清晨 indie', '轻快 华语'].concat(mood.keywords.slice(0, 3));
   } else if (isDusk) {
-    mood.title = mood.key.startsWith('rain') ? '黄昏雨声' : '黄昏电台';
+    mood.title = mood.key.startsWith('rain') ? st('radio_dusk_rain_title') : st('radio_dusk_title');
     mood.melancholy = Math.max(mood.melancholy, 0.48);
     mood.keywords = ['黄昏 city pop', '日落 歌单', '落日飞车', 'soul pop'].concat(mood.keywords.slice(0, 3));
   }
@@ -2033,7 +2065,7 @@ function fallbackWeatherForRadio(params, err) {
       timezone: params.timezone || WEATHER_DEFAULT_LOCATION.timezone,
       fallback: true,
     },
-    label: '天气暂不可用',
+    label: st('weather_unavailable'),
     weatherCode: null,
     temperature: null,
     apparentTemperature: null,
@@ -2048,8 +2080,8 @@ function fallbackWeatherForRadio(params, err) {
     error: err && err.message || '',
     mood: {
       key: 'fallback',
-      title: '临时电台',
-      tagline: '天气暂时没有回来，先放一组稳妥的歌',
+      title: st('radio_temp_title'),
+      tagline: st('radio_temp_tagline'),
       energy: 0.54,
       warmth: 0.55,
       focus: 0.55,
@@ -2239,6 +2271,77 @@ function parseJSONText(text) {
   const raw = String(text || '').trim();
   const json = raw.replace(/^callback\(([\s\S]*)\);?$/, '$1');
   return JSON.parse(json);
+}
+
+async function getSpotifyAccessToken() {
+  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
+    const err = new Error('Spotify credentials are not configured');
+    err.code = 'SPOTIFY_NOT_CONFIGURED';
+    throw err;
+  }
+  if (spotifyTokenCache.token && Date.now() < spotifyTokenCache.expiresAt - 30000) {
+    return spotifyTokenCache.token;
+  }
+  const auth = Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64');
+  const text = await requestText(SPOTIFY_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + auth,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  }, 'grant_type=client_credentials');
+  const data = JSON.parse(text);
+  if (!data || !data.access_token) throw new Error('Spotify token response missing access_token');
+  spotifyTokenCache.token = data.access_token;
+  spotifyTokenCache.expiresAt = Date.now() + Math.max(60, Number(data.expires_in) || 3600) * 1000;
+  return spotifyTokenCache.token;
+}
+
+function mapSpotifyTrack(track) {
+  track = track || {};
+  const album = track.album || {};
+  const artists = Array.isArray(track.artists) ? track.artists : [];
+  const images = Array.isArray(album.images) ? album.images : [];
+  const cover = images[0] && images[0].url || '';
+  return {
+    provider: 'spotify',
+    source: 'spotify',
+    type: 'spotify',
+    id: track.id || '',
+    uri: track.uri || '',
+    name: track.name || '',
+    artist: artists.map(a => a && a.name).filter(Boolean).join(' / '),
+    artists: artists.map(a => ({ id: a && a.id || '', name: a && a.name || '' })).filter(a => a.name),
+    album: album.name || '',
+    duration: track.duration_ms || 0,
+    cover,
+    picUrl: cover,
+    previewUrl: track.preview_url || '',
+    preview_url: track.preview_url || '',
+    externalUrl: track.external_urls && track.external_urls.spotify || '',
+    playable: !!track.preview_url,
+    fee: 0,
+  };
+}
+
+async function handleSpotifySearch(keywords, limit) {
+  keywords = String(keywords || '').trim();
+  if (!keywords) return [];
+  const token = await getSpotifyAccessToken();
+  const u = new URL(SPOTIFY_SEARCH_URL);
+  u.searchParams.set('q', keywords);
+  u.searchParams.set('type', 'track');
+  u.searchParams.set('limit', String(Math.max(1, Math.min(30, Number(limit) || 10))));
+  u.searchParams.set('market', process.env.SPOTIFY_MARKET || 'US');
+  const text = await requestText(u.toString(), {
+    headers: {
+      Authorization: 'Bearer ' + token,
+      'User-Agent': UA,
+    },
+  });
+  const data = JSON.parse(text);
+  const items = data && data.tracks && Array.isArray(data.tracks.items) ? data.tracks.items : [];
+  return items.map(mapSpotifyTrack).filter(song => song.id && song.name);
 }
 
 async function qqMusicRequest(payload, opts) {
@@ -3261,6 +3364,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/language') {
+    const lang = url.searchParams.get('lang') || 'zh-CN';
+    loadServerLang(lang);
+    sendJSON(res, { ok: true, lang: serverLang });
+    return;
+  }
+
   if (pn === '/api/update/latest') {
     try {
       sendJSON(res, await fetchLatestUpdateInfo());
@@ -3396,7 +3506,7 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: err.message,
         weather: null,
-        radio: { title: '天气电台', subtitle: '天气暂时没有回来，可以先听今日推荐。', seedQueries: [], songs: [] },
+        radio: { title: st('weather_fallback'), subtitle: st('weather_fallback_hint'), seedQueries: [], songs: [] },
       }, 500);
     }
     return;
@@ -3432,6 +3542,28 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[QQSearch]', err);
       sendJSON(res, { provider: 'qq', error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/search') {
+    try {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Math.max(4, Math.min(30, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
+      const songs = await handleSpotifySearch(kw, limit);
+      sendJSON(res, { provider: 'spotify', configured: true, songs });
+    } catch (err) {
+      const notConfigured = err && err.code === 'SPOTIFY_NOT_CONFIGURED';
+      if (!notConfigured) console.error('[SpotifySearch]', err);
+      sendJSON(res, {
+        provider: 'spotify',
+        configured: false,
+        error: notConfigured ? 'SPOTIFY_NOT_CONFIGURED' : err.message,
+        message: notConfigured
+          ? 'Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to enable Spotify search.'
+          : 'Spotify search failed.',
+        songs: [],
+      }, notConfigured ? 200 : 500);
     }
     return;
   }
