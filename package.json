@@ -84,9 +84,11 @@
     }
   },
   "dependencies": {
+    "ffmpeg-static": "^5.3.0",
     "gsap": "^3.15.0",
     "mpg123-decoder": "^1.0.3",
-    "NeteaseCloudMusicApi": "^4.32.0"
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "youtubei.js": "^17.2.0"
   },
   "devDependencies": {
     "electron": "^42.4.1",
