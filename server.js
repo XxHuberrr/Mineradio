@@ -2649,6 +2649,24 @@ async function handleQQSearch(keywords, limit) {
   });
 }
 
+// QQ 对 Hi-Res/无损经常返回带 purl 却实际 404 的地址；用一个轻量 Range 探测确认能否真正拉到流
+function qqProbePlayable(targetUrl) {
+  return new Promise((resolve) => {
+    let mod;
+    try { mod = new URL(targetUrl).protocol === 'https:' ? https : http; }
+    catch (e) { return resolve(false); }
+    let settled = false;
+    const done = (ok) => { if (!settled) { settled = true; resolve(ok); } };
+    const req = mod.get(targetUrl, { headers: { ...QQ_HEADERS, Range: 'bytes=0-1' }, timeout: 4500 }, (r) => {
+      const ok = r.statusCode === 200 || r.statusCode === 206;
+      r.destroy();
+      done(ok);
+    });
+    req.on('timeout', () => { req.destroy(); done(false); });
+    req.on('error', () => done(false));
+  });
+}
+
 async function handleQQSongUrl(mid, mediaMid, qualityPreference) {
   const songmid = String(mid || '').trim();
   if (!songmid) return { provider: 'qq', url: '', error: 'MISSING_MID', message: 'Missing QQ song mid' };
@@ -2688,10 +2706,16 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference) {
   }, { cookie: true });
   const data = json && json.req_0 && json.req_0.data;
   const infos = (data && Array.isArray(data.midurlinfo)) ? data.midurlinfo : [];
-  const info = infos.find(item => item && item.purl) || infos[0];
+  const sip = (data && data.sip && data.sip[0]) || 'https://ws.stream.qqmusic.qq.com/';
+  // 按音质顺序在有 purl 的候选里挑「真正能拉到流(206)」的那个；Hi-Res 经常给 purl 却 404，需自动回退到可用音质
+  const purlCandidates = infos.filter(item => item && item.purl);
+  let info = null;
+  for (let ci = 0; ci < purlCandidates.length && ci < 4; ci++) {
+    if (await qqProbePlayable(sip + purlCandidates[ci].purl)) { info = purlCandidates[ci]; break; }
+  }
+  if (!info) info = purlCandidates[0] || infos[0];
   const purl = info && info.purl;
   if (purl) {
-    const sip = (data.sip && data.sip[0]) || 'https://ws.stream.qqmusic.qq.com/';
     const fileMeta = fileCandidates.find(item => item.filename === info.filename) || {};
     return {
       provider: 'qq',
