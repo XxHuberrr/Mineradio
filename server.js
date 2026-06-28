@@ -52,23 +52,35 @@ const crypto = require('crypto');
 const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
+const { spawn } = require('child_process');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+
+let FFMPEG_PATH = '';
+try { FFMPEG_PATH = require('ffmpeg-static') || ''; } catch (e) { FFMPEG_PATH = ''; }
+const YTDLP_BUNDLED_PATH = path.join(__dirname, 'bin', 'yt-dlp.exe');
+const YTDLP_CACHE_PATH = process.env.YTDLP_PATH || path.join(process.env.MINERADIO_TOOL_CACHE_DIR || 'D:\\MineradioCache\\bin', 'yt-dlp.exe');
+const YTDLP_DOWNLOAD_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
+const YOUTUBE_COOKIE_FILE = process.env.YOUTUBE_COOKIE_FILE || path.join(__dirname, '.youtube-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
 const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const YOUTUBE_AUDIO_CACHE_DIR = process.env.MINERADIO_YOUTUBE_AUDIO_CACHE_DIR || 'D:\\MineradioCache\\youtube-audio';
+const YOUTUBE_AUDIO_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
 const PATCH_ALLOWED_FILES = new Set(['server.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
+const youtubeAudioTranscodeJobs = new Map();
+let youtubeAudioCachePruneAt = 0;
 const UPDATE_FALLBACK_NOTES = [
   '电影镜头节奏更松',
   '音源失败自动换源',
@@ -184,6 +196,15 @@ catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+}
+
+let youtubeCookie = '';
+try { if (fs.existsSync(YOUTUBE_COOKIE_FILE)) youtubeCookie = fs.readFileSync(YOUTUBE_COOKIE_FILE, 'utf8').trim(); }
+catch (e) { youtubeCookie = ''; }
+function saveYoutubeCookie(c) {
+  youtubeCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  youtubeMusicUserClientPromise = null;
+  try { fs.writeFileSync(YOUTUBE_COOKIE_FILE, youtubeCookie); } catch (e) {}
 }
 
 // ---------- 工具 ----------
@@ -1555,6 +1576,15 @@ function normalizeQualityPreference(value) {
   if (['standard', 'normal', '128', '128k', 'std'].includes(raw)) return 'standard';
   return 'hires';
 }
+
+function normalizeYoutubeQualityPreference(value) {
+  const raw = String(value || '').toLowerCase().trim();
+  if (['youtube-low', 'yt-low', 'low', 'audio-low', 'bestefficiency', 'efficient', 'save', 'standard', 'normal', 'std', '50', '50k', '139'].includes(raw)) return 'low';
+  if (['youtube-auto', 'yt-auto', 'auto', 'default', ''].includes(raw)) return 'auto';
+  if (['youtube-high', 'yt-high', 'high', 'audio-high', 'best', 'medium', '128', '128k', '140', 'hires', 'lossless', 'exhigh', 'jymaster'].includes(raw)) return 'high';
+  return 'auto';
+}
+
 function qualityCandidatesFrom(target, candidates) {
   target = normalizeQualityPreference(target);
   let start = candidates.findIndex(item => item.level === target);
@@ -1737,6 +1767,13 @@ const QQ_HEADERS = {
   Referer: 'https://y.qq.com/',
   'User-Agent': UA,
 };
+const YOUTUBE_MUSIC_HEADERS = {
+  Referer: 'https://music.youtube.com/',
+  Origin: 'https://music.youtube.com',
+  'User-Agent': UA,
+};
+let youtubeMusicAnonClientPromise = null;
+let youtubeMusicUserClientPromise = null;
 
 function requestText(targetUrl, opts, body) {
   opts = opts || {};
@@ -2339,11 +2376,565 @@ async function qqGetJSON(targetUrl, params, opts) {
   return parseJSONText(text);
 }
 
+function youtubeCookieHasLogin(cookieText) {
+  const obj = parseCookieString(cookieText);
+  const accountId = obj.SID || obj.__Secure_1PSID || obj.__Secure_3PSID ||
+    obj['__Secure-1PSID'] || obj['__Secure-3PSID'] || obj.LOGIN_INFO || '';
+  const authToken = obj.SAPISID || obj.APISID || obj.SSID || obj.HSID ||
+    obj.__Secure_1PAPISID || obj.__Secure_3PAPISID ||
+    obj['__Secure-1PAPISID'] || obj['__Secure-3PAPISID'] || obj.LOGIN_INFO || '';
+  return !!(accountId && authToken);
+}
+
+function youtubeMusicClientOptions(authenticated) {
+  const options = {
+    lang: process.env.YOUTUBE_MUSIC_LANG || 'zh-CN',
+    location: process.env.YOUTUBE_MUSIC_LOCATION || 'US',
+  };
+  if (authenticated && youtubeCookie) options.cookie = youtubeCookie;
+  return options;
+}
+
+async function getYoutubeMusicClient(opts) {
+  opts = opts || {};
+  const authenticated = !!opts.authenticated && !!youtubeCookie;
+  if (authenticated) {
+    if (!youtubeMusicUserClientPromise) {
+      youtubeMusicUserClientPromise = import('youtubei.js')
+        .then(mod => mod.Innertube.create(youtubeMusicClientOptions(true)))
+        .catch(err => {
+          youtubeMusicUserClientPromise = null;
+          throw err;
+        });
+    }
+    return youtubeMusicUserClientPromise;
+  }
+  if (!youtubeMusicAnonClientPromise) {
+    youtubeMusicAnonClientPromise = import('youtubei.js')
+      .then(mod => mod.Innertube.create(youtubeMusicClientOptions(false)))
+      .catch(err => {
+        youtubeMusicAnonClientPromise = null;
+        throw err;
+      });
+  }
+  return youtubeMusicAnonClientPromise;
+}
+
+function youtubeText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value.text === 'string') return value.text.trim();
+  if (Array.isArray(value.runs)) return value.runs.map(run => run && (run.text || run.content || '')).join('').trim();
+  try {
+    const text = value.toString && value.toString();
+    return typeof text === 'string' && text !== '[object Object]' ? text.trim() : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function youtubeThumbnailUrl(thumbnails) {
+  const raw = thumbnails && thumbnails.contents ? thumbnails.contents : thumbnails;
+  const list = Array.isArray(raw) ? raw : [];
+  if (!list.length) return '';
+  const best = list.slice().sort((a, b) => {
+    const aw = Number(a && a.width) || 0;
+    const ah = Number(a && a.height) || 0;
+    const bw = Number(b && b.width) || 0;
+    const bh = Number(b && b.height) || 0;
+    return (bw * bh) - (aw * ah);
+  })[0];
+  return best && best.url || '';
+}
+
+function youtubeArtistsFromItem(item) {
+  const raw = (item && (item.artists || item.authors)) || [];
+  const artists = (Array.isArray(raw) ? raw : [])
+    .map(a => ({
+      id: a && (a.channel_id || a.id),
+      name: youtubeText(a && a.name),
+    }))
+    .filter(a => a.name);
+  if (artists.length) return artists;
+  const subtitle = youtubeText(item && item.subtitle);
+  const fallback = subtitle
+    .split(/\s+[·•]\s+|\s*\/\s*|\s*,\s*|、/)
+    .map(text => text.trim())
+    .filter(text => text && !/^(song|songs|video|videos|album|playlist|single|ep|artist|views?|次观看)$/i.test(text));
+  return fallback.length ? [{ name: fallback[0] }] : [];
+}
+
+function mapYoutubeMusicItem(item, sourceIndex) {
+  item = item || {};
+  const itemType = String(item.item_type || item.type || '').toLowerCase();
+  if (!item.id || !['song', 'video', 'non_music_track'].includes(itemType)) return null;
+  const artists = youtubeArtistsFromItem(item);
+  const album = item.album || {};
+  const thumbnails = item.thumbnails || item.thumbnail || [];
+  const seconds = Number(item.duration && item.duration.seconds) || 0;
+  return {
+    provider: 'youtube',
+    source: 'youtube',
+    type: 'youtube',
+    youtubeType: itemType,
+    id: item.id,
+    videoId: item.id,
+    name: youtubeText(item.title || item.name) || item.id,
+    artist: artists.map(a => a.name).join(' / '),
+    artists,
+    artistId: artists[0] && artists[0].id,
+    album: youtubeText(album.name || album.title),
+    cover: youtubeThumbnailUrl(thumbnails),
+    duration: seconds ? seconds * 1000 : 0,
+    fee: 0,
+    playable: true,
+    youtubeUrl: 'https://music.youtube.com/watch?v=' + encodeURIComponent(item.id),
+    sourceIndex: sourceIndex || 0,
+  };
+}
+
+function youtubeNumberFromText(text, trackOnly) {
+  const raw = String(text || '').replace(/,/g, '').trim();
+  if (!raw) return 0;
+  const trackMatch = raw.match(/([\d.]+)\s*(?:songs?|tracks?|videos?|首(?:歌曲|曲目|歌)?|曲目|支(?:视频|影片)?)/i);
+  if (trackMatch) return Math.round(Number(trackMatch[1]) || 0);
+  if (trackOnly) return 0;
+  const plain = raw.match(/[\d.]+/);
+  return plain ? Math.round(Number(plain[0]) || 0) : 0;
+}
+
+function youtubeViewCountFromText(text) {
+  const raw = String(text || '').replace(/,/g, '').trim();
+  if (!raw) return 0;
+  const match = raw.match(/([\d.]+)\s*(?:views?|次观看|次觀看|觀看|回視聴)/i);
+  return match ? Math.round(Number(match[1]) || 0) : 0;
+}
+
+function youtubePlaylistIdFromItem(item) {
+  item = item || {};
+  const endpoint = item.endpoint && item.endpoint.payload ? item.endpoint.payload : {};
+  return String(item.id || item.playlist_id || item.playlistId || endpoint.playlistId || endpoint.browseId || '').trim();
+}
+
+function youtubePlaylistCreator(item) {
+  item = item || {};
+  const direct = youtubeText(item.author && item.author.name) ||
+    youtubeText(item.authors && item.authors[0] && item.authors[0].name) ||
+    youtubeText(item.artists && item.artists[0] && item.artists[0].name);
+  if (direct) return direct;
+  const subtitle = youtubeText(item.subtitle);
+  const parts = subtitle.split(/[•路]/).map(part => part.trim()).filter(Boolean);
+  return parts.find(part => !youtubeNumberFromText(part, true) && !/playlist|song|track|video|播放列表|歌曲|曲目|视频/i.test(part)) || 'YouTube Music';
+}
+
+function mapYoutubePlaylistItem(item, kind) {
+  item = item || {};
+  const itemType = String(item.item_type || item.type || '').toLowerCase();
+  const id = youtubePlaylistIdFromItem(item);
+  const name = youtubeText(item.title || item.name);
+  if (!id || !name) return null;
+  if (itemType && !/playlist/.test(itemType) && !(item.item_count || item.song_count)) return null;
+  const subtitle = youtubeText(item.subtitle);
+  const count = youtubeNumberFromText(item.song_count || item.item_count || subtitle, false);
+  return {
+    provider: 'youtube',
+    source: 'youtube',
+    id,
+    name,
+    cover: youtubeThumbnailUrl(item.thumbnails || item.thumbnail),
+    trackCount: count,
+    playCount: youtubeViewCountFromText(item.views || subtitle),
+    creator: youtubePlaylistCreator(item),
+    subscribed: kind === 'library',
+    specialType: 0,
+  };
+}
+
+function collectYoutubePlaylistItems(value, out, seen, depth) {
+  if (!value || depth > 8) return out;
+  out = out || [];
+  seen = seen || new WeakSet();
+  if (Array.isArray(value)) {
+    value.forEach(item => collectYoutubePlaylistItems(item, out, seen, depth + 1));
+    return out;
+  }
+  if (typeof value !== 'object') return out;
+  if (seen.has(value)) return out;
+  seen.add(value);
+  if (mapYoutubePlaylistItem(value, 'library')) out.push(value);
+  ['contents', 'items', 'contents_memo', 'shelves'].forEach(key => {
+    if (value[key]) collectYoutubePlaylistItems(value[key], out, seen, depth + 1);
+  });
+  return out;
+}
+
+function normalizeYoutubePlaylistId(input) {
+  let value = String(input || '').trim();
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsed = new URL(value);
+      value = parsed.searchParams.get('list') || parsed.searchParams.get('playlist') || value;
+    } catch (e) {}
+  }
+  return value.replace(/^youtube:/i, '').trim();
+}
+
+function youtubePlaylistIdCandidates(input) {
+  const id = normalizeYoutubePlaylistId(input);
+  const candidates = [];
+  function push(value) {
+    value = String(value || '').trim();
+    if (value && !candidates.includes(value)) candidates.push(value);
+  }
+  push(id);
+  if (/^VL/i.test(id)) push(id.slice(2));
+  else push('VL' + id);
+  return candidates;
+}
+
+function mapYoutubePlaylistHeader(playlist, id, fallback, tracks) {
+  const header = playlist && playlist.header || {};
+  const subtitle = youtubeText(header.second_subtitle) || youtubeText(header.subtitle) || '';
+  const playableCount = tracks && tracks.length ? tracks.length : 0;
+  const trackCount = playableCount ||
+    youtubeNumberFromText(subtitle, true) ||
+    youtubeNumberFromText(header.song_count || header.item_count, false) ||
+    (fallback && fallback.trackCount) || 0;
+  const creator = youtubeText(header.strapline_text_one);
+  return {
+    provider: 'youtube',
+    source: 'youtube',
+    id,
+    name: youtubeText(header.title) || (fallback && fallback.name) || id,
+    cover: youtubeThumbnailUrl(header.thumbnail || playlist && playlist.background) || (fallback && fallback.cover) || '',
+    trackCount,
+    playCount: youtubeViewCountFromText(subtitle),
+    creator: creator && creator !== 'N/A' ? creator : ((fallback && fallback.creator) || 'YouTube Music'),
+  };
+}
+
+async function getYoutubeLoginInfo() {
+  const hasCookie = youtubeCookieHasLogin(youtubeCookie);
+  if (!hasCookie) {
+    return { provider: 'youtube', loggedIn: false, nickname: 'YouTube Music', userId: '', avatar: '', stale: false };
+  }
+  try {
+    const yt = await getYoutubeMusicClient({ authenticated: true });
+    if (yt && yt.session && yt.session.logged_in === false) {
+      return { provider: 'youtube', loggedIn: false, nickname: 'YouTube Music', userId: '', avatar: '', stale: true };
+    }
+    return { provider: 'youtube', loggedIn: true, nickname: 'YouTube Music', userId: '', avatar: '', stale: false };
+  } catch (e) {
+    console.warn('[YouTubeLogin] session check failed:', e.message);
+    return { provider: 'youtube', loggedIn: false, nickname: 'YouTube Music', userId: '', avatar: '', stale: true, error: e.message };
+  }
+}
+
+function collectYoutubeMusicItems(result) {
+  const shelves = [];
+  if (result && result.songs && Array.isArray(result.songs.contents)) shelves.push(result.songs);
+  if (result && result.videos && Array.isArray(result.videos.contents)) shelves.push(result.videos);
+  if (result && Array.isArray(result.contents)) {
+    result.contents.forEach(section => {
+      if (section && Array.isArray(section.contents)) shelves.push(section);
+    });
+  }
+  const items = [];
+  shelves.forEach(shelf => {
+    (shelf.contents || []).forEach(item => items.push(item));
+  });
+  return items;
+}
+
+async function handleYoutubeSearch(keywords, limit) {
+  const kw = String(keywords || '').trim();
+  if (!kw) return [];
+  const max = Math.max(4, Math.min(18, parseInt(limit || '10', 10) || 10));
+  console.log('[YouTubeMusicSearch]', kw, 'limit:', max);
+  const yt = await getYoutubeMusicClient();
+  let result;
+  try {
+    result = await yt.music.search(kw, { type: 'song' });
+  } catch (e) {
+    console.warn('[YouTubeMusicSearch] filtered search failed:', e.message);
+  }
+  let items = collectYoutubeMusicItems(result);
+  if (!items.length) {
+    result = await yt.music.search(kw);
+    items = collectYoutubeMusicItems(result);
+  }
+  const seen = new Set();
+  const songs = [];
+  items.forEach((item, i) => {
+    const song = mapYoutubeMusicItem(item, i);
+    if (!song || !song.name) return;
+    const key = song.videoId || song.id;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    songs.push(song);
+  });
+  return songs.slice(0, max);
+}
+
+async function handleYoutubeUserPlaylists() {
+  const info = await getYoutubeLoginInfo();
+  if (!info.loggedIn) return { loggedIn: false, provider: 'youtube', stale: !!info.stale, playlists: [] };
+  const yt = await getYoutubeMusicClient({ authenticated: true });
+  let library = await yt.music.getLibrary();
+  try {
+    const filter = (library.filters || []).find(name => /playlist|播放列表|歌单/i.test(String(name || '')));
+    if (filter) library = await library.applyFilter(filter);
+  } catch (e) {
+    console.warn('[YouTubeUserPlaylists] playlist filter skipped:', e.message);
+  }
+
+  const rawItems = [];
+  collectYoutubePlaylistItems(library.contents || library, rawItems, new WeakSet(), 0);
+  let page = library;
+  for (let guard = 0; page && page.has_continuation && guard < 8; guard++) {
+    try {
+      page = await page.getContinuation();
+      collectYoutubePlaylistItems(page && page.contents, rawItems, new WeakSet(), 0);
+    } catch (e) {
+      console.warn('[YouTubeUserPlaylists] continuation skipped:', e.message);
+      break;
+    }
+  }
+
+  const seen = new Set();
+  const playlists = rawItems
+    .map(item => mapYoutubePlaylistItem(item, 'library'))
+    .filter(pl => {
+      if (!pl || !pl.id || !pl.name || seen.has(pl.id)) return false;
+      seen.add(pl.id);
+      return true;
+    });
+  return { loggedIn: true, provider: 'youtube', playlists };
+}
+
+async function handleYoutubePlaylistTracks(id) {
+  const candidates = youtubePlaylistIdCandidates(id);
+  if (!candidates.length) return { provider: 'youtube', error: 'Missing YouTube playlist id', tracks: [] };
+  const clients = [];
+  if (youtubeCookieHasLogin(youtubeCookie)) clients.push({ authenticated: true });
+  clients.push({ authenticated: false });
+
+  let playlist = null;
+  let resolvedId = candidates[0];
+  let lastError = null;
+  for (const clientOpts of clients) {
+    let yt;
+    try {
+      yt = await getYoutubeMusicClient(clientOpts);
+    } catch (e) {
+      lastError = e;
+      continue;
+    }
+    for (const candidate of candidates) {
+      try {
+        playlist = await yt.music.getPlaylist(candidate);
+        resolvedId = candidate;
+        break;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (playlist) break;
+  }
+  if (!playlist) {
+    return {
+      provider: 'youtube',
+      error: (lastError && lastError.message) || 'YOUTUBE_PLAYLIST_UNAVAILABLE',
+      tracks: [],
+    };
+  }
+
+  const rawTracks = [];
+  let page = playlist;
+  for (let guard = 0; page && guard < 20; guard++) {
+    (page.items || page.contents || []).forEach(item => rawTracks.push(item));
+    if (!page.has_continuation) break;
+    try {
+      page = await page.getContinuation();
+    } catch (e) {
+      console.warn('[YouTubePlaylistTracks] continuation skipped:', e.message);
+      break;
+    }
+  }
+
+  const seen = new Set();
+  const tracks = rawTracks
+    .map((item, index) => mapYoutubeMusicItem(item, index))
+    .filter(song => {
+      const key = song && (song.videoId || song.id);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return {
+    loggedIn: youtubeCookieHasLogin(youtubeCookie),
+    provider: 'youtube',
+    playlist: mapYoutubePlaylistHeader(playlist, resolvedId, { id: candidates[0] }, tracks),
+    tracks,
+  };
+}
+
+function classifyYoutubePlaybackRestriction(err, playability) {
+  const status = String(playability && playability.status || '').toUpperCase();
+  const reason = String(playability && (playability.reason || playability.message) || err && err.message || '').trim();
+  if (status === 'LOGIN_REQUIRED' || /login|sign.?in|age/i.test(reason)) {
+    return playbackRestriction('youtube', 'login_required', 'YouTube Music 需要登录或年龄验证，当前无法在本地取到可播放音频', '', { rawMessage: reason });
+  }
+  if (status === 'UNPLAYABLE' || /unavailable|region|country|copyright|private/i.test(reason)) {
+    return playbackRestriction('youtube', 'copyright_unavailable', reason || 'YouTube Music 当前地区或版权暂不可播，可以换一个搜索结果或切到其它音源', 'switch_source', { rawMessage: reason });
+  }
+  return playbackRestriction('youtube', 'url_unavailable', reason || 'YouTube Music 没有返回可播放音频地址', 'switch_source', { rawMessage: reason });
+}
+
+function youtubeAudioQualityLabel(format) {
+  const mime = String(format && format.mime_type || '').toLowerCase();
+  const codec = /opus/.test(mime) ? 'Opus' : (/mp4a|m4a/.test(mime) ? 'AAC' : 'Audio');
+  const br = Number(format && (format.bitrate || format.average_bitrate)) || 0;
+  return br ? ('YouTube Music ' + codec + ' · ' + Math.round(br / 1000) + ' kbps') : ('YouTube Music ' + codec);
+}
+
+function youtubeQualityLevelForFormat(format) {
+  const itag = Number(format && format.itag) || 0;
+  const br = Number(format && (format.bitrate || format.average_bitrate)) || 0;
+  const audioQuality = String(format && format.audio_quality || '').toUpperCase();
+  if (itag === 139 || br && br < 80000 || /LOW|ULTRALOW/.test(audioQuality)) return 'low';
+  return 'high';
+}
+
+function youtubeStreamingQualityCandidates(preference) {
+  const requested = normalizeYoutubeQualityPreference(preference);
+  if (requested === 'low') {
+    return [
+      { level: 'low', quality: 'bestefficiency' },
+      { level: 'high', quality: 'best' },
+    ];
+  }
+  if (requested === 'high') {
+    return [
+      { level: 'high', quality: 'best' },
+      { level: 'low', quality: 'bestefficiency' },
+    ];
+  }
+  return [
+    { level: 'high', quality: 'best' },
+    { level: 'low', quality: 'bestefficiency' },
+  ];
+}
+
+function pickYoutubeAudioFormat(formats, preference) {
+  const requested = normalizeYoutubeQualityPreference(preference);
+  const list = (formats || [])
+    .filter(f => f && f.has_audio && !f.has_video && f.url)
+    .sort((a, b) => (Number(b.bitrate || b.average_bitrate) || 0) - (Number(a.bitrate || a.average_bitrate) || 0));
+  if (!list.length) return null;
+  if (requested === 'low') return list.slice().sort((a, b) => (Number(a.bitrate || a.average_bitrate) || 0) - (Number(b.bitrate || b.average_bitrate) || 0))[0] || null;
+  return list[0] || null;
+}
+
+async function handleYoutubeSongUrl(videoId, qualityPreference) {
+  const id = String(videoId || '').trim();
+  if (!id) return { provider: 'youtube', url: '', playable: false, error: 'MISSING_VIDEO_ID', message: 'Missing YouTube Music video id' };
+  const requestedQuality = normalizeYoutubeQualityPreference(qualityPreference);
+  const yt = await getYoutubeMusicClient();
+  let format = null;
+  let playability = null;
+  let lastError = null;
+  try {
+    const info = await yt.getBasicInfo(id, { client: 'IOS' });
+    playability = info && info.playability_status;
+    const formats = [
+      ...((info && info.streaming_data && info.streaming_data.formats) || []),
+      ...((info && info.streaming_data && info.streaming_data.adaptive_formats) || []),
+    ];
+    format = pickYoutubeAudioFormat(formats, requestedQuality);
+  } catch (innerErr) {
+    lastError = innerErr;
+  }
+  if (!format || !format.url) {
+    for (const candidate of youtubeStreamingQualityCandidates(requestedQuality)) {
+      try {
+        format = await yt.getStreamingData(id, { client: 'IOS', type: 'audio', quality: candidate.quality, format: 'any' });
+        if (format && format.url) break;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+  if (!format) {
+    const restriction = classifyYoutubePlaybackRestriction(lastError, playability);
+    return {
+      provider: 'youtube',
+      url: '',
+      playable: false,
+      error: 'YOUTUBE_URL_UNAVAILABLE',
+      reason: restriction.category,
+      message: restriction.message,
+      restriction,
+      requestedQuality: 'youtube-' + requestedQuality,
+    };
+  }
+  const directUrl = format && format.url;
+  if (!directUrl) {
+    const restriction = classifyYoutubePlaybackRestriction(null, playability);
+    return {
+      provider: 'youtube',
+      url: '',
+      playable: false,
+      error: 'YOUTUBE_URL_UNAVAILABLE',
+      reason: restriction.category,
+      message: restriction.message,
+      restriction,
+      requestedQuality: 'youtube-' + requestedQuality,
+    };
+  }
+  const resolvedQuality = youtubeQualityLevelForFormat(format);
+  return {
+    provider: 'youtube',
+    url: directUrl,
+    playable: true,
+    trial: false,
+    level: 'youtube-' + resolvedQuality,
+    quality: youtubeAudioQualityLabel(format),
+    br: Number(format.bitrate || format.average_bitrate) || 0,
+    itag: format.itag,
+    mimeType: format.mime_type || '',
+    contentLength: format.content_length || 0,
+    requestedQuality: 'youtube-' + requestedQuality,
+    youtubeQuality: resolvedQuality,
+  };
+}
+
+async function handleYoutubeLyric(videoId) {
+  const id = String(videoId || '').trim();
+  if (!id) return { provider: 'youtube', lyric: '', yrc: '', unavailable: true };
+  try {
+    const yt = await getYoutubeMusicClient({ authenticated: youtubeCookieHasLogin(youtubeCookie) });
+    const data = await yt.music.getLyrics(id);
+    const text = youtubeText(data && (data.description || data.contents || data))
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .join('\n');
+    if (!text || /lyrics unavailable|lyrics not available|no lyrics|instrumental/i.test(text)) {
+      return { provider: 'youtube', lyric: '', yrc: '', unavailable: true };
+    }
+    return { provider: 'youtube', lyric: text, yrc: '', unavailable: false };
+  } catch (e) {
+    return { provider: 'youtube', lyric: '', yrc: '', unavailable: true };
+  }
+}
+
 function audioProxyHeadersFor(audioUrl, range) {
   const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/' };
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
+    if (host.includes('googlevideo.com') || host.includes('youtube.com')) Object.assign(headers, YOUTUBE_MUSIC_HEADERS);
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
@@ -2358,6 +2949,481 @@ function audioContentTypeForUrl(audioUrl, upstreamType) {
   if (/\.ogg$/.test(pathname)) return 'audio/ogg';
   if (/\.wav$/.test(pathname)) return 'audio/wav';
   return upstreamType || 'audio/mpeg';
+}
+
+function isYoutubeAudioUrl(audioUrl) {
+  try {
+    const host = new URL(audioUrl).hostname.toLowerCase();
+    return host.includes('googlevideo.com') || host.endsWith('youtube.com') || host.endsWith('.youtube.com');
+  } catch (e) {
+    return false;
+  }
+}
+
+function youtubeAudioProxyError(message, status) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function assertYoutubeAudioProxyReady(audioUrl) {
+  if (!FFMPEG_PATH) throw youtubeAudioProxyError('ffmpeg is not available', 500);
+  if (!/^https?:\/\//i.test(String(audioUrl || '')) || !isYoutubeAudioUrl(audioUrl)) {
+    throw youtubeAudioProxyError('Invalid YouTube audio url', 400);
+  }
+}
+
+function youtubeAudioProxyUrl(audioUrl, opts) {
+  opts = opts || {};
+  const params = new URLSearchParams();
+  params.set('url', audioUrl);
+  if (opts.videoId) params.set('videoId', opts.videoId);
+  if (opts.quality) params.set('quality', opts.quality);
+  if (opts.durationSec) params.set('duration', String(opts.durationSec));
+  return '/api/youtube/audio?' + params.toString();
+}
+
+function youtubeTranscodeBitrate(opts) {
+  const quality = normalizeYoutubeQualityPreference(opts && (opts.quality || opts.qualityPreference));
+  if (quality === 'low') return '96k';
+  if (quality === 'high') return '192k';
+  return '160k';
+}
+
+let youtubeDlpInstallPromise = null;
+
+function isUsableYoutubeDlpFile(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && stat.size > 1024 * 1024;
+  } catch (e) {
+    return false;
+  }
+}
+
+function findYoutubeDlpPathSync() {
+  const candidates = [process.env.YTDLP_PATH, YTDLP_BUNDLED_PATH, YTDLP_CACHE_PATH].filter(Boolean);
+  return candidates.find(isUsableYoutubeDlpFile) || '';
+}
+
+function youtubeDlpAvailable() {
+  return !!findYoutubeDlpPathSync();
+}
+
+async function downloadYoutubeDlp() {
+  const targetPath = YTDLP_CACHE_PATH;
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  const tmpPath = targetPath + '.' + process.pid + '-' + Date.now() + '.tmp';
+  const response = await fetch(YTDLP_DOWNLOAD_URL, {
+    headers: {
+      'User-Agent': UA,
+      Accept: 'application/octet-stream',
+    },
+  });
+  if (!response.ok || !response.body) throw new Error(`yt-dlp download failed ${response.status} ${response.statusText || ''}`.trim());
+
+  const output = fs.createWriteStream(tmpPath, { flags: 'w' });
+  try {
+    const reader = response.body.getReader();
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      if (!output.write(chunk.value)) await once(output, 'drain');
+    }
+    await new Promise((resolve, reject) => output.end(err => err ? reject(err) : resolve()));
+    const stat = fs.statSync(tmpPath);
+    if (!stat.isFile() || stat.size <= 1024 * 1024) throw new Error('yt-dlp download was empty');
+    fs.renameSync(tmpPath, targetPath);
+    return targetPath;
+  } catch (err) {
+    try { output.destroy(); } catch (e) {}
+    try { fs.unlinkSync(tmpPath); } catch (e) {}
+    throw err;
+  }
+}
+
+async function ensureYoutubeDlpPath() {
+  const existing = findYoutubeDlpPathSync();
+  if (existing) return existing;
+  if (!youtubeDlpInstallPromise) {
+    youtubeDlpInstallPromise = downloadYoutubeDlp().finally(() => {
+      youtubeDlpInstallPromise = null;
+    });
+  }
+  return youtubeDlpInstallPromise;
+}
+
+function youtubeDlpFormat(opts) {
+  const quality = normalizeYoutubeQualityPreference(opts && (opts.quality || opts.qualityPreference));
+  if (quality === 'low') return 'worstaudio/bestaudio';
+  return 'bestaudio/best';
+}
+
+function youtubeDlpTargetUrl(opts) {
+  const videoId = String(opts && opts.videoId || '').trim();
+  return videoId ? ('https://music.youtube.com/watch?v=' + encodeURIComponent(videoId)) : '';
+}
+
+async function feedYoutubeAudioFromYtDlp(child, opts) {
+  opts = opts || {};
+  const targetUrl = youtubeDlpTargetUrl(opts);
+  if (!targetUrl) throw new Error('Missing YouTube video id for yt-dlp');
+  const ytdlpPath = await ensureYoutubeDlpPath();
+  const args = [
+    '--no-playlist',
+    '--no-warnings',
+    '--quiet',
+    '--no-cache-dir',
+    '-f', youtubeDlpFormat(opts),
+    '-o', '-',
+    '--add-header', 'Referer:https://music.youtube.com/',
+    '--add-header', `User-Agent:${UA}`,
+  ];
+  if (youtubeCookie) args.push('--add-header', `Cookie:${youtubeCookie}`);
+  args.push(targetUrl);
+
+  let stderr = '';
+  const downloader = spawn(ytdlpPath, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const stopDownloader = () => {
+    try { downloader.kill('SIGKILL'); } catch (e) {}
+  };
+  child.stdin.on('error', stopDownloader);
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    function done(err) {
+      if (settled) return;
+      settled = true;
+      child.stdin.removeListener('error', stopDownloader);
+      if (err) reject(err);
+      else resolve();
+    }
+    downloader.on('error', done);
+    downloader.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+      if (stderr.length > 2400) stderr = stderr.slice(-2400);
+    });
+    downloader.stdout.on('data', chunk => {
+      if (child.stdin.destroyed) {
+        stopDownloader();
+        return;
+      }
+      if (!child.stdin.write(chunk)) {
+        downloader.stdout.pause();
+        child.stdin.once('drain', () => downloader.stdout.resume());
+      }
+    });
+    downloader.stdout.on('end', () => {
+      try { child.stdin.end(); } catch (e) {}
+    });
+    downloader.on('close', code => {
+      if (code) done(new Error(`yt-dlp exited ${code}: ${stderr.trim()}`));
+      else done();
+    });
+  });
+}
+
+function youtubeAudioContentLength(audioUrl) {
+  try {
+    const len = Number(new URL(audioUrl).searchParams.get('clen')) || 0;
+    return len > 0 ? len : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function contentRangeTotal(value) {
+  const match = String(value || '').match(/\/(\d+)\s*$/);
+  return match ? (Number(match[1]) || 0) : 0;
+}
+
+function ensureYoutubeAudioCacheDir() {
+  fs.mkdirSync(YOUTUBE_AUDIO_CACHE_DIR, { recursive: true });
+  return YOUTUBE_AUDIO_CACHE_DIR;
+}
+
+function youtubeAudioCacheKey(audioUrl, opts) {
+  opts = opts || {};
+  const videoId = String(opts.videoId || '').trim();
+  if (videoId) return 'yt:' + videoId + ':' + normalizeYoutubeQualityPreference(opts.quality || opts.qualityPreference || '');
+  return String(audioUrl || '');
+}
+
+function youtubeAudioCacheFile(audioUrl, opts) {
+  const hash = crypto.createHash('sha1').update(youtubeAudioCacheKey(audioUrl, opts)).digest('hex');
+  return path.join(ensureYoutubeAudioCacheDir(), hash + '.mp3');
+}
+
+function isUsableYoutubeAudioCache(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && stat.size > 4096;
+  } catch (e) {
+    return false;
+  }
+}
+
+function maybePruneYoutubeAudioCache() {
+  const now = Date.now();
+  if (now < youtubeAudioCachePruneAt) return;
+  youtubeAudioCachePruneAt = now + 30 * 60 * 1000;
+  setTimeout(() => {
+    try {
+      const dir = ensureYoutubeAudioCacheDir();
+      const files = fs.readdirSync(dir)
+        .filter(name => /\.mp3$/i.test(name))
+        .map(name => {
+          const file = path.join(dir, name);
+          const stat = fs.statSync(file);
+          return { file, size: stat.size, mtimeMs: stat.mtimeMs };
+        })
+        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+      let total = files.reduce((sum, item) => sum + item.size, 0);
+      for (let i = files.length - 1; i >= 0 && total > YOUTUBE_AUDIO_CACHE_MAX_BYTES; i--) {
+        total -= files[i].size;
+        try { fs.unlinkSync(files[i].file); } catch (e) {}
+      }
+    } catch (e) {}
+  }, 0);
+}
+
+function parseByteRange(rangeHeader, size) {
+  const match = String(rangeHeader || '').match(/^bytes=(\d*)-(\d*)$/i);
+  if (!match || !size) return null;
+  let start;
+  let end;
+  if (match[1] === '' && match[2] === '') return null;
+  if (match[1] === '') {
+    const suffix = Number(match[2]) || 0;
+    if (suffix <= 0) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === '' ? size - 1 : Number(match[2]);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
+
+function serveYoutubeAudioCache(req, res, filePath, opts) {
+  opts = opts || {};
+  const stat = fs.statSync(filePath);
+  const size = stat.size;
+  const durationSec = Math.max(0, Number(opts.durationSec) || 0);
+  const baseHeaders = {
+    'Content-Type': 'audio/mpeg',
+    'Access-Control-Allow-Origin': '*',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, max-age=3600',
+    'X-Mineradio-Audio-Proxy': 'youtube-ffmpeg-cache',
+  };
+  if (durationSec > 0) baseHeaders['X-Content-Duration'] = String(durationSec);
+
+  const range = parseByteRange(req.headers.range, size);
+  if (req.headers.range && !range) {
+    res.writeHead(416, {
+      ...baseHeaders,
+      'Content-Range': 'bytes */' + size,
+      'Content-Length': '0',
+    });
+    res.end();
+    return;
+  }
+
+  const start = range ? range.start : 0;
+  const end = range ? range.end : size - 1;
+  const status = range ? 206 : 200;
+  const headers = {
+    ...baseHeaders,
+    'Content-Length': String(end - start + 1),
+  };
+  if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  const stream = fs.createReadStream(filePath, { start, end });
+  stream.on('error', err => {
+    console.warn('[YouTubeAudioCache] stream failed:', err.message);
+    if (!res.destroyed) res.end();
+  });
+  res.on('close', () => {
+    try { stream.destroy(); } catch (e) {}
+  });
+  stream.pipe(res);
+}
+
+async function refreshYoutubeAudioUrlForProxy(opts) {
+  opts = opts || {};
+  const videoId = String(opts.videoId || '').trim();
+  if (!videoId) return '';
+  const info = await handleYoutubeSongUrl(videoId, opts.quality || opts.qualityPreference || '');
+  return info && info.url ? info.url : '';
+}
+
+async function feedYoutubeAudioToFfmpeg(child, audioUrl, opts) {
+  opts = opts || {};
+  let currentUrl = audioUrl;
+  let start = 0;
+  let total = youtubeAudioContentLength(currentUrl);
+  const chunkSize = 1024 * 1024;
+  let refreshAttempts = 0;
+  while (true) {
+    const end = total ? Math.min(total - 1, start + chunkSize - 1) : start + chunkSize - 1;
+    const range = `bytes=${start}-${end}`;
+    let up = await fetch(currentUrl, { headers: audioProxyHeadersFor(currentUrl, range) });
+    if ((!up.ok || !up.body) && (up.status === 403 || up.status === 410) && refreshAttempts < 2) {
+      const nextUrl = await refreshYoutubeAudioUrlForProxy(opts);
+      if (nextUrl && nextUrl !== currentUrl) {
+        refreshAttempts++;
+        currentUrl = nextUrl;
+        total = youtubeAudioContentLength(currentUrl) || total;
+        up = await fetch(currentUrl, { headers: audioProxyHeadersFor(currentUrl, range) });
+      }
+    }
+    if (!up.ok || !up.body) throw new Error(`upstream ${up.status} ${up.statusText || ''}`.trim());
+    const contentRange = up.headers.get('content-range');
+    if (!total) total = contentRangeTotal(contentRange);
+    const reader = up.body.getReader();
+    let received = 0;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      received += chunk.value.byteLength;
+      if (!child.stdin.destroyed && !child.stdin.write(chunk.value)) await once(child.stdin, 'drain');
+    }
+    if (!received) break;
+    start += received;
+    if (total && start >= total) break;
+    if (up.status === 200 && !contentRange) break;
+  }
+  try { child.stdin.end(); } catch (e) {}
+}
+
+async function transcodeYoutubeAudioToCache(audioUrl, finalPath, opts) {
+  opts = opts || {};
+  maybePruneYoutubeAudioCache();
+  if (isUsableYoutubeAudioCache(finalPath)) return finalPath;
+  const tmpPath = finalPath + '.' + process.pid + '-' + Date.now() + '.tmp';
+  const args = [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-i', 'pipe:0',
+    '-map', '0:a:0',
+    '-vn',
+    '-f', 'mp3',
+    '-codec:a', 'libmp3lame',
+    '-b:a', youtubeTranscodeBitrate(opts),
+    '-write_xing', '1',
+    '-id3v2_version', '3',
+    'pipe:1',
+  ];
+  let stderr = '';
+  const child = spawn(FFMPEG_PATH, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const output = fs.createWriteStream(tmpPath, { flags: 'w' });
+
+  try {
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      function done(err) {
+        if (settled) return;
+        settled = true;
+        if (err) {
+          try { child.kill('SIGKILL'); } catch (e) {}
+          try { output.destroy(); } catch (e) {}
+          reject(err);
+          return;
+        }
+        output.end(resolve);
+      }
+      child.stdout.on('data', chunk => {
+        if (!output.write(chunk)) child.stdout.pause();
+      });
+      output.on('drain', () => child.stdout.resume());
+      output.on('error', done);
+      child.stdin.on('error', () => {});
+      child.stderr.on('data', chunk => {
+        stderr += chunk.toString();
+        if (stderr.length > 2400) stderr = stderr.slice(-2400);
+      });
+      child.on('error', done);
+      child.on('close', code => {
+        if (code) done(new Error(`ffmpeg exited ${code}: ${stderr.trim()}`));
+        else done();
+      });
+      const feedPromise = opts.videoId
+        ? feedYoutubeAudioFromYtDlp(child, opts)
+        : feedYoutubeAudioToFfmpeg(child, audioUrl, opts);
+      feedPromise.catch(done);
+    });
+    const stat = fs.statSync(tmpPath);
+    if (!stat.isFile() || stat.size <= 4096) throw new Error('empty ffmpeg output');
+    fs.renameSync(tmpPath, finalPath);
+    return finalPath;
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch (e) {}
+    throw err;
+  }
+}
+
+async function getYoutubeTranscodedAudioFile(audioUrl, opts) {
+  opts = opts || {};
+  const filePath = youtubeAudioCacheFile(audioUrl, opts);
+  if (isUsableYoutubeAudioCache(filePath)) {
+    try { fs.utimesSync(filePath, new Date(), new Date()); } catch (e) {}
+    maybePruneYoutubeAudioCache();
+    return filePath;
+  }
+  let job = youtubeAudioTranscodeJobs.get(filePath);
+  if (!job) {
+    job = transcodeYoutubeAudioToCache(audioUrl, filePath, opts)
+      .finally(() => youtubeAudioTranscodeJobs.delete(filePath));
+    youtubeAudioTranscodeJobs.set(filePath, job);
+  }
+  return job;
+}
+
+async function prepareYoutubeAudioProxy(audioUrl, opts) {
+  opts = opts || {};
+  assertYoutubeAudioProxyReady(audioUrl);
+  const filePath = await getYoutubeTranscodedAudioFile(audioUrl, opts);
+  const stat = fs.statSync(filePath);
+  return {
+    provider: 'youtube',
+    ready: true,
+    url: youtubeAudioProxyUrl(audioUrl, opts),
+    size: stat.size,
+    duration: Math.max(0, Number(opts.durationSec) || 0),
+    proxy: 'youtube-ffmpeg-cache',
+    downloader: youtubeDlpAvailable() && opts.videoId ? 'yt-dlp' : 'youtube-range',
+  };
+}
+
+async function streamYoutubeAudioTranscode(req, res, audioUrl, opts) {
+  opts = opts || {};
+  try {
+    assertYoutubeAudioProxyReady(audioUrl);
+  } catch (err) {
+    const status = err && err.status ? err.status : 500;
+    res.writeHead(status, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(err && err.message ? err.message : 'YouTube audio proxy is not available');
+    return;
+  }
+
+  try {
+    const filePath = await getYoutubeTranscodedAudioFile(audioUrl, opts);
+    serveYoutubeAudioCache(req, res, filePath, opts);
+  } catch (err) {
+    console.warn('[YouTubeAudioTranscode] cache failed:', err.message);
+    if (!res.headersSent) res.writeHead(500, { 'Access-Control-Allow-Origin': '*' });
+    if (!res.destroyed) res.end();
+  }
 }
 
 function mapQQPlaylist(pl, kind) {
@@ -3436,6 +4502,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/youtube/search') {
+    try {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Math.max(4, Math.min(18, parseInt(url.searchParams.get('limit') || '10', 10) || 10));
+      const songs = await handleYoutubeSearch(kw, limit);
+      sendJSON(res, { provider: 'youtube', songs });
+    } catch (err) {
+      console.error('[YouTubeMusicSearch]', err);
+      sendJSON(res, { provider: 'youtube', error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qq/song/url') {
     try {
       const mid = url.searchParams.get('mid') || url.searchParams.get('id') || '';
@@ -3446,6 +4525,19 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[QQSongUrl]', err);
       sendJSON(res, { provider: 'qq', url: '', playable: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/youtube/song/url') {
+    try {
+      const videoId = url.searchParams.get('videoId') || url.searchParams.get('id') || '';
+      const quality = url.searchParams.get('quality') || '';
+      const info = await handleYoutubeSongUrl(videoId, quality);
+      sendJSON(res, info);
+    } catch (err) {
+      console.error('[YouTubeMusicSongUrl]', err);
+      sendJSON(res, { provider: 'youtube', url: '', playable: false, error: err.message }, 500);
     }
     return;
   }
@@ -3464,7 +4556,78 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/youtube/lyric') {
+    try {
+      const videoId = url.searchParams.get('videoId') || url.searchParams.get('id') || '';
+      const data = await handleYoutubeLyric(videoId);
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[YouTubeMusicLyric]', err);
+      sendJSON(res, { provider: 'youtube', error: err.message, lyric: '', yrc: '' }, 500);
+    }
+    return;
+  }
+
   // ---------- 歌曲URL ----------
+  if (pn === '/api/youtube/login/status') {
+    try {
+      const info = await getYoutubeLoginInfo();
+      sendJSON(res, info);
+    } catch (err) {
+      console.error('[YouTubeLoginStatus]', err);
+      sendJSON(res, { provider: 'youtube', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/youtube/login/cookie') {
+    try {
+      const body = await readRequestBody(req);
+      const raw = body.cookie || body.data || body.text || '';
+      const normalized = normalizeCookieHeader(raw) || rawCookieFallback(raw);
+      if (!youtubeCookieHasLogin(normalized)) {
+        sendJSON(res, { provider: 'youtube', loggedIn: false, error: 'INVALID_YOUTUBE_COOKIE', message: 'YouTube cookie missing Google login tokens' }, 400);
+        return;
+      }
+      saveYoutubeCookie(normalized);
+      const info = await getYoutubeLoginInfo();
+      sendJSON(res, { ...info, saved: true });
+    } catch (err) {
+      console.error('[YouTubeLoginCookie]', err);
+      sendJSON(res, { provider: 'youtube', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/youtube/logout') {
+    saveYoutubeCookie('');
+    sendJSON(res, { provider: 'youtube', ok: true, loggedIn: false });
+    return;
+  }
+
+  if (pn === '/api/youtube/user/playlists') {
+    try {
+      const data = await handleYoutubeUserPlaylists();
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[YouTubeUserPlaylists]', err);
+      sendJSON(res, { provider: 'youtube', loggedIn: false, error: err.message, playlists: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/youtube/playlist/tracks') {
+    try {
+      const id = url.searchParams.get('id') || url.searchParams.get('list') || '';
+      const data = await handleYoutubePlaylistTracks(id);
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[YouTubePlaylistTracks]', err);
+      sendJSON(res, { provider: 'youtube', error: err.message, tracks: [] }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qq/login/status') {
     try {
       const info = await getQQLoginInfo();
@@ -4160,6 +5323,35 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---------- 音频代理 (支持 Range) ----------
+  if (pn === '/api/youtube/audio/prepare') {
+    const audioUrl = url.searchParams.get('url');
+    const durationSec = Math.max(0, Number(url.searchParams.get('duration') || 0) || 0);
+    const videoId = url.searchParams.get('videoId') || url.searchParams.get('id') || '';
+    const quality = url.searchParams.get('quality') || '';
+    try {
+      const data = await prepareYoutubeAudioProxy(audioUrl, { durationSec, videoId, quality });
+      sendJSON(res, data);
+    } catch (err) {
+      const status = err && err.status ? err.status : 502;
+      console.warn('[YouTubeAudioPrepare] failed:', err && err.message ? err.message : err);
+      sendJSON(res, {
+        provider: 'youtube',
+        ready: false,
+        error: err && err.message ? err.message : 'YouTube audio prepare failed',
+      }, status);
+    }
+    return;
+  }
+
+  if (pn === '/api/youtube/audio') {
+    const audioUrl = url.searchParams.get('url');
+    const durationSec = Math.max(0, Number(url.searchParams.get('duration') || 0) || 0);
+    const videoId = url.searchParams.get('videoId') || url.searchParams.get('id') || '';
+    const quality = url.searchParams.get('quality') || '';
+    await streamYoutubeAudioTranscode(req, res, audioUrl, { durationSec, videoId, quality });
+    return;
+  }
+
   if (pn === '/api/audio') {
     try {
       const audioUrl = url.searchParams.get('url');

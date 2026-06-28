@@ -36,6 +36,8 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const YOUTUBE_LOGIN_PARTITION = 'persist:mineradio-youtube-login';
+const YOUTUBE_LOGIN_URL = 'https://music.youtube.com/';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -88,6 +90,23 @@ const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'WEVNSM',
   'WNMCID',
   'JSESSIONID-WYYY',
+];
+const YOUTUBE_LOGIN_COOKIE_PRIORITY = [
+  '__Secure-3PSID',
+  '__Secure-1PSID',
+  'SID',
+  'HSID',
+  'SSID',
+  'APISID',
+  'SAPISID',
+  '__Secure-3PAPISID',
+  '__Secure-1PAPISID',
+  '__Secure-3PSIDTS',
+  '__Secure-1PSIDTS',
+  'LOGIN_INFO',
+  'PREF',
+  'VISITOR_INFO1_LIVE',
+  'YSC',
 ];
 
 function findOpenPort(startPort) {
@@ -349,6 +368,14 @@ function neteaseCookieHasLogin(cookieText) {
   return !!obj.MUSIC_U;
 }
 
+function youtubeCookieHasLogin(cookieText) {
+  const obj = parseCookieHeader(cookieText);
+  const accountId = obj.SID || obj['__Secure-1PSID'] || obj['__Secure-3PSID'] || obj.LOGIN_INFO || '';
+  const authToken = obj.SAPISID || obj.APISID || obj.SSID || obj.HSID ||
+    obj['__Secure-1PAPISID'] || obj['__Secure-3PAPISID'] || obj.LOGIN_INFO || '';
+  return !!(accountId && authToken);
+}
+
 function isQQCookieDomain(domain) {
   const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
   return normalized === 'qq.com' || normalized.endsWith('.qq.com') || normalized.endsWith('qqmusic.qq.com');
@@ -359,6 +386,13 @@ function isNeteaseCookieDomain(domain) {
   return normalized === '163.com' || normalized.endsWith('.163.com') ||
     normalized === 'music.163.com' || normalized.endsWith('.music.163.com') ||
     normalized === 'netease.com' || normalized.endsWith('.netease.com');
+}
+
+function isYoutubeCookieDomain(domain) {
+  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
+  return normalized === 'youtube.com' || normalized.endsWith('.youtube.com') ||
+    normalized === 'google.com' || normalized.endsWith('.google.com') ||
+    normalized === 'accounts.google.com' || normalized.endsWith('.accounts.google.com');
 }
 
 function buildCookieHeaderFor(cookies, isAllowedDomain, priority) {
@@ -395,6 +429,11 @@ async function readQQLoginCookieHeader(cookieSession) {
 async function readNeteaseLoginCookieHeader(cookieSession) {
   const cookies = await cookieSession.cookies.get({});
   return buildCookieHeaderFor(cookies, isNeteaseCookieDomain, NETEASE_LOGIN_COOKIE_PRIORITY);
+}
+
+async function readYoutubeLoginCookieHeader(cookieSession) {
+  const cookies = await cookieSession.cookies.get({});
+  return buildCookieHeaderFor(cookies, isYoutubeCookieDomain, YOUTUBE_LOGIN_COOKIE_PRIORITY);
 }
 
 async function openNeteaseMusicLoginWindow(owner) {
@@ -600,6 +639,144 @@ async function openQQMusicLoginWindow(owner) {
   });
 }
 
+async function openYoutubeMusicLoginWindow(owner) {
+  const cookieSession = session.fromPartition(YOUTUBE_LOGIN_PARTITION);
+  const initialCookie = await readYoutubeLoginCookieHeader(cookieSession);
+  if (youtubeCookieHasLogin(initialCookie)) return { ok: true, cookie: initialCookie, reused: true };
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let pollTimer = null;
+    let signInClickAttempted = false;
+    let lastNavigationUrl = YOUTUBE_LOGIN_URL;
+
+    const loginWindow = new BrowserWindow({
+      width: 980,
+      height: 760,
+      minWidth: 780,
+      minHeight: 580,
+      parent: owner && !owner.isDestroyed() ? owner : undefined,
+      modal: false,
+      show: false,
+      autoHideMenuBar: true,
+      title: 'YouTube Music Login',
+      backgroundColor: '#111111',
+      icon: APP_ICON_ICO,
+      webPreferences: {
+        partition: YOUTUBE_LOGIN_PARTITION,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const finish = async (result) => {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (loginWindow && !loginWindow.isDestroyed()) {
+        loginWindow.close();
+      }
+      resolve(result);
+    };
+
+    const currentLoginUrl = () => {
+      try {
+        const current = loginWindow && !loginWindow.isDestroyed() ? loginWindow.webContents.getURL() : '';
+        return current || lastNavigationUrl || YOUTUBE_LOGIN_URL;
+      } catch (e) {
+        return lastNavigationUrl || YOUTUBE_LOGIN_URL;
+      }
+    };
+
+    const isYoutubeReturnUrl = (rawUrl) => {
+      try {
+        const current = new URL(rawUrl || currentLoginUrl());
+        const host = current.hostname.replace(/^www\./, '').toLowerCase();
+        return host === 'music.youtube.com' || host === 'youtube.com' || host.endsWith('.youtube.com');
+      } catch (e) {
+        return false;
+      }
+    };
+
+    const shouldAutoClickSignIn = () => {
+      if (signInClickAttempted) return false;
+      try {
+        const current = new URL(loginWindow.webContents.getURL() || YOUTUBE_LOGIN_URL);
+        const host = current.hostname.replace(/^www\./, '').toLowerCase();
+        return host === 'music.youtube.com' || host === 'youtube.com' || host.endsWith('.youtube.com');
+      } catch (e) {
+        return false;
+      }
+    };
+
+    const checkCookies = async () => {
+      try {
+        const cookie = await readYoutubeLoginCookieHeader(cookieSession);
+        lastNavigationUrl = currentLoginUrl();
+        if (youtubeCookieHasLogin(cookie) && isYoutubeReturnUrl(lastNavigationUrl)) {
+          finish({ ok: true, cookie });
+        }
+      } catch (e) {
+        console.warn('YouTube login cookie check failed:', e.message);
+      }
+    };
+
+    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\/([^/]+\.)?youtube\.com/i.test(url) || /^https?:\/\/accounts\.google\.com/i.test(url)) {
+        loginWindow.loadURL(url).catch((e) => console.warn('YouTube login popup navigation failed:', e.message));
+      } else if (/^https?:\/\//i.test(url)) {
+        shell.openExternal(url).catch(() => {});
+      }
+      return { action: 'deny' };
+    });
+
+    loginWindow.webContents.on('did-finish-load', () => {
+      lastNavigationUrl = currentLoginUrl();
+      checkCookies();
+      if (!shouldAutoClickSignIn()) return;
+      signInClickAttempted = true;
+      loginWindow.webContents.executeJavaScript(`
+        setTimeout(() => {
+          const nodes = Array.from(document.querySelectorAll('a, button, tp-yt-paper-button, ytmusic-button-renderer'));
+          const loginNode = nodes.find((node) => {
+            const text = (node.textContent || '').trim();
+            if (!/sign\\s*in|log\\s*in|login|登录|登入/i.test(text)) return false;
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          if (loginNode) loginNode.click();
+        }, 900);
+      `, true).catch(() => {});
+    });
+
+    loginWindow.webContents.on('did-navigate', (_event, navigationUrl) => {
+      lastNavigationUrl = navigationUrl || currentLoginUrl();
+      checkCookies();
+    });
+    loginWindow.webContents.on('did-navigate-in-page', (_event, navigationUrl) => {
+      lastNavigationUrl = navigationUrl || currentLoginUrl();
+      checkCookies();
+    });
+    loginWindow.on('ready-to-show', () => loginWindow.show());
+    loginWindow.on('closed', async () => {
+      if (settled) return;
+      if (pollTimer) clearInterval(pollTimer);
+      try {
+        const cookie = await readYoutubeLoginCookieHeader(cookieSession);
+        resolve(youtubeCookieHasLogin(cookie) && isYoutubeReturnUrl(lastNavigationUrl)
+          ? { ok: true, cookie }
+          : { ok: false, cancelled: true, message: 'YouTube Music login window closed' });
+      } catch (e) {
+        resolve({ ok: false, error: e.message || 'YouTube Music login window closed' });
+      }
+    });
+
+    pollTimer = setInterval(checkCookies, 1500);
+    loginWindow.loadURL(YOUTUBE_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
+  });
+}
+
 async function clearQQMusicLoginSession() {
   const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
@@ -610,6 +787,14 @@ async function clearQQMusicLoginSession() {
 
 async function clearNeteaseMusicLoginSession() {
   const cookieSession = session.fromPartition(NETEASE_LOGIN_PARTITION);
+  await cookieSession.clearStorageData({
+    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
+  });
+  return { ok: true };
+}
+
+async function clearYoutubeMusicLoginSession() {
+  const cookieSession = session.fromPartition(YOUTUBE_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
     storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
   });
@@ -1176,6 +1361,14 @@ ipcMain.handle('qq-music-clear-login', async () => {
   return clearQQMusicLoginSession();
 });
 
+ipcMain.handle('youtube-music-open-login', async (event) => {
+  return openYoutubeMusicLoginWindow(getSenderWindow(event));
+});
+
+ipcMain.handle('youtube-music-clear-login', async () => {
+  return clearYoutubeMusicLoginSession();
+});
+
 ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
   try {
     const target = path.resolve(String(filePath || ''));
@@ -1327,6 +1520,7 @@ async function createWindow() {
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  process.env.YOUTUBE_COOKIE_FILE = path.join(app.getPath('userData'), '.youtube-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
@@ -1338,6 +1532,17 @@ async function createWindow() {
     }
   } catch (e) {
     console.warn('QQ cookie migration skipped:', e.message);
+  }
+  try {
+    const legacyYoutubeCookie = path.join(__dirname, '..', '.youtube-cookie');
+    if (fs.existsSync(legacyYoutubeCookie)) {
+      if (!fs.existsSync(process.env.YOUTUBE_COOKIE_FILE)) {
+        fs.copyFileSync(legacyYoutubeCookie, process.env.YOUTUBE_COOKIE_FILE);
+      }
+      fs.unlinkSync(legacyYoutubeCookie);
+    }
+  } catch (e) {
+    console.warn('YouTube cookie migration skipped:', e.message);
   }
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
