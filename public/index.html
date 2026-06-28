@@ -598,7 +598,7 @@ body.home-controls-locked #bottom-bar{opacity:0!important;pointer-events:none!im
 .mini-queue-list{display:flex;flex-direction:column;gap:6px;max-height:min(320px,calc(100vh - 250px));overflow:auto;padding-right:2px;overscroll-behavior:contain}
 .mini-queue-list::-webkit-scrollbar{width:3px}
 .mini-queue-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.20);border-radius:3px}
-.mini-queue-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:11px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.032);cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s;will-change:transform,opacity}
+.mini-queue-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:11px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.032);cursor:pointer;transition:background .18s,border-color .18s,transform .18s,box-shadow .18s}
 .mini-queue-item:hover{background:rgba(255,255,255,.07);transform:translateY(-1px)}
 .mini-queue-item.now{border-color:rgba(0,245,212,.36);background:rgba(0,245,212,.075);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 28px rgba(0,245,212,.06)}
 .mini-queue-item img,.mini-queue-cover{width:38px;height:38px;border-radius:7px;object-fit:cover;background:rgba(255,255,255,.07);flex-shrink:0}
@@ -1283,7 +1283,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .panel-tab{padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:rgba(255,255,255,.55);cursor:pointer;font-size:11px;transition:all .2s;font-family:inherit}
 .panel-tab.active{background:rgba(0,245,212,.10);border-color:rgba(0,245,212,.34);color:#eafffb}
 .queue-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-.queue-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .2s;will-change:transform,opacity}
+.queue-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);cursor:pointer;transition:all .2s}
 .queue-item:hover{background:rgba(255,255,255,.05)}
 .queue-item.now{border-color:rgba(0,245,212,.34);background:rgba(0,245,212,.075)}
 .queue-item img{width:38px;height:38px;border-radius:6px;object-fit:cover;background:rgba(255,255,255,.06);flex-shrink:0}
@@ -1304,7 +1304,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .queue-chip{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);font-size:10.5px;color:rgba(255,255,255,.65)}
 .queue-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px}
 .queue-toolbar .fx-mini-btn{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;line-height:1}
-.pl-card{display:flex;align-items:center;gap:10px;padding:9px;border-radius:11px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);transition:all .2s;cursor:pointer;margin-bottom:7px;will-change:transform,opacity}
+.pl-card{display:flex;align-items:center;gap:10px;padding:9px;border-radius:11px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);transition:all .2s;cursor:pointer;margin-bottom:7px}
 .pl-card:hover{background:rgba(255,255,255,.06)}
 .pl-card img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:rgba(255,255,255,.06);flex-shrink:0}
 .pl-load-more{width:100%;height:30px;margin:8px 0 2px;display:flex;align-items:center;justify-content:center}
@@ -1863,6 +1863,9 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     <button class="desktop-window-btn" data-window-action="minimize" title="最小化" aria-label="最小化">
       <svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg>
     </button>
+    <button class="desktop-window-btn" data-window-action="tray" title="最小化到托盘" aria-label="最小化到托盘">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M8 3v7M4 7l4 4 4-4M2 13h12"/></svg>
+    </button>
     <button class="desktop-window-btn" data-window-action="maximize" title="全屏" aria-label="全屏">
       <svg class="icon-maximize" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
       <svg class="icon-restore" viewBox="0 0 16 16" style="display:none"><path d="M5 3.5h7.5v7.5"/><rect x="3.5" y="5.5" width="7" height="7" rx="1.3"/></svg>
@@ -2245,6 +2248,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       </div>
       <div class="fx-toggle-grid">
         <div class="fx-toggle" id="t-liveBackgroundKeep" onclick="toggleFx('liveBackgroundKeep')" title="开启后后台或最小化时保持视觉渲染，不进入低占用暂停"><span>直播后台保持</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-closeToTray" onclick="toggleCloseToTray()" title="开启后点击关闭按钮将最小化到系统托盘，而不是退出程序"><span>关闭时最小化到托盘</span><span class="dot"></span></div>
       </div>
       <div class="fx-slider"><label>粒子尺寸</label><input id="fx-point" type="range" min="0.5" max="2.2" step="0.01"><output></output></div>
       <div class="fx-slider"><label>流速</label><input id="fx-speed" type="range" min="0.2" max="2.5" step="0.01"><output></output></div>
@@ -19354,6 +19358,37 @@ function openPlaylistPanelTab(tab, preserve) {
   switchPlaylistTab(tab);
   setPeek(panel, true, 'pl');
 }
+function renderMiniQueuePanelVirtual($list, total, opts) {
+  var scrollTop = $list.scrollTop;
+  var viewH = $list.clientHeight;
+  if (viewH < 50) viewH = 320;
+  var OVERSCAN = 6;
+  var start = Math.max(0, Math.floor(scrollTop / QUEUE_ITEM_H) - OVERSCAN);
+  var end = Math.min(total, Math.ceil((scrollTop + viewH) / QUEUE_ITEM_H) + OVERSCAN);
+  var html = '';
+  for (var i = start; i < end; i++) {
+    var song = playQueue[i];
+    var thumb = songCoverSrc(song, 60);
+    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="mini-queue-cover"></div>';
+    html += '<div class="mini-queue-item' + (i === currentIdx ? ' now' : '') + '" style="position:absolute;top:' + (i * QUEUE_ITEM_H) + 'px;left:0;right:0;height:56px" onclick="playQueueAt(' + i + ')">' +
+      imgTag +
+      '<div class="mini-queue-info"><div class="mini-queue-name">' + escHtml(song.name) + '</div><div class="mini-queue-sub">' + escHtml(song.artist || '') + '</div></div>' +
+      '<button class="mini-queue-remove mini-queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
+      '<button class="mini-queue-remove" onclick="event.stopPropagation();removeFromQueue(' + i + ')" title="移除">×</button>' +
+    '</div>';
+  }
+  $list.innerHTML = '<div class="mq-virt-wrap" style="position:relative;height:' + (total * QUEUE_ITEM_H) + 'px;width:100%;flex-shrink:0">' + html + '</div>';
+  if (! $list.__mqVirt) {
+    $list.__mqVirt = true;
+    $list.addEventListener('scroll', function(){
+      if (playQueue.length > 200 && miniQueueOpen) renderMiniQueuePanel({ animate: false, scrollCurrent: false });
+    }, { passive: true });
+  }
+  if ((opts.animate || opts.scrollCurrent) && currentIdx >= 0) {
+    var st = Math.max(0, Math.min(currentIdx * QUEUE_ITEM_H - viewH / 2 + 28, total * QUEUE_ITEM_H - viewH));
+    $list.scrollTop = st;
+  }
+}
 function renderMiniQueuePanel(opts) {
   opts = opts || {};
   var $list = document.getElementById('mini-queue-list');
@@ -19364,6 +19399,10 @@ function renderMiniQueuePanel(opts) {
   if (!miniQueueOpen && !opts.animate && !opts.scrollCurrent) return;
   if (!total) {
     $list.innerHTML = '<div class="mini-queue-empty">队列为空，先搜索或打开歌单</div>';
+    return;
+  }
+  if (total > 200) {
+    renderMiniQueuePanelVirtual($list, total, opts);
     return;
   }
   $list.innerHTML = playQueue.map(function(song, i){
@@ -19389,15 +19428,68 @@ document.addEventListener('click', function(e){
 bindSmoothQueueScrolling();
 bindPlaylistPanelLazyRender();
 bindModalBackdropClose();
+var QUEUE_ITEM_H = 62;
+function renderQueuePanelVirtual($ql, panel, opts, seq) {
+  var scrollTop = panel.scrollTop;
+  var viewH = panel.clientHeight;
+  var total = playQueue.length;
+  if (!total) return;
+  var OVERSCAN = 8;
+  var start = Math.max(0, Math.floor(scrollTop / QUEUE_ITEM_H) - OVERSCAN);
+  var end = Math.min(total, Math.ceil((scrollTop + viewH) / QUEUE_ITEM_H) + OVERSCAN);
+  var html = '';
+  for (var i = start; i < end; i++) {
+    var song = playQueue[i];
+    var thumb = songCoverSrc(song, 60);
+    var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:38px;height:38px;border-radius:6px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
+    html += '<div class="queue-item' + (i === currentIdx ? ' now' : '') + '" style="position:absolute;top:' + (i * QUEUE_ITEM_H) + 'px;left:0;right:0;height:56px" onclick="playQueueAt(' + i + ')">' +
+      imgTag +
+      '<div class="qi-info"><div class="qi-name">' + escHtml(song.name) + '</div><div class="qi-sub"><button class="queue-artist-link" type="button" onclick="event.stopPropagation();openQueueArtist(' + i + ')">' + escHtml(song.artist || '未知歌手') + '</button></div></div>' +
+      '<div class="qi-act">' +
+        '<button class="' + (isSongLiked(song) ? 'liked' : '') + '" onclick="event.stopPropagation();toggleLikeQueueIndex(' + i + ')" title="' + (isSongLiked(song) ? '取消红心' : '红心喜欢') + '">' + heartIconSvg() + '</button>' +
+        '<button class="queue-next" onclick="event.stopPropagation();queueIndexNext(' + i + ')" title="下一首播放">下</button>' +
+        '<button onclick="event.stopPropagation();collectQueueIndex(' + i + ')" title="收藏到歌单">' + playlistPlusIconSvg() + '</button>' +
+        '<button onclick="event.stopPropagation();removeFromQueue(' + i + ')" title="移除">×</button>' +
+      '</div>' +
+    '</div>';
+  }
+  $ql.innerHTML = html;
+  $ql.style.position = 'relative';
+  $ql.style.height = (total * QUEUE_ITEM_H) + 'px';
+  $ql.style.display = 'block';
+  if (opts.animate && seq === queueRenderSeq && currentIdx >= 0) {
+    var curTop = currentIdx * QUEUE_ITEM_H;
+    var st = Math.max(0, Math.min(curTop - viewH / 2 + 28, panel.scrollHeight - viewH));
+    if (window.gsap) {
+      if (typeof panel.__syncSmoothWheelTarget === 'function') panel.__syncSmoothWheelTarget(st);
+      window.gsap.killTweensOf(panel);
+      window.gsap.to(panel, { scrollTop: st, duration: 0.32, ease: 'power2.out', overwrite: true });
+    } else { panel.scrollTop = st; }
+  }
+}
 function renderQueuePanel(opts) {
   opts = opts || {};
   var $ql = document.getElementById('queue-list');
   var seq = ++queueRenderSeq;
+  var panel = document.getElementById('playlist-panel');
   if (!playQueue.length) {
     $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空，搜索后点 + 设为下一首</div>';
+    $ql.style.position = ''; $ql.style.height = ''; $ql.style.display = '';
     renderMiniQueuePanel();
-    var panel = document.getElementById('playlist-panel');
     if (panel && (panel.classList.contains('show') || panel.classList.contains('peek')) && queueViewTab === 'queue') switchPlaylistTab('playlists');
+    return;
+  }
+  if (playQueue.length > 200) {
+    if (panel && !panel.__qVirtScroll) {
+      panel.__qVirtScroll = true;
+      panel.addEventListener('scroll', function(){
+        if (queueViewTab === 'queue' && playQueue.length > 200) {
+          renderQueuePanelVirtual(document.getElementById('queue-list'), panel, {}, 0);
+        }
+      }, { passive: true });
+    }
+    renderQueuePanelVirtual($ql, panel, opts, seq);
+    renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
     return;
   }
   $ql.innerHTML = playQueue.map(function(song, i){
@@ -19414,7 +19506,8 @@ function renderQueuePanel(opts) {
       '</div>' +
     '</div>';
   }).join('');
-  if (opts.animate && seq === queueRenderSeq) animateVisiblePanelList($ql, '.queue-item', document.getElementById('playlist-panel'), '.queue-item.now');
+  $ql.style.position = ''; $ql.style.height = ''; $ql.style.display = '';
+  if (opts.animate && seq === queueRenderSeq) animateVisiblePanelList($ql, '.queue-item', panel, '.queue-item.now');
   renderMiniQueuePanel({ scrollCurrent: miniQueueOpen });
 }
 async function refreshUserPlaylists(force) {
@@ -22357,6 +22450,29 @@ function bindFxPanel() {
   });
   updateFxInputs();
 }
+function toggleCloseToTray() {
+  var api = window.desktopWindow;
+  if (!api || typeof api.getCloseBehavior !== 'function') return;
+  api.getCloseBehavior().then(function(state){
+    var next = state.behavior === 'tray' ? 'close' : 'tray';
+    api.setCloseBehavior(next).then(function(){
+      var dot = document.getElementById('t-closeToTray');
+      if (dot) dot.classList.toggle('on', next === 'tray');
+      showToast(next === 'tray' ? '关闭按钮将最小化到系统托盘' : '关闭按钮将退出程序');
+      if (next === 'tray') showToast('点 × 会最小化到托盘，按托盘图标恢复');
+    });
+  });
+}
+
+function loadCloseBehaviorState() {
+  var api = window.desktopWindow;
+  if (!api || typeof api.getCloseBehavior !== 'function') return;
+  api.getCloseBehavior().then(function(state){
+    var dot = document.getElementById('t-closeToTray');
+    if (dot) dot.classList.toggle('on', state.behavior === 'tray');
+  });
+}
+
 function toggleFx(key) {
   if (isDevelopmentLockedFx(key)) {
     normalizeDevelopmentLockedFxState();
@@ -26449,10 +26565,13 @@ function toggleFullscreen() {
       e.stopPropagation();
       var action = btn.getAttribute('data-window-action');
       if (action === 'minimize') api.minimize();
+      if (action === 'tray') api.minimizeToTray();
       if (action === 'maximize') toggleFullscreen();
       if (action === 'close') api.close();
     });
   });
+
+  loadCloseBehaviorState();
 
   if (typeof api.onDesktopLyricsLockState === 'function') {
     api.onDesktopLyricsLockState(function(payload){
