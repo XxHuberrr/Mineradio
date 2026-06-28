@@ -311,7 +311,32 @@ test('rejects initialization immediately when the source sends invalid metadata'
     ]),
     error => error.message !== 'still pending',
   );
-  runtime.stop();
+  assert.equal(runtime.window, null);
+  assert.equal(win.destroyed, true);
+  assert.equal(ipcMain.handlers.size, 0);
+  assert.equal(ipcMain.listenerCount('mineradio-lx-bootstrap'), 0);
+});
+
+test('tears down the runtime when preload reports an initialization error', async () => {
+  FakeBrowserWindow.instances.length = 0;
+  const { LxSourceRuntime } = loadRuntime();
+  const ipcMain = new FakeIpcMain();
+  const runtime = new LxSourceRuntime({
+    script: 'x',
+    currentScriptInfo: {},
+    electron: { BrowserWindow: FakeBrowserWindow, ipcMain, app: { isPackaged: false } },
+  });
+  const started = runtime.start();
+  const win = FakeBrowserWindow.instances[0];
+  ipcMain.emit('mineradio-lx-init-error', { sender: win.webContents }, {
+    runtimeId: runtime.runtimeId,
+    error: 'fixture init failure',
+  });
+  await assert.rejects(started, /fixture init failure/);
+  assert.equal(runtime.window, null);
+  assert.equal(win.destroyed, true);
+  assert.equal(ipcMain.handlers.size, 0);
+  assert.equal(ipcMain.listenerCount('mineradio-lx-bootstrap'), 0);
 });
 
 test('cleans up shared IPC when BrowserWindow creation fails', async () => {
@@ -399,6 +424,67 @@ test('HTTP service parses responses, supports cancellation, and aborts on stop',
   await assert.rejects(pending);
   runtime.stop();
   assert.equal(signals.every(signal => signal.aborted || signals.indexOf(signal) === 0), true);
+  await assert.rejects(started, /stopped/i);
+});
+
+test('HTTP service rejects oversized responses before buffering untrusted bodies', async () => {
+  FakeBrowserWindow.instances.length = 0;
+  const { LxSourceRuntime } = loadRuntime();
+  const ipcMain = new FakeIpcMain();
+  const runtime = new LxSourceRuntime({
+    script: 'x',
+    currentScriptInfo: {},
+    fetchImpl: async () => ({
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers({ 'content-length': String(25 * 1024 * 1024) }),
+      arrayBuffer: async () => {
+        throw new Error('must not buffer oversized response');
+      },
+    }),
+    electron: { BrowserWindow: FakeBrowserWindow, ipcMain, app: { isPackaged: false } },
+  });
+  const started = runtime.start();
+  const win = FakeBrowserWindow.instances[0];
+  await assert.rejects(
+    ipcMain.handlers.get('mineradio-lx-http')(
+      { sender: win.webContents },
+      { runtimeId: runtime.runtimeId, requestId: 'large', url: 'https://example.com', options: {} },
+    ),
+    /HTTP_FAILED: Response too large/,
+  );
+  runtime.stop();
+  await assert.rejects(started, /stopped/i);
+});
+
+test('zlib bridge rejects oversized input and output', async () => {
+  FakeBrowserWindow.instances.length = 0;
+  const { LxSourceRuntime } = loadRuntime();
+  const ipcMain = new FakeIpcMain();
+  const runtime = new LxSourceRuntime({
+    script: 'x',
+    currentScriptInfo: {},
+    electron: { BrowserWindow: FakeBrowserWindow, ipcMain, app: { isPackaged: false } },
+  });
+  const started = runtime.start();
+  const win = FakeBrowserWindow.instances[0];
+  const zlibHandler = ipcMain.handlers.get('mineradio-lx-zlib');
+  await assert.rejects(
+    zlibHandler(
+      { sender: win.webContents },
+      { runtimeId: runtime.runtimeId, operation: 'deflate', data: Buffer.alloc(2 * 1024 * 1024 + 1) },
+    ),
+    /ZLIB_FAILED: Input too large/,
+  );
+  const bomb = require('node:zlib').deflateSync(Buffer.alloc(8 * 1024 * 1024 + 1));
+  await assert.rejects(
+    zlibHandler(
+      { sender: win.webContents },
+      { runtimeId: runtime.runtimeId, operation: 'inflate', data: bomb },
+    ),
+    /ZLIB_FAILED: Output too large/,
+  );
+  runtime.stop();
   await assert.rejects(started, /stopped/i);
 });
 

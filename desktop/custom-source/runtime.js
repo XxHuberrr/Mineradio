@@ -10,6 +10,9 @@ const deflate = promisify(zlib.deflate);
 const RUNTIME_ARGUMENT = '--mineradio-lx-runtime-id=';
 const INIT_TIMEOUT = 10_000;
 const ACTION_TIMEOUT = 20_000;
+const MAX_HTTP_BODY_BYTES = 20 * 1024 * 1024;
+const MAX_ZLIB_INPUT_BYTES = 2 * 1024 * 1024;
+const MAX_ZLIB_OUTPUT_BYTES = 8 * 1024 * 1024;
 const hosts = new WeakMap();
 const SCRIPT_INFO_KEYS = ['name', 'description', 'version', 'author', 'homepage'];
 const PAUSE_MEDIA_SCRIPT = `
@@ -74,6 +77,81 @@ function parseHttpBody(raw) {
 
 function errorResult(error) {
   return { error: String(error?.message || error).slice(0, 1024) };
+}
+
+function headerValue(headers, name) {
+  if (!headers) return null;
+  if (typeof headers.get === 'function') return headers.get(name);
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowerName) return value;
+  }
+  return null;
+}
+
+function bufferFromLimited(value, maxBytes, message) {
+  const declaredLength = typeof value?.byteLength === 'number'
+    ? value.byteLength
+    : Array.isArray(value) ? value.length : null;
+  if (declaredLength !== null && declaredLength > maxBytes) throw new Error(message);
+  const buffer = Buffer.from(value);
+  if (buffer.length > maxBytes) throw new Error(message);
+  return buffer;
+}
+
+async function readLimitedResponseBody(response) {
+  const contentLength = Number(headerValue(response.headers, 'content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_HTTP_BODY_BYTES) {
+    throw new Error('HTTP_FAILED: Response too large');
+  }
+
+  if (response.body && typeof response.body.getReader === 'function') {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value);
+        total += chunk.length;
+        if (total > MAX_HTTP_BODY_BYTES) {
+          await Promise.resolve(reader.cancel?.()).catch(() => {});
+          throw new Error('HTTP_FAILED: Response too large');
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      reader.releaseLock?.();
+    }
+    return Buffer.concat(chunks, total);
+  }
+
+  const raw = Buffer.from(await response.arrayBuffer());
+  if (raw.length > MAX_HTTP_BODY_BYTES) throw new Error('HTTP_FAILED: Response too large');
+  return raw;
+}
+
+async function runZlib(payload) {
+  const data = bufferFromLimited(payload.data, MAX_ZLIB_INPUT_BYTES, 'ZLIB_FAILED: Input too large');
+  if (payload.operation === 'deflate') {
+    const result = await deflate(data, { maxOutputLength: MAX_ZLIB_OUTPUT_BYTES });
+    if (result.length > MAX_ZLIB_OUTPUT_BYTES) throw new Error('ZLIB_FAILED: Output too large');
+    return result;
+  }
+  if (payload.operation === 'inflate') {
+    try {
+      const result = await inflate(data, { maxOutputLength: MAX_ZLIB_OUTPUT_BYTES });
+      if (result.length > MAX_ZLIB_OUTPUT_BYTES) throw new Error('ZLIB_FAILED: Output too large');
+      return result;
+    } catch (error) {
+      if (/maxOutputLength|too large|BUFFER_TOO_LARGE|larger than/i.test(String(error?.message || error))) {
+        throw new Error('ZLIB_FAILED: Output too large');
+      }
+      throw error;
+    }
+  }
+  throw new Error('ZLIB_FAILED: Unsupported operation');
 }
 
 function blockRuntimeMedia(contents) {
@@ -166,25 +244,20 @@ function installHost(ipcMain) {
     currentScriptInfo: { ...runtime.currentScriptInfo },
   }));
   sync('mineradio-lx-crypto', (_runtime, payload) => runCrypto(payload));
-  handle('mineradio-lx-zlib', async (_runtime, payload) => {
-    const data = Buffer.from(payload.data);
-    if (payload.operation === 'inflate') return inflate(data);
-    if (payload.operation === 'deflate') return deflate(data);
-    throw new Error('ZLIB_FAILED: Unsupported operation');
-  });
+  handle('mineradio-lx-zlib', async (_runtime, payload) => runZlib(payload));
   handle('mineradio-lx-http', (runtime, payload) => runtime.handleHttp(payload));
   handle('mineradio-lx-inited', (runtime, payload) => {
     try {
       return runtime.handleInited(payload.data);
     } catch (error) {
-      runtime.failInit(error.message);
+      runtime.failInit(error.message, { stopRuntime: true });
       throw error;
     }
   });
   handle('mineradio-lx-update-alert', (runtime, payload) => runtime.handleUpdateAlert(payload.data));
   receive('mineradio-lx-http-cancel', (runtime, payload) => runtime.cancelHttp(payload.requestId));
   receive('mineradio-lx-response', (runtime, payload) => runtime.handleActionResponse(payload));
-  receive('mineradio-lx-init-error', (runtime, payload) => runtime.failInit(payload.error));
+  receive('mineradio-lx-init-error', (runtime, payload) => runtime.failInit(payload.error, { stopRuntime: true }));
 
   hosts.set(ipcMain, host);
   return host;
@@ -243,7 +316,7 @@ class LxSourceRuntime {
       resolve: resolveInit,
       reject: rejectInit,
       settled: false,
-      timer: setTimeout(() => this.failInit('INIT_FAILED: Timed out'), INIT_TIMEOUT),
+      timer: setTimeout(() => this.failInit('INIT_FAILED: Timed out', { stopRuntime: true }), INIT_TIMEOUT),
     };
 
     try {
@@ -288,12 +361,10 @@ class LxSourceRuntime {
       });
       Promise.resolve(this.window.loadFile(path.join(__dirname, 'runtime.html')))
         .catch(error => {
-          this.failInit(`INIT_FAILED: ${error.message}`);
-          this.stop();
+          this.failInit(`INIT_FAILED: ${error.message}`, { stopRuntime: true });
         });
     } catch (error) {
-      this.failInit(`INIT_FAILED: ${error.message}`);
-      this.stop();
+      this.failInit(`INIT_FAILED: ${error.message}`, { stopRuntime: true });
     }
     return promise;
   }
@@ -307,11 +378,12 @@ class LxSourceRuntime {
     return filtered;
   }
 
-  failInit(message) {
+  failInit(message, { stopRuntime = false } = {}) {
     if (!this.initState || this.initState.settled) return;
     this.initState.settled = true;
     clearTimeout(this.initState.timer);
     this.initState.reject(new Error(String(message || 'INIT_FAILED').slice(0, 1024)));
+    if (stopRuntime) this.stop();
   }
 
   async handleHttp(payload) {
@@ -332,7 +404,7 @@ class LxSourceRuntime {
         signal: controller.signal,
         redirect: 'follow',
       });
-      const raw = Buffer.from(await response.arrayBuffer());
+      const raw = await readLimitedResponseBody(response);
       const body = parseHttpBody(raw);
       return {
         response: {
