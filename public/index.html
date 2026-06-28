@@ -1261,6 +1261,17 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .hotkey-status .source-icon{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,206,112,.12);color:#ffce70;font-size:11px;flex:0 0 auto}
 .hotkey-capture-tip{display:none;margin-top:10px;padding:9px 11px;border-radius:12px;border:1px solid rgba(var(--fc-accent-rgb),.22);background:rgba(var(--fc-accent-rgb),.075);font-size:12px;color:rgba(255,255,255,.74)}
 .hotkey-modal.capturing .hotkey-capture-tip{display:block}
+.custom-source-dialog{width:min(760px,calc(100vw - 36px));max-height:min(720px,calc(100vh - 44px));overflow:auto;border-radius:20px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(180deg,rgba(14,15,20,.98),rgba(5,6,8,.98));box-shadow:0 32px 110px rgba(0,0,0,.66),inset 0 1px 0 rgba(255,255,255,.08);padding:18px;color:#fff}
+.custom-source-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.08)}
+.custom-source-title{font-size:17px;font-weight:820;letter-spacing:.03em}.custom-source-sub{margin-top:5px;font-size:11.5px;color:rgba(255,255,255,.48)}
+.custom-source-close{width:30px;height:30px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;font-size:18px;cursor:pointer}
+.custom-source-warning{margin:14px 0;padding:10px 12px;border:1px solid rgba(255,195,94,.22);border-radius:12px;background:rgba(255,174,46,.075);color:rgba(255,231,188,.82);font-size:12px;line-height:1.55}
+.custom-source-list{display:grid;gap:9px;min-height:80px}.custom-source-empty{display:flex;align-items:center;justify-content:center;min-height:110px;color:rgba(255,255,255,.4);font-size:12px}
+.custom-source-item{padding:12px;border:1px solid rgba(255,255,255,.075);border-radius:14px;background:rgba(255,255,255,.03)}.custom-source-item.active{border-color:rgba(var(--fc-accent-rgb),.34);background:rgba(var(--fc-accent-rgb),.07)}
+.custom-source-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.custom-source-name{font-size:13px;font-weight:800;color:rgba(255,255,255,.92)}.custom-source-meta,.custom-source-capabilities{margin-top:4px;font-size:11px;line-height:1.5;color:rgba(255,255,255,.46);word-break:break-word}
+.custom-source-status{flex:0 0 auto;padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.06);font-size:10px;color:rgba(255,255,255,.58)}.custom-source-item.active .custom-source-status{background:rgba(var(--fc-accent-rgb),.13);color:rgba(255,255,255,.88)}
+.custom-source-actions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:11px}.custom-source-actions button,.custom-source-footer button{height:30px;padding:0 11px;border-radius:9px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:rgba(255,255,255,.72);font:700 11px/1 var(--font-sans);cursor:pointer}.custom-source-actions button:hover,.custom-source-footer button:hover{background:rgba(255,255,255,.09);color:#fff}.custom-source-actions button.primary,.custom-source-footer button.primary{border-color:rgba(var(--fc-accent-rgb),.28);background:rgba(var(--fc-accent-rgb),.11);color:#fff}.custom-source-actions button.danger{color:rgba(255,150,150,.82)}
+.custom-source-alert-toggle{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:10.5px;color:rgba(255,255,255,.48)}.custom-source-alert-toggle input{accent-color:rgb(var(--fc-accent-rgb))}.custom-source-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
 @media (max-width:720px){
   .hotkey-row{grid-template-columns:1fr;gap:7px}
   .hotkey-toolbar{align-items:flex-start;flex-direction:column}
@@ -1859,6 +1870,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <path class="update-arrow" d="M8.7 10.7 12 7.4l3.3 3.3"></path>
       </svg>
     </button>
+    <button id="custom-source-btn" class="desktop-mode-btn" type="button" onclick="openCustomSourceModal()" title="洛雪自定义音源" aria-label="洛雪自定义音源">源</button>
     <button id="diy-mode-btn" class="desktop-mode-btn" type="button" onclick="toggleDiyMode()" title="开启 DIY 玩家模式" aria-label="开启 DIY 玩家模式" aria-pressed="false">DIY</button>
     <button class="desktop-window-btn" data-window-action="minimize" title="最小化" aria-label="最小化">
       <svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg>
@@ -2639,6 +2651,24 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <div id="update-footnote" class="update-footnote">预览版只演示更新手感，不会真的下载安装。</div>
     </div>
   </div>
+</div>
+
+<div id="custom-source-modal" class="modal-mask" aria-hidden="true">
+  <section class="custom-source-dialog" role="dialog" aria-modal="true" aria-labelledby="custom-source-title">
+    <header class="custom-source-head">
+      <div>
+        <div id="custom-source-title" class="custom-source-title">洛雪自定义音源</div>
+        <div class="custom-source-sub">兼容 LX Music Desktop 2.0.0 · 一次启用一个脚本</div>
+      </div>
+      <button class="custom-source-close" type="button" onclick="closeCustomSourceModal()" aria-label="关闭">×</button>
+    </header>
+    <div class="custom-source-warning">第三方脚本可以向网络发送歌曲信息。仅导入你信任的脚本。</div>
+    <div id="custom-source-list" class="custom-source-list"></div>
+    <footer class="custom-source-footer">
+      <button type="button" onclick="deactivateCustomSource()">停用音源</button>
+      <button class="primary" type="button" onclick="importCustomSource()">导入 .js 音源</button>
+    </footer>
+  </section>
 </div>
 
 <div id="toast"></div>
@@ -10308,14 +10338,8 @@ function normalizeBeatPrefetchState(state) {
 
 async function fetchBeatPrefetchAudioUrl(song) {
   if (!song) return null;
-  var isQQ = songProviderKey(song) === 'qq';
   var requestedQuality = normalizePlaybackQuality(playbackQuality);
-  if (!isQQ && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
-  if (isQQ && qqPlaybackQualityCeiling && (requestedQuality === 'jymaster' || requestedQuality === 'hires' || requestedQuality === 'lossless')) requestedQuality = qqPlaybackQualityCeiling;
-  var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
-  var data = isQQ
-    ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
-    : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + qualityParam);
+  var data = await resolveOnlinePlaybackData(song, requestedQuality);
   if (!data || !data.url || data.trial) return null;
   return '/api/audio?url=' + encodeURIComponent(data.url);
 }
@@ -18138,6 +18162,28 @@ function playbackProviderLabel(song) {
 function playbackLoginProvider(song) {
   return songProviderKey(song) === 'qq' ? 'qq' : 'netease';
 }
+async function resolveOnlinePlaybackData(song, requestedQuality) {
+  requestedQuality = normalizePlaybackQuality(requestedQuality || 'hires');
+  var custom = await apiJson('/api/custom-source/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ song: song || {}, quality: requestedQuality || 'hires' })
+  });
+  if (custom && custom.active === true) {
+    custom.requestedQuality = requestedQuality;
+    return custom;
+  }
+  var isQQ = songProviderKey(song) === 'qq';
+  var builtinQuality = requestedQuality;
+  if (!isQQ && builtinQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) builtinQuality = 'hires';
+  if (isQQ && qqPlaybackQualityCeiling && (builtinQuality === 'jymaster' || builtinQuality === 'hires' || builtinQuality === 'lossless')) builtinQuality = qqPlaybackQualityCeiling;
+  var qualityParam = '&quality=' + encodeURIComponent(builtinQuality);
+  var result = await (isQQ
+    ? apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
+    : apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + qualityParam));
+  if (result && typeof result === 'object') result.requestedQuality = builtinQuality;
+  return result;
+}
 function playbackRestrictionMessage(song, data) {
   data = data || {};
   var restriction = data.restriction || {};
@@ -18309,13 +18355,14 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   }
 }
 function handlePlaybackUnavailable(song, data) {
+  data = data || {};
   hideLoading();
   forcePlaybackControlsInteractive();
   var provider = playbackLoginProvider(song);
   var restriction = (data && data.restriction) || {};
   var category = (data && data.reason) || restriction.category || '';
   showToast(playbackRestrictionMessage(song, data));
-  if (category === 'login_required') {
+  if (category === 'login_required' && data.active !== true) {
     setTimeout(function(){
       var modal = document.getElementById('login-modal');
       if (!modal || modal.classList.contains('show')) return;
@@ -18463,23 +18510,17 @@ async function playQueueAt(idx, opts) {
     markPlayPhase('source-url');
     var isQQPlayback = songProviderKey(song) === 'qq';
     var requestedQuality = normalizePlaybackQuality(opts.qualityOverride || playbackQuality);
-    if (!isQQPlayback && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
-    if (isQQPlayback && qqPlaybackQualityCeiling && (requestedQuality === 'jymaster' || requestedQuality === 'hires' || requestedQuality === 'lossless')) {
-      requestedQuality = qqPlaybackQualityCeiling;
-    }
-    var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
-    var data = isQQPlayback
-      ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
-      : await apiJson('/api/song/url?id=' + song.id + qualityParam);
+    var data = await resolveOnlinePlaybackData(song, requestedQuality);
+    requestedQuality = normalizePlaybackQuality(data && data.requestedQuality || requestedQuality);
     if (token !== trackSwitchToken) return;
-    if (!data.url) {
-      if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
+    if (!data || !data.url) {
+      if (isQQPlayback && (!data || data.active !== true) && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
       if (await tryAutoPlaybackFallback(song, data, idx, token, opts)) return;
       handlePlaybackUnavailable(song, data);
       return;
     }
     var resolvedQualityText = playbackResolvedQualityText(data);
-    if (!isQQPlayback && playbackQualityWasDowngraded(requestedQuality, data.level)) {
+    if (data.active !== true && !isQQPlayback && playbackQualityWasDowngraded(requestedQuality, data.level)) {
       showSourceFallbackNotice('网易云音质自动降级', '请求 ' + playbackQualityLabel(requestedQuality) + '，实际播放 ' + resolvedQualityText + '。');
     } else if (opts.qualitySwitch) {
       showSourceFallbackNotice('音质已切换', '实际播放: ' + resolvedQualityText + '。');
@@ -18580,9 +18621,14 @@ async function playQueueAt(idx, opts) {
       safePlaybackStep('visual-prep-hide-chip', hideBeatChip);
     }
     markPlayPhase('audio-start');
-    var playbackStarted = await playAudio({ silent: isQQPlayback });
+    var playbackStarted = await playAudio({ silent: isQQPlayback || data.active === true });
     if (!playbackStarted) {
-      if (isQQPlayback && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
+      if (data.active === true && await tryAutoPlaybackFallback(song, {
+        provider: 'lx-custom-source',
+        reason: 'custom_source_load_failed',
+        error: 'CUSTOM_SOURCE_LOAD_FAILED'
+      }, idx, token, opts)) return;
+      if (isQQPlayback && data.active !== true && await retryQQPlaybackWithCompatibleQuality(song, idx, token, opts, data, requestedQuality)) return;
       forcePlaybackControlsInteractive();
       if (opts.manual) {
         showToast('播放启动失败，请重新选择歌曲');
@@ -21825,6 +21871,162 @@ function readHotkeySettings() {
 }
 function saveHotkeySettings() {
   try { localStorage.setItem(HOTKEY_SETTINGS_STORE_KEY, JSON.stringify(hotkeySettings || getHotkeyDefaults())); } catch (e) {}
+}
+var customSourceState = { items: [], activeId: '', loading: false };
+var customSourceStatusUnsubscribe = null;
+function customSourceStatusText(item) {
+  if (item && item.status === 'ready') return '已就绪';
+  if (item && item.status === 'starting') return '初始化中';
+  if (item && item.status === 'failed') return item.message || '初始化失败';
+  return item && item.active ? '已启用' : '未启用';
+}
+function customSourceCapabilityText(item) {
+  var sources = item && item.sources && typeof item.sources === 'object' ? item.sources : {};
+  var parts = [];
+  Object.keys(sources).forEach(function(key){
+    var source = sources[key] || {};
+    var qualitys = Array.isArray(source.qualitys) ? source.qualitys : [];
+    parts.push(key.toUpperCase() + (qualitys.length ? ' · ' + qualitys.join('/') : ''));
+  });
+  return parts.length ? parts.join('　') : '等待脚本报告支持的平台与音质';
+}
+function setCustomSourceState(result) {
+  result = result || {};
+  customSourceState.items = Array.isArray(result.items) ? result.items : [];
+  customSourceState.activeId = String(result.activeId || '');
+  renderCustomSourceList();
+}
+function makeCustomSourceElement(tag, className, text) {
+  var element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text != null) element.textContent = String(text);
+  return element;
+}
+function renderCustomSourceList() {
+  var list = document.getElementById('custom-source-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!customSourceState.items.length) {
+    list.appendChild(makeCustomSourceElement('div', 'custom-source-empty', '尚未导入音源脚本'));
+    return;
+  }
+  customSourceState.items.forEach(function(item){
+    var isActive = item.id === customSourceState.activeId || item.active === true;
+    var row = makeCustomSourceElement('article', 'custom-source-item' + (isActive ? ' active' : ''));
+    var head = makeCustomSourceElement('div', 'custom-source-item-head');
+    var identity = makeCustomSourceElement('div');
+    identity.appendChild(makeCustomSourceElement('div', 'custom-source-name', item.name || item.id || '未命名音源'));
+    identity.appendChild(makeCustomSourceElement('div', 'custom-source-meta', [item.version ? 'v' + item.version : '', item.author || '', item.description || ''].filter(Boolean).join(' · ')));
+    head.appendChild(identity);
+    head.appendChild(makeCustomSourceElement('div', 'custom-source-status', customSourceStatusText(item)));
+    row.appendChild(head);
+    row.appendChild(makeCustomSourceElement('div', 'custom-source-capabilities', customSourceCapabilityText(item)));
+    var actions = makeCustomSourceElement('div', 'custom-source-actions');
+    if (!isActive) {
+      var activateButton = makeCustomSourceElement('button', 'primary', '启用');
+      activateButton.type = 'button';
+      activateButton.addEventListener('click', function(){ activateCustomSource(item.id); });
+      actions.appendChild(activateButton);
+    }
+    var replaceButton = makeCustomSourceElement('button', '', '替换/更新');
+    replaceButton.type = 'button';
+    replaceButton.addEventListener('click', function(){ replaceCustomSource(item.id); });
+    actions.appendChild(replaceButton);
+    var removeButton = makeCustomSourceElement('button', 'danger', '删除');
+    removeButton.type = 'button';
+    removeButton.addEventListener('click', function(){ removeCustomSource(item.id, item.name); });
+    actions.appendChild(removeButton);
+    var toggle = makeCustomSourceElement('label', 'custom-source-alert-toggle');
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = item.allowUpdateAlert !== false;
+    checkbox.addEventListener('change', function(){ setCustomSourceUpdateAlert(item.id, checkbox.checked); });
+    toggle.appendChild(checkbox);
+    toggle.appendChild(document.createTextNode('更新提醒'));
+    actions.appendChild(toggle);
+    row.appendChild(actions);
+    list.appendChild(row);
+  });
+}
+async function refreshCustomSources() {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.listCustomSources !== 'function') return;
+  setCustomSourceState(await api.listCustomSources());
+}
+async function runCustomSourceAction(action, successText) {
+  if (customSourceState.loading) return;
+  customSourceState.loading = true;
+  try {
+    var result = await action();
+    if (result && !result.canceled) {
+      setCustomSourceState(result);
+      if (successText) showToast(successText);
+    }
+  } catch (error) {
+    showToast('音源操作失败: ' + (error && error.message ? error.message : '未知错误'));
+  } finally {
+    customSourceState.loading = false;
+  }
+}
+function openCustomSourceModal() {
+  var modal = document.getElementById('custom-source-modal');
+  if (!modal) return;
+  modal.classList.add('show');
+  modal.setAttribute('aria-hidden', 'false');
+  refreshCustomSources().catch(function(error){ showToast('音源列表读取失败: ' + error.message); });
+}
+function closeCustomSourceModal() {
+  var modal = document.getElementById('custom-source-modal');
+  if (!modal) return;
+  modal.classList.remove('show');
+  modal.setAttribute('aria-hidden', 'true');
+}
+function importCustomSource() {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.importCustomSource !== 'function') return;
+  if (!window.confirm('第三方音源脚本可以向网络发送歌曲信息。仅导入你信任的 .js 脚本。')) return;
+  runCustomSourceAction(function(){ return api.importCustomSource(); }, '音源已导入，确认后可启用');
+}
+function replaceCustomSource(id) {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.replaceCustomSource !== 'function') return;
+  runCustomSourceAction(function(){ return api.replaceCustomSource(id); }, '音源脚本已验证并替换');
+}
+function activateCustomSource(id) {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.activateCustomSource !== 'function') return;
+  runCustomSourceAction(function(){ return api.activateCustomSource(id); }, '自定义音源已启用');
+}
+function deactivateCustomSource() {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.deactivateCustomSource !== 'function') return;
+  runCustomSourceAction(function(){ return api.deactivateCustomSource(); }, '已恢复内置播放解析');
+}
+function removeCustomSource(id, name) {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.removeCustomSource !== 'function') return;
+  if (!window.confirm('删除音源“' + String(name || id || '') + '”？')) return;
+  runCustomSourceAction(function(){ return api.removeCustomSource(id); }, '音源已删除');
+}
+function setCustomSourceUpdateAlert(id, enabled) {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.setCustomSourceUpdateAlert !== 'function') return;
+  runCustomSourceAction(function(){ return api.setCustomSourceUpdateAlert(id, enabled); });
+}
+function bindCustomSourceManager() {
+  var api = getDesktopWindowApi();
+  if (!api || typeof api.listCustomSources !== 'function') return;
+  var modal = document.getElementById('custom-source-modal');
+  if (modal) modal.addEventListener('click', function(event){ if (event.target === modal) closeCustomSourceModal(); });
+  if (!customSourceStatusUnsubscribe && typeof api.onCustomSourceStatus === 'function') {
+    customSourceStatusUnsubscribe = api.onCustomSourceStatus(function(status){
+      if (status && Array.isArray(status.items)) setCustomSourceState(status);
+      else refreshCustomSources().catch(function(){});
+      if (status && status.error) showToast('音源错误: ' + status.error);
+      if (status && status.updateAlert && status.updateAlert.log) showToast('音源更新: ' + status.updateAlert.log);
+    });
+  }
+  refreshCustomSources().catch(function(){});
 }
 function hotkeyActionMeta(actionKey) {
   for (var i = 0; i < HOTKEY_ACTIONS.length; i++) {
@@ -26497,6 +26699,7 @@ function toggleFullscreen() {
 //  启动
 // ============================================================
 applyDiyMode(diyPlayerMode, { save: false });
+bindCustomSourceManager();
 bindFxPanel();
 applySavedLyricPaletteState();
 bindQualityControl();

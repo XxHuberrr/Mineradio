@@ -86,6 +86,7 @@ const WEATHER_DEFAULT_LOCATION = {
 };
 
 const updateDownloadJobs = new Map();
+let customSourceResolver = null;
 
 function applySystemCertificateAuthorities() {
   try {
@@ -3244,6 +3245,41 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  if (pn === '/api/custom-source/resolve') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { active: false, handled: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      if (!customSourceResolver) {
+        sendJSON(res, { active: false, handled: false });
+        return;
+      }
+      const controller = new AbortController();
+      req.once('aborted', () => controller.abort(new Error('REQUEST_ABORTED')));
+      res.once('close', () => {
+        if (!res.writableEnded) controller.abort(new Error('REQUEST_ABORTED'));
+      });
+      const result = await customSourceResolver({
+        song: body && typeof body.song === 'object' ? body.song : {},
+        quality: String(body?.quality || 'hires'),
+        signal: controller.signal,
+      });
+      if (!res.destroyed) sendJSON(res, result || { active: false, handled: false });
+    } catch (error) {
+      if (!res.destroyed) {
+        sendJSON(res, {
+          active: true,
+          handled: true,
+          url: '',
+          error: error?.message || 'CUSTOM_SOURCE_FAILED',
+        }, 502);
+      }
+    }
+    return;
+  }
+
   if (pn === '/api/app/version') {
     sendJSON(res, {
       name: APP_PACKAGE.name || 'mineradio',
@@ -4199,5 +4235,9 @@ server.listen(PORT, HOST, () => {
   console.log(' 登录态: ' + (userCookie ? '已登录(cookie已加载)' : '未登录'));
   console.log('======================================================');
 });
+
+server.setCustomSourceResolver = resolver => {
+  customSourceResolver = typeof resolver === 'function' ? resolver : null;
+};
 
 module.exports = server;

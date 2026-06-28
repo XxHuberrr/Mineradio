@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- 新增 LX Music Desktop 自定义音源 API 2.0.0 兼容层，可直接导入现有 `.js` 音源脚本并用于网易云/QQ 搜索结果的播放地址解析。
+- 新增隔离的隐藏 Electron 运行时、音源管理界面、单音源启用/停用、事务式脚本替换和更新提醒控制。
+- 自定义音源失败时保留现有跨平台自动换源策略；停用后恢复 Mineradio 内置解析。
+- 新增 Node 协议测试与真实 Electron 合约冒烟测试，覆盖 HTTP、取消、Buffer、MD5、AES/RSA、zlib、歌词、封面和初始化超时。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

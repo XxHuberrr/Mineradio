@@ -27,6 +27,8 @@ backups/
 .env.*
 
 # Local development noise
+.worktrees
+.worktrees/
 .DS_Store
 Thumbs.db
 desktop.ini

@@ -17,6 +17,23 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
+  listCustomSources: () => ipcRenderer.invoke('mineradio-custom-source-list'),
+  importCustomSource: () => ipcRenderer.invoke('mineradio-custom-source-import'),
+  replaceCustomSource: (id) => ipcRenderer.invoke('mineradio-custom-source-replace', String(id || '')),
+  activateCustomSource: (id) => ipcRenderer.invoke('mineradio-custom-source-activate', String(id || '')),
+  deactivateCustomSource: () => ipcRenderer.invoke('mineradio-custom-source-deactivate'),
+  removeCustomSource: (id) => ipcRenderer.invoke('mineradio-custom-source-remove', String(id || '')),
+  setCustomSourceUpdateAlert: (id, enabled) => ipcRenderer.invoke(
+    'mineradio-custom-source-set-update-alert',
+    String(id || ''),
+    !!enabled,
+  ),
+  onCustomSourceStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, value) => callback(value || {});
+    ipcRenderer.on('mineradio-custom-source-status', listener);
+    return () => ipcRenderer.removeListener('mineradio-custom-source-status', listener);
+  },
   onGlobalHotkey: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});
