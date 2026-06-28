@@ -62,7 +62,7 @@ const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-c
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || path.join(__dirname, 'MineradioCache', 'beatmaps');
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
@@ -511,6 +511,28 @@ function beatCacheRootInfo() {
   const allowed = !!root && !/^C:$/i.test(drive);
   const available = allowed && fs.existsSync(root);
   return { dir, root, drive, allowed, available };
+}
+function clearBeatMapCache() {
+  const dir = path.resolve(BEATMAP_CACHE_DIR);
+  let cleared = 0;
+  try {
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      files.forEach((name) => {
+        const filePath = path.join(dir, name);
+        try {
+          if (fs.statSync(filePath).isFile() && /\.json$/i.test(name)) {
+            fs.unlinkSync(filePath);
+            cleared++;
+          }
+        } catch (_) {}
+      });
+    }
+  } catch (e) {
+    if (e.code === 'ENOENT') return { cleared: 0 };
+    throw e;
+  }
+  return { cleared };
 }
 function ensureBeatMapCacheDir() {
   const info = beatCacheRootInfo();
@@ -3363,6 +3385,17 @@ const server = http.createServer(async (req, res) => {
           reason: err.code || err.message || 'BEAT_CACHE_WRITE_FAILED',
           dir: info.dir,
         });
+      }
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      try {
+        const info = beatCacheRootInfo();
+        const result = clearBeatMapCache();
+        sendJSON(res, { ok: true, cleared: result.cleared || 0, dir: info.dir });
+      } catch (err) {
+        sendJSON(res, { ok: false, error: err.code || err.message || 'BEAT_CACHE_CLEAR_FAILED' });
       }
       return;
     }

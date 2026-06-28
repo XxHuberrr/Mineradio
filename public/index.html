@@ -2253,6 +2253,11 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <div class="fx-slider"><label>溢光强度</label><input id="fx-bloom" type="range" min="0" max="1.6" step="0.01"><output></output></div>
       <div class="fx-slider"><label>离散感</label><input id="fx-scatter" type="range" min="0" max="0.5" step="0.01"><output></output></div>
       <div class="fx-slider"><label>背景压缩</label><input id="fx-bgfade" type="range" min="0" max="1.2" step="0.01"><output></output></div>
+      <div class="fx-section-label" style="margin-top:10px">缓存管理</div>
+      <div class="fx-cache-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span style="font-size:10.5px;color:rgba(255,255,255,.42)">节拍分析 · 封面缓存 · 本地存档</span>
+        <button class="fx-mini-btn" id="clear-cache-btn" onclick="clearAppCache()">清理缓存</button>
+      </div>
     </div>
   </div>
 
@@ -22464,6 +22469,35 @@ function resetFx() {
   if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
   saveLyricLayout();
   showToast('已恢复默认参数');
+}
+
+function clearAppCache() {
+  var btn = document.getElementById('clear-cache-btn');
+  var cleared = 0;
+
+  // 1. 清理前端内存中的节拍缓存
+  var memKeys = Object.keys(beatMapCache || {}).length;
+  var djKeys = Object.keys(djBeatMapCache || {}).length;
+  beatMapCache = {};
+  djBeatMapCache = {};
+  cleared += memKeys + djKeys;
+
+  // 2. 清理本地节拍存档
+  var localKeys = Object.keys(localBeatMapCache || {}).length;
+  localBeatMapCache = {};
+  try { localStorage.removeItem(LOCAL_BEATMAP_STORE_KEY); } catch (_) {}
+  cleared += localKeys;
+
+  // 3. 清理磁盘节拍缓存文件
+  if (btn) { btn.disabled = true; btn.textContent = '清理中...'; }
+  apiJson('/api/beatmap/cache', { method: 'DELETE' }).then(function(res){
+    cleared += (res && res.cleared) || 0;
+    if (btn) { btn.disabled = false; btn.textContent = '清理缓存'; }
+    showToast('已清理 ' + cleared + ' 条缓存');
+  }).catch(function(){
+    if (btn) { btn.disabled = false; btn.textContent = '清理缓存'; }
+    showToast('已清理 ' + cleared + ' 条本地缓存（磁盘缓存清理失败）');
+  });
 }
 
 function setShelfMode(m) {
