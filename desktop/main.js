@@ -29,6 +29,7 @@ const WINDOWED_SCALE = 3 / 4;
 const WINDOWED_MARGIN = 32;
 const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
+const USE_NATIVE_TRAFFIC_LIGHTS = process.platform === 'darwin';
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
@@ -36,6 +37,9 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const ANGLE_BACKEND = process.platform === 'win32'
+  ? 'd3d11'
+  : (process.platform === 'darwin' ? 'metal' : 'opengl');
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -48,7 +52,7 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
+  ['use-angle', ANGLE_BACKEND],
 ];
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
@@ -697,6 +701,17 @@ function toggleFullscreen(win) {
   windowFullscreenActive = true;
   win.setFullScreen(true);
   sendWindowState(win);
+}
+
+function enterNativeFullscreenFromZoom(win) {
+  if (process.platform !== 'darwin' || !win || win.isDestroyed()) return false;
+  if (win.isFullScreen() || windowFullscreenActive) return false;
+  windowFullscreenActive = true;
+  setTimeout(() => {
+    if (!win || win.isDestroyed() || win.isFullScreen()) return;
+    try { win.setFullScreen(true); } catch (e) {}
+  }, 0);
+  return true;
 }
 
 function overlayUrl(page) {
@@ -1350,7 +1365,12 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    frame: USE_NATIVE_TRAFFIC_LIGHTS,
+    titleBarStyle: USE_NATIVE_TRAFFIC_LIGHTS ? 'hiddenInset' : undefined,
+    trafficLightPosition: USE_NATIVE_TRAFFIC_LIGHTS ? { x: 18, y: 18 } : undefined,
+    fullscreenable: true,
+    maximizable: true,
+    resizable: true,
     fullscreen: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -1388,7 +1408,10 @@ async function createWindow() {
     sendWindowState(mainWindow);
   });
 
-  mainWindow.on('maximize', () => sendWindowState(mainWindow));
+  mainWindow.on('maximize', () => {
+    if (enterNativeFullscreenFromZoom(mainWindow)) return;
+    sendWindowState(mainWindow);
+  });
   mainWindow.on('unmaximize', () => sendWindowState(mainWindow));
   mainWindow.on('minimize', () => sendWindowState(mainWindow));
   mainWindow.on('restore', () => sendWindowState(mainWindow));

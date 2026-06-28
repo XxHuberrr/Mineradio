@@ -65,15 +65,28 @@ Windows 用户可以在 GitHub Releases 中下载安装包。
 
 已经安装过旧版本的用户，建议卸载旧版本、隔离旧安装包后，再使用 `v1.1.1` 安装包纯净安装。
 
+## macOS 尝鲜构建
+
+macOS 目前不是官方签名发布平台，但开发者和尝鲜用户可以从源码构建本地 `.app`：
+
+```bash
+npm install
+npm run build:mac:dir
+open dist/mac*/Mineradio.app
+```
+
+开发模式可使用 `npm start`。`http://localhost:3000` 是 Electron 本地服务地址，只在应用运行时可访问，并不是线上网页。更多说明见 [macOS 尝鲜构建说明](./docs/MACOS_EXPERIMENTAL_BUILD.md)。
+
 ## 开发运行
 
 ```bash
 npm install
 npm start
 npm run build:win
+npm run build:mac:dir
 ```
 
-桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
+桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，`npm run build:mac:dir` 会生成本地 macOS `.app` 目录，产物位于 `dist/`。
 
 ## 更新机制
 
