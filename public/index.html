@@ -45,6 +45,7 @@ body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-app-title{display:none}
 .desktop-window-controls{display:flex;align-items:center;gap:6px;padding:0;border-radius:0;background:transparent;box-shadow:none;-webkit-app-region:no-drag;pointer-events:auto}
 .desktop-window-btn{width:38px;height:30px;border:0;border-radius:10px;background:rgba(4,8,10,.42);color:rgba(224,250,255,.72);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .18s,color .18s,transform .18s}
+body.mac-os .desktop-window-btn{display:none!important}
 .desktop-window-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
 .desktop-window-btn:hover{background:rgba(244,210,138,.14);color:#fff1bd;transform:translateY(-1px)}
 .desktop-window-btn.close:hover{background:rgba(255,86,100,.86);color:#fff}
@@ -101,6 +102,8 @@ body.custom-background-override #album-bg{opacity:0!important}
 body.render-deep-sleep #canvas-container,body.render-deep-sleep #idle-guide-canvas,body.render-deep-sleep #splash-canvas,body.render-deep-sleep #hand-canvas{opacity:0!important;visibility:hidden!important}
 body.splash-active:not(.splash-revealing) #canvas-container{opacity:.16;transform:scale(1)}
 body.splash-active.splash-revealing #canvas-container{opacity:1;transform:scale(1)}
+body.empty-home-active #canvas-container{pointer-events:none!important;cursor:default!important}
+body.empty-home-active #canvas-container canvas{pointer-events:none!important;cursor:default!important}
 #idle-guide-canvas{position:fixed;inset:0;z-index:2;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .7s cubic-bezier(.22,1,.36,1)}
 body.idle-guide-on #idle-guide-canvas{opacity:1!important}
 body.home-wallpaper-preview #idle-guide-canvas{opacity:0!important;visibility:hidden!important}
@@ -5514,6 +5517,7 @@ var UI_HIT_SELECTOR = '#search-area,#top-right,#fullscreen-diy-zone,#fx-panel,#f
 
 function isPointerOverUi(e) {
   if (!e) return false;
+  if (document.body.classList.contains('empty-home-active')) return true;
   var el = document.elementFromPoint(e.clientX, e.clientY);
   return !!(el && el.closest && el.closest(UI_HIT_SELECTOR));
 }
@@ -14964,6 +14968,10 @@ renderer.domElement.addEventListener('contextmenu', function(e){
 //   side 模式: 常驻不再用半屏预览区接管滚轮
 //   stage 模式: 鼠标 y > 60% 屏幕高
 //   shift + wheel: 强制滚卡片
+var shelfWheelAccumulator = 0;
+var shelfWheelTimer = null;
+var clWheelAccumulator = 0;
+var clWheelTimer = null;
 var wheelOverShelf = false;
 renderer.domElement.addEventListener('wheel', function(e){
   if (isPointerOverUi(e)) return;
@@ -14979,7 +14987,13 @@ renderer.domElement.addEventListener('wheel', function(e){
       var panelScreenHit = !rowHit && !panelHit && cl.screenContainsPanel ? cl.screenContainsPanel(e.clientX, e.clientY) : false;
       if (!rowHit && !panelHit && !panelScreenHit) return;
       e.preventDefault(); e.stopImmediatePropagation();
-      cl.scrollBy(e.deltaY > 0 ? 1 : -1);
+      if (clWheelTimer) clearTimeout(clWheelTimer);
+      clWheelTimer = setTimeout(function() { clWheelAccumulator = 0; }, 150);
+      clWheelAccumulator += e.deltaY;
+      if (Math.abs(clWheelAccumulator) >= 60) {
+        cl.scrollBy(clWheelAccumulator > 0 ? 1 : -1);
+        clWheelAccumulator = 0;
+      }
       return;
     }
   }
@@ -14998,7 +15012,13 @@ renderer.domElement.addEventListener('wheel', function(e){
   if (inShelfArea) {
     e.preventDefault();
     e.stopImmediatePropagation();
-    shelfManager.scrollBy(e.deltaY > 0 ? 1 : -1);
+    if (shelfWheelTimer) clearTimeout(shelfWheelTimer);
+    shelfWheelTimer = setTimeout(function() { shelfWheelAccumulator = 0; }, 150);
+    shelfWheelAccumulator += e.deltaY;
+    if (Math.abs(shelfWheelAccumulator) >= 60) {
+      shelfManager.scrollBy(shelfWheelAccumulator > 0 ? 1 : -1);
+      shelfWheelAccumulator = 0;
+    }
   }
 }, { passive: false, capture: true });
 
@@ -16229,7 +16249,7 @@ function isHomeBlankDismissClick(e) {
   var home = document.getElementById('empty-home');
   if (!home) return false;
   var homeRect = home.getBoundingClientRect();
-  if (!isPointInsideRectWithPad(x, y, homeRect, 0)) return false;
+  if (!isPointInsideRectWithPad(x, y, homeRect, 0)) return true;
   if (isPointNearHomeContent(x, y)) return false;
   return true;
 }
@@ -21848,10 +21868,11 @@ function normalizeHotkeyEvent(e) {
   return mods.concat([code]).join('+');
 }
 function hotkeyDisplayPart(part) {
+  var isMac = document.body.classList.contains('mac-os');
   if (part === 'Ctrl') return 'Ctrl';
-  if (part === 'Alt') return 'Alt';
+  if (part === 'Alt') return isMac ? 'Opt' : 'Alt';
   if (part === 'Shift') return 'Shift';
-  if (part === 'Meta') return 'Win';
+  if (part === 'Meta') return isMac ? 'Cmd' : 'Win';
   if (part === 'Space') return 'Space';
   if (part === 'ArrowLeft') return 'Left';
   if (part === 'ArrowRight') return 'Right';
@@ -21870,11 +21891,12 @@ function formatHotkey(hotkey) {
 function hotkeyToAccelerator(hotkey) {
   var parts = String(hotkey || '').split('+').filter(Boolean);
   if (!parts.length) return '';
+  var isMac = document.body.classList.contains('mac-os');
   return parts.map(function(part){
     if (part === 'Ctrl') return 'Control';
     if (part === 'Alt') return 'Alt';
     if (part === 'Shift') return 'Shift';
-    if (part === 'Meta') return 'Super';
+    if (part === 'Meta') return isMac ? 'Cmd' : 'Super';
     if (part === 'Space') return 'Space';
     if (part === 'ArrowLeft') return 'Left';
     if (part === 'ArrowRight') return 'Right';
