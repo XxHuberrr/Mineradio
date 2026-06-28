@@ -191,7 +191,27 @@ function saveQQCookie(c) {
 // 后端只做：登录(PKCE)、token 持久化/刷新、搜索、歌单。
 // OAuth 回调使用固定端口 127.0.0.1:8888（主 server 端口是动态的，Spotify 要求 redirect 精确匹配）。
 const SPOTIFY_TOKEN_FILE = process.env.SPOTIFY_TOKEN_FILE || path.join(__dirname, '.spotify-token');
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
+// BYO Client ID：用户在登录界面自行填入（PKCE，不需要 secret）。持久化到 userData 的配置文件，
+// 不在仓库里硬编码、也没有公用 ID。env SPOTIFY_CLIENT_ID 仅作开发期可选回退。
+const SPOTIFY_CONFIG_FILE = process.env.SPOTIFY_CONFIG_FILE || path.join(__dirname, '.spotify-config');
+function loadSpotifyClientId() {
+  try {
+    if (fs.existsSync(SPOTIFY_CONFIG_FILE)) {
+      const cfg = JSON.parse(fs.readFileSync(SPOTIFY_CONFIG_FILE, 'utf8'));
+      if (cfg && cfg.clientId) return String(cfg.clientId).trim();
+    }
+  } catch (e) {}
+  return (process.env.SPOTIFY_CLIENT_ID || '').trim();
+}
+let SPOTIFY_CLIENT_ID = loadSpotifyClientId();
+function saveSpotifyClientId(id) {
+  SPOTIFY_CLIENT_ID = String(id || '').trim();
+  try {
+    if (SPOTIFY_CLIENT_ID) fs.writeFileSync(SPOTIFY_CONFIG_FILE, JSON.stringify({ clientId: SPOTIFY_CLIENT_ID }));
+    else if (fs.existsSync(SPOTIFY_CONFIG_FILE)) fs.unlinkSync(SPOTIFY_CONFIG_FILE);
+  } catch (e) {}
+  return SPOTIFY_CLIENT_ID;
+}
 const SPOTIFY_REDIRECT_PORT = Number(process.env.SPOTIFY_REDIRECT_PORT || 8888);
 const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || ('http://127.0.0.1:' + SPOTIFY_REDIRECT_PORT + '/callback');
 const SPOTIFY_SCOPES = [
@@ -3821,6 +3841,21 @@ const server = http.createServer(async (req, res) => {
 
   // ---------- Spotify ----------
   if (pn === '/api/spotify/config') {
+    if (req.method === 'POST') {
+      const body = await readRequestBody(req);
+      const prev = SPOTIFY_CLIENT_ID;
+      const next = saveSpotifyClientId(body && body.clientId);
+      // 换了 Client ID = 换了 Spotify app，旧 token / 待定 PKCE 都失效，清掉避免串号
+      if (next !== prev) { saveSpotifyToken(null); spotifyPkce = null; }
+      sendJSON(res, {
+        provider: 'spotify',
+        ok: true,
+        configured: !!SPOTIFY_CLIENT_ID,
+        clientId: SPOTIFY_CLIENT_ID || '',
+        redirectUri: SPOTIFY_REDIRECT_URI,
+      });
+      return;
+    }
     sendJSON(res, {
       provider: 'spotify',
       configured: !!SPOTIFY_CLIENT_ID,

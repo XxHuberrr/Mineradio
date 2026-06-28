@@ -40,6 +40,41 @@ function resolveRcedit(projectDir) {
   return hit;
 }
 
+// 对打包产物做 castLabs EVS 生产 VMP 签名，让公开分发的 Mineradio.exe 带有效的 Mineradio.exe.sig，
+// 否则下载用户的 Spotify 整曲播放会被 Widevine 生产 license 服务器拒绝。
+// 必须在 rcedit 改写 exe 之后签名（改 exe 会让旧签名失效）。
+// 凭据走 EVS 缓存（-n 非交互，绝不在此输入密码）；缺凭据时 -n 会干净失败。
+function signVmp(appOutDir) {
+  if (process.env.SKIP_VMP_SIGN) {
+    console.log('  • VMP 签名已跳过 (SKIP_VMP_SIGN)');
+    return;
+  }
+  const python = process.env.EVS_PYTHON || 'python';
+  const strict = !!process.env.MINERADIO_REQUIRE_VMP;
+  try {
+    console.log(`  • VMP 生产签名 (EVS sign-pkg)  ${appOutDir}`);
+    execFileSync(python, ['-m', 'castlabs_evs.vmp', '-n', 'sign-pkg', appOutDir], { stdio: 'inherit' });
+    try {
+      execFileSync(python, ['-m', 'castlabs_evs.vmp', '-n', 'verify-pkg', appOutDir], { stdio: 'inherit' });
+    } catch (e) { /* verify 仅信息性，失败不阻断 */ }
+    console.log('  • VMP 签名完成：Mineradio.exe.sig 已写入打包目录');
+  } catch (err) {
+    const msg = [
+      '',
+      '  ====================================================================',
+      '  !! VMP 生产签名失败 —— 这个发布包不带有效证书，',
+      '  !! 下载用户的 Spotify 整曲播放将无法工作（Widevine 会拒绝）。',
+      '  !! 请确保已 castlabs-evs 登录，然后手动重签打包目录：',
+      `  !!   ${python} -m castlabs_evs.vmp sign-pkg "${appOutDir}"`,
+      `  !! 原因: ${err && err.message ? err.message : err}`,
+      '  ====================================================================',
+      ''
+    ].join('\n');
+    if (strict) throw new Error('VMP 签名失败且 MINERADIO_REQUIRE_VMP 已设置：' + (err && err.message ? err.message : err));
+    console.warn(msg);
+  }
+}
+
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'win32') return;
 
@@ -63,4 +98,7 @@ module.exports = async function afterPack(context) {
     '--set-file-version', version,
     '--set-product-version', version
   ], { stdio: 'inherit' });
+
+  // 图标/版本注入改写了 exe，此时再做 VMP 生产签名，保证发布包带有效证书。
+  signVmp(context.appOutDir);
 };

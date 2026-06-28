@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, components } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, components, desktopCapturer } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -1328,8 +1328,10 @@ async function createWindow() {
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   // Spotify token 与 cookie 同样存进共享 userData（直装版/开发版互通）。
-  // SPOTIFY_CLIENT_ID 走 passthrough：开发期由启动 shell 注入，不硬编码进仓库。
+  // Client ID 由用户在登录界面自行填入（BYO / PKCE），持久化到 userData，不硬编码进仓库、无公用 ID。
+  // env SPOTIFY_CLIENT_ID 仅作开发期可选回退。
   process.env.SPOTIFY_TOKEN_FILE = path.join(app.getPath('userData'), '.spotify-token');
+  process.env.SPOTIFY_CONFIG_FILE = path.join(app.getPath('userData'), '.spotify-config');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
@@ -1374,6 +1376,28 @@ async function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  // Phase 4: Spotify loopback 可视化 —— 拦截渲染层 getDisplayMedia，
+  // 自动提供屏幕视频源 + 系统 loopback 音频，无需弹窗选择。
+  // 注意 "silence pitfall"：loopback 音频必须与真实视频源同行，否则音频静音。
+  try {
+    mainWindow.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+      desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } })
+        .then((sources) => {
+          const screenSrc = (sources || []).find(s => s && s.id && s.id.indexOf('screen:') === 0);
+          const src = screenSrc || (sources && sources[0]) || null;
+          console.log('[SpotifyLoopback] getSources count=', (sources || []).length, 'picked=', src && src.id);
+          if (!src) { console.error('[SpotifyLoopback] no capture source -> loopback would be silent'); }
+          callback({ video: src, audio: 'loopback' });
+        })
+        .catch((err) => {
+          console.error('[SpotifyLoopback] getSources failed:', err && err.message);
+          callback({});
+        });
+    });
+  } catch (e) {
+    console.warn('[SpotifyLoopback] setDisplayMediaRequestHandler unsupported:', e && e.message);
+  }
 
   mainWindow.webContents.once('did-finish-load', () => {
     sendWindowState(mainWindow);

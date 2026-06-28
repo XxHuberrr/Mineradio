@@ -2496,13 +2496,18 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       </div>
     </div>
     <div id="spotify-login-panel" class="qq-cookie-panel">
-      <div class="qq-cookie-note" style="margin-bottom:8px;line-height:1.7">Spotify <b>Premium</b> 账号，点击下方“浏览器登录”，在系统浏览器完成授权后会自动返回并同步会话。</div>
-      <div id="spotify-login-state" style="font-size:11px;color:rgba(255,255,255,0.5);letter-spacing:.3px">未连接 Spotify</div>
+      <div class="qq-cookie-note" style="margin-bottom:8px;line-height:1.7">Spotify <b>Premium</b> 账号。先到 <b>developer.spotify.com</b> 新建一个 App，把下面这个 Redirect URI 填进 App 设置，再把它的 <b>Client ID</b> 粘到这里（用 PKCE，<b>不需要 Client Secret</b>）。</div>
+      <input id="spotify-client-id-input" type="text" spellcheck="false" autocomplete="off" placeholder="粘贴你的 Spotify Client ID" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;font:inherit;font-size:12px;padding:9px 11px;letter-spacing:.3px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <div class="qq-cookie-note" style="display:flex;align-items:center;gap:6px;margin:0">Redirect URI：<code id="spotify-redirect-uri" style="font-size:10.5px;color:rgba(255,255,255,0.7)">—</code><button type="button" class="modal-btn" style="height:24px;padding:0 9px;font-size:10.5px" onclick="copySpotifyRedirectUri()">复制</button></div>
+        <button id="spotify-client-id-save" class="modal-btn primary" type="button" onclick="submitSpotifyClientId()">保存 Client ID</button>
+      </div>
+      <div id="spotify-login-state" style="font-size:11px;color:rgba(255,255,255,0.5);letter-spacing:.3px;margin-top:8px">未连接 Spotify</div>
     </div>
     <div class="btn-row">
       <button class="modal-btn" onclick="closeLoginModal()">取消</button>
       <button class="modal-btn" onclick="skipLoginAndFocusSearch()">先搜索一首歌</button>
-      <button id="login-both-btn" class="modal-btn" onclick="requestDualLoginMode()">我两个都要</button>
+      <button id="login-both-btn" class="modal-btn" onclick="requestDualLoginMode()">我三个都要</button>
       <button id="qq-cookie-toggle-btn" class="modal-btn" type="button" onclick="toggleQQCookiePanel()">手动导入</button>
       <button id="refresh-qr-btn" class="modal-btn primary" onclick="refreshQr()">刷新二维码</button>
     </div>
@@ -2521,14 +2526,14 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button id="user-provider-netease" class="netease active" type="button" onclick="setActiveAccountProvider('netease')">网易云</button>
       <button id="user-provider-qq" class="qq" type="button" onclick="setActiveAccountProvider('qq')">QQ 音乐</button>
       <button id="user-provider-spotify" class="spotify" type="button" onclick="setActiveAccountProvider('spotify')">Spotify</button>
-      <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我两个都要</button>
+      <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我三个都要</button>
     </div>
     <div class="account-modal-actions">
       <button id="account-add-netease" class="modal-btn" onclick="openProviderLogin('netease')">补登网易云</button>
       <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登 QQ 音乐</button>
       <button id="account-add-spotify" class="modal-btn" onclick="openProviderLogin('spotify')">连接 Spotify</button>
     </div>
-    <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
+    <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览多平台账号交互。</div>
     <div class="btn-row">
       <button class="modal-btn" onclick="closeUserModal()">关闭</button>
       <button id="account-logout-btn" class="modal-btn primary" onclick="logoutActiveAccount()">退出当前平台</button>
@@ -4404,17 +4409,18 @@ function beatBandRms(data, sampleRate, fftSize, hz0, hz1) {
 }
 
 function processRealtimeBeatEngine(dt) {
-  if (!beatAnalyser || !audioCtx || !audio || audio.paused) return null;
+  var ba = vizBeatAnalyser(); // Phase 4: Spotify loopback 活跃时读专用 beat 分析器
+  if (!ba || !audioCtx || !visualizerAudioLive()) return null;
   dt = Math.max(0.001, Math.min(0.080, dt || 0.016));
   var dj = djMode.active;
-  beatAnalyser.getByteFrequencyData(beatFrequencyData);
-  beatAnalyser.getByteTimeDomainData(beatTimeDomainData);
+  ba.getByteFrequencyData(beatFrequencyData);
+  ba.getByteTimeDomainData(beatTimeDomainData);
   var sr = audioCtx.sampleRate || 44100;
-  var sub = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 38, 74);
-  var kick = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 52, 165);
-  var body = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 165, 420);
-  var vocal = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 420, 2600);
-  var snap = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 1800, 9200);
+  var sub = beatBandRms(beatFrequencyData, sr, ba.fftSize, 38, 74);
+  var kick = beatBandRms(beatFrequencyData, sr, ba.fftSize, 52, 165);
+  var body = beatBandRms(beatFrequencyData, sr, ba.fftSize, 165, 420);
+  var vocal = beatBandRms(beatFrequencyData, sr, ba.fftSize, 420, 2600);
+  var snap = beatBandRms(beatFrequencyData, sr, ba.fftSize, 1800, 9200);
   var low = Math.min(1, kick * 0.86 + sub * 0.42);
   var rms = 0;
   for (var i = 0; i < beatTimeDomainData.length; i++) {
@@ -4658,7 +4664,8 @@ function scheduleBeatCamera(beat, source) {
   snapTone /= toneSum;
   var sharpness = typeof beat === 'number' ? snapTone : Math.max(0, Math.min(1, beat.sharpness == null ? snapTone : beat.sharpness));
   var mass = typeof beat === 'number' ? lowTone : Math.max(0, Math.min(1, beat.mass == null ? (lowTone * 0.72 + bodyTone * 0.36 + strength * 0.20) : beat.mass));
-  var nowT = audio ? audio.currentTime : uniforms.uTime.value;
+  // Phase 4: Spotify loopback 模式下 audio 元素冻结，改用自由运行的 uTime 作为相机时钟。
+  var nowT = (audio && !spotifyLoopback.active) ? audio.currentTime : uniforms.uTime.value;
   var mode = 'deep';
   if (dj) {
     if (rawSnapTone > 0.58 && rawSnapTone > rawLowTone * 0.86 && rawSnapTone > rawBodyTone * 1.08) mode = 'snap';
@@ -4906,8 +4913,9 @@ function scheduleBeatCamera(beat, source) {
 }
 
 function updateBeatCamera(dt) {
-  var t = audio ? audio.currentTime : uniforms.uTime.value;
-  if (!audio || audio.paused) {
+  // Phase 4: Spotify loopback 模式下用自由运行的 uTime 作为相机时钟，与 scheduleBeatCamera 保持一致。
+  var t = (audio && !spotifyLoopback.active) ? audio.currentTime : uniforms.uTime.value;
+  if (!visualizerAudioLive()) {
     beatCam.punch *= Math.pow(0.08, dt);
     beatCam.thetaKick *= Math.pow(0.05, dt);
     beatCam.phiKick *= Math.pow(0.05, dt);
@@ -18434,6 +18442,9 @@ var spotifyState = { positionMs: 0, durationMs: 0, paused: true, uri: '', syncAt
 var spotifyEndHandled = false;
 var spotifyMaxPosMs = 0;       // 当前曲已达到的最大进度，用于区分"刚开播的 pos0 瞬态"与"真正播完"
 var spotifyStartGuardAt = 0;   // 开播时间戳，开头若干秒内不判结束
+// Phase 4: loopback 可视化 —— Spotify 整曲不经过 audio 元素，
+// 用系统 loopback 抓输出喂独立 analyser（不连 destination，避免回声/反馈）。
+var spotifyLoopback = { stream: null, node: null, analyser: null, beatAnalyser: null, silent: null, active: false, starting: false };
 
 function spotifyIsActive() { return playbackMode === 'spotify'; }
 
@@ -18558,6 +18569,102 @@ function spotifyCurrentPositionMs() {
   return pos;
 }
 
+// ---- Phase 4: loopback 可视化接线 ----
+// 可视化是否有“活的”音频：普通模式看 audio 元素，Spotify 模式看 loopback + SDK 状态。
+function visualizerAudioLive() {
+  if (spotifyLoopback.active) return spotifyIsActive() && !spotifyState.paused;
+  return !!(audio && !audio.paused);
+}
+// 当前可视化应读取的分析器：Spotify loopback 活跃时用专用分析器，否则用 audio 元素分析器。
+function vizSpectrumAnalyser() {
+  return (spotifyLoopback.active && spotifyLoopback.analyser) ? spotifyLoopback.analyser : analyser;
+}
+function vizBeatAnalyser() {
+  return (spotifyLoopback.active && spotifyLoopback.beatAnalyser) ? spotifyLoopback.beatAnalyser : beatAnalyser;
+}
+
+async function startSpotifyLoopbackViz() {
+  if (spotifyLoopback.active || spotifyLoopback.starting) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return;
+  spotifyLoopback.starting = true;
+  try {
+    // 直接播 Spotify（未先播过普通音频）时 audio 元素尚未创建，
+    // 而 initAudio() 需要它来 createMediaElementSource。先补建一个空 audio 元素。
+    if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
+    if (!audioReady) initAudio();
+    await resumeAudioAnalysis();
+    // 必须请求视频源，否则 Electron loopback 音频会静音（silence pitfall）。
+    // 我们不渲染视频帧，仅靠它保住 loopback 音频轨。
+    var stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    if (!stream.getAudioTracks().length) {
+      try { stream.getTracks().forEach(function(t){ t.stop(); }); } catch (e) {}
+      throw new Error('NO_LOOPBACK_AUDIO');
+    }
+    var node = audioCtx.createMediaStreamSource(stream);
+    var spec = audioCtx.createAnalyser();
+    spec.fftSize = FFT_SIZE; spec.smoothingTimeConstant = 0.58;
+    var beat = audioCtx.createAnalyser();
+    beat.fftSize = BEAT_FFT_SIZE; beat.smoothingTimeConstant = 0.10;
+    // 关键：Web Audio 是“拉取”模型，分析器节点必须有一条通往 destination 的路径，
+    // Chromium 才会处理它、刷新频谱数据。这里经 gain=0 的静音节点接到 destination：
+    // 既让支路被拉取（分析器更新），又因零增益不会把系统音频重新播出（无回声/反馈）。
+    var silent = audioCtx.createGain();
+    silent.gain.value = 0;
+    node.connect(spec);
+    node.connect(beat);
+    spec.connect(silent);
+    beat.connect(silent);
+    silent.connect(audioCtx.destination);
+    var at = stream.getAudioTracks()[0];
+    if (at) at.addEventListener('ended', function(){ stopSpotifyLoopbackViz(); });
+    spotifyLoopback.stream = stream;
+    spotifyLoopback.node = node;
+    spotifyLoopback.analyser = spec;
+    spotifyLoopback.beatAnalyser = beat;
+    spotifyLoopback.silent = silent;
+    spotifyLoopback.active = true;
+    console.log('[SpotifyLoopback] viz capture started; audioTracks=', stream.getAudioTracks().length, 'ctx=', audioCtx.state);
+    try { showToast('采集已连接 (ctx=' + audioCtx.state + ', tracks=' + stream.getAudioTracks().length + ')'); } catch (e) {}
+    // 诊断探针：1.5s 后同时检查 PCM 电平 + 渲染门控会不会放行。
+    setTimeout(function(){
+      if (!spotifyLoopback.active || !spotifyLoopback.analyser) return;
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        var probe = new Uint8Array(spotifyLoopback.analyser.frequencyBinCount);
+        spotifyLoopback.analyser.getByteFrequencyData(probe);
+        var peak = 0, sum = 0;
+        for (var i = 0; i < probe.length; i++) { if (probe[i] > peak) peak = probe[i]; sum += probe[i]; }
+        var avg = Math.round(sum / probe.length);
+        var live = visualizerAudioLive();
+        console.log('[SpotifyLoopback] probe peak=' + peak + ' avg=' + avg +
+          ' live=' + live + ' mode=' + playbackMode + ' sppaused=' + spotifyState.paused +
+          ' active=' + spotifyLoopback.active + ' playing=' + playing);
+        showToast('peak=' + peak + ' live=' + live + ' mode=' + playbackMode + ' pause=' + spotifyState.paused + ' play=' + playing);
+      } catch (e) { console.warn('[SpotifyLoopback] probe failed', e); }
+    }, 1500);
+  } catch (err) {
+    console.warn('[SpotifyLoopback] start failed:', err);
+    var em = (err && err.name ? err.name + ': ' : '') + ((err && err.message) || String(err));
+    try { showToast('采集失败 ' + em); } catch (e) {}
+  } finally {
+    spotifyLoopback.starting = false;
+  }
+}
+
+function stopSpotifyLoopbackViz() {
+  if (!spotifyLoopback.active && !spotifyLoopback.stream) return;
+  try { if (spotifyLoopback.node) spotifyLoopback.node.disconnect(); } catch (e) {}
+  try { if (spotifyLoopback.analyser) spotifyLoopback.analyser.disconnect(); } catch (e) {}
+  try { if (spotifyLoopback.beatAnalyser) spotifyLoopback.beatAnalyser.disconnect(); } catch (e) {}
+  try { if (spotifyLoopback.silent) spotifyLoopback.silent.disconnect(); } catch (e) {}
+  try { if (spotifyLoopback.stream) spotifyLoopback.stream.getTracks().forEach(function(t){ t.stop(); }); } catch (e) {}
+  spotifyLoopback.stream = null; spotifyLoopback.node = null;
+  spotifyLoopback.analyser = null; spotifyLoopback.beatAnalyser = null;
+  spotifyLoopback.silent = null;
+  spotifyLoopback.active = false;
+  console.log('[SpotifyLoopback] viz capture stopped');
+}
+
 async function playSpotifyTrack(song, token, opts) {
   opts = opts || {};
   try {
@@ -18577,6 +18684,7 @@ async function playSpotifyTrack(song, token, opts) {
     forcePlaybackControlsInteractive();
     hideLoading();
     updatePlaybackProgressUi();
+    startSpotifyLoopbackViz(); // Phase 4: 开启 loopback 喂可视化（异步，失败不阻断播放）
     safePlaybackStep('spotify-session-begin', function(){ beginListenSession(song, opts.context || null); });
     safeRenderQueuePanel('spotify-play');
     scheduleShelfRebuild('spotify-play', true);
@@ -18667,8 +18775,8 @@ async function playQueueAt(idx, opts) {
     await playSpotifyTrack(song, token, opts);
     return;
   }
-  // 非 Spotify：从 Spotify 模式切回普通音频时复位并暂停 SDK。
-  if (playbackMode === 'spotify') { playbackMode = 'audio'; spotifyPausePlayback(); }
+  // 非 Spotify：从 Spotify 模式切回普通音频时复位并暂停 SDK，停掉 loopback 抓取。
+  if (playbackMode === 'spotify') { playbackMode = 'audio'; spotifyPausePlayback(); stopSpotifyLoopbackViz(); }
   try {
     markPlayPhase('source-url');
     var isQQPlayback = songProviderKey(song) === 'qq';
@@ -19880,6 +19988,11 @@ function renderUserPlaylistsList(opts) {
     { key:'qq', label:'QQ 音乐歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'qq'; }) },
     { key:'spotify', label:'Spotify 歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'spotify'; }) }
   ];
+  // 把"最近播放那首歌的来源"对应的歌单分组顶到最上面，其余保持原有相对顺序（sort 在 Electron/V8 上是稳定的）。
+  var recentProvider = songProviderKey((listenStatsState.history || [])[0] || null);
+  groups.sort(function(a, b){
+    return (a.key === recentProvider ? 0 : 1) - (b.key === recentProvider ? 0 : 1);
+  });
   if (opts.reset) resetPlaylistPanelRenderLimit();
   playlistPanelRenderLimit = Math.max(PLAYLIST_PANEL_BATCH_SIZE, Math.min(userPlaylists.length, playlistPanelRenderLimit || PLAYLIST_PANEL_BATCH_SIZE));
   var renderedCount = 0;
@@ -23524,6 +23637,9 @@ function hasPlatformLogin(provider) {
 function hasAnyPlatformLogin() {
   return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('spotify');
 }
+function loggedProviderCount() {
+  return (hasPlatformLogin('netease') ? 1 : 0) + (hasPlatformLogin('qq') ? 1 : 0) + (hasPlatformLogin('spotify') ? 1 : 0);
+}
 function firstLoggedProvider() {
   if (hasPlatformLogin(activeAccountProvider)) return activeAccountProvider;
   if (hasPlatformLogin('netease')) return 'netease';
@@ -23647,15 +23763,15 @@ function renderUserBtn() {
     activeAccountProvider = firstLoggedProvider();
     btn.classList.add('logged-in', 'multi-account');
     btn.classList.remove('logged-out');
-    btn.title = '账号信息 · 双平台登录状态';
-    btn.innerHTML = renderTopAccountPill('netease') + renderTopAccountPill('qq');
+    btn.title = '账号信息 · 多平台登录状态';
+    btn.innerHTML = renderTopAccountPill('netease') + renderTopAccountPill('qq') + renderTopAccountPill('spotify');
   } else if (hasAnyPlatformLogin()) {
     activeAccountProvider = firstLoggedProvider();
     var st = platformStatus(activeAccountProvider);
     var meta = platformMeta(activeAccountProvider);
     btn.classList.add('logged-in');
     btn.classList.remove('logged-out');
-    btn.title = dualAccountMode ? '账号信息 · 已启用双平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
+    btn.title = dualAccountMode ? '账号信息 · 已启用多平台展示' : ((st.nickname || meta.label) + ' · 账号信息');
     btn.innerHTML = '<img id="user-avatar" src="' + providerAvatarSrc(activeAccountProvider, st) + '">' +
                     '<span>' + escHtml(st.nickname || meta.label) + '</span>' +
                     providerVipBadge(activeAccountProvider, st, 'user-vip-tag');
@@ -23682,7 +23798,7 @@ function closeLoginModal() {
 function setLoginProvider(provider, silent) {
   loginProvider = (provider === 'qq' || provider === 'spotify') ? provider : 'netease';
   updateLoginProviderUi();
-  if (loginProvider === 'spotify') { refreshSpotifyLoginStatus(); return; }
+  if (loginProvider === 'spotify') { loadSpotifyConfigIntoUi(); refreshSpotifyLoginStatus(); return; }
   if (!silent && document.getElementById('login-modal').classList.contains('show')) refreshQr();
 }
 function updateLoginProviderUi() {
@@ -23722,7 +23838,7 @@ function updateLoginProviderUi() {
     var spState = document.getElementById('spotify-login-state');
     if (spState) spState.textContent = spotifyLoginStatus.loggedIn
       ? ('已连接 · ' + (spotifyLoginStatus.nickname || 'Spotify') + (spotifyLoginStatus.premium ? ' · Premium' : ''))
-      : (spotifyLoginStatus.configured === false ? '后端未配置 Client ID（启动时设置 SPOTIFY_CLIENT_ID）' : '未连接 Spotify');
+      : (spotifyLoginStatus.configured === false ? '请先在上方粘贴并保存你的 Spotify Client ID' : '未连接 Spotify');
     return;
   }
   if (shell) shell.style.display = '';
@@ -23784,11 +23900,58 @@ async function refreshSpotifyLoginStatus() {
 function stopSpotifyLoginPoll() {
   if (spotifyLoginPollTimer) { clearInterval(spotifyLoginPollTimer); spotifyLoginPollTimer = null; }
 }
+var spotifyConfig = { clientId: '', redirectUri: '' };
+async function loadSpotifyConfigIntoUi() {
+  try {
+    var cfg = await apiJson('/api/spotify/config?t=' + Date.now());
+    spotifyConfig.clientId = (cfg && cfg.clientId) || '';
+    spotifyConfig.redirectUri = (cfg && cfg.redirectUri) || '';
+  } catch (e) { /* 离线时保持现状 */ }
+  var input = document.getElementById('spotify-client-id-input');
+  if (input && document.activeElement !== input) input.value = spotifyConfig.clientId;
+  var uri = document.getElementById('spotify-redirect-uri');
+  if (uri) uri.textContent = spotifyConfig.redirectUri || '—';
+}
+async function submitSpotifyClientId() {
+  var input = document.getElementById('spotify-client-id-input');
+  var id = input ? input.value.trim() : '';
+  if (!id) { showToast('请先粘贴 Client ID'); return; }
+  try {
+    var resp = await apiJson('/api/spotify/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: id })
+    });
+    if (!resp || !resp.ok) { showToast('保存失败'); return; }
+    spotifyConfig.clientId = resp.clientId || '';
+    spotifyConfig.redirectUri = resp.redirectUri || spotifyConfig.redirectUri;
+    showToast('Client ID 已保存，可以点“浏览器登录”了');
+    await refreshSpotifyLoginStatus();
+    updateLoginProviderUi();
+  } catch (e) {
+    console.warn('save spotify client id failed:', e);
+    showToast('保存失败');
+  }
+}
+function copySpotifyRedirectUri() {
+  var uri = spotifyConfig.redirectUri;
+  if (!uri) { showToast('暂无 Redirect URI'); return; }
+  try {
+    navigator.clipboard.writeText(uri);
+    showToast('Redirect URI 已复制，去 Spotify App 设置里粘贴');
+  } catch (e) { showToast('复制失败：' + uri); }
+}
 async function openSpotifyLogin() {
+  if (!spotifyConfig.clientId) {
+    showToast('请先在上方粘贴并保存你的 Spotify Client ID');
+    var input = document.getElementById('spotify-client-id-input');
+    if (input) input.focus();
+    return;
+  }
   try {
     var resp = await apiJson('/api/spotify/login');
     if (!resp || resp.error || !resp.authUrl) {
-      showToast(resp && resp.message ? resp.message : '无法发起 Spotify 登录（检查后端 Client ID）');
+      showToast(resp && resp.message ? resp.message : '无法发起 Spotify 登录（先保存 Client ID）');
       return;
     }
     window.open(resp.authUrl, '_blank');
@@ -24069,8 +24232,8 @@ function updateUserModalUi() {
   if (addSpotify) addSpotify.textContent = hasPlatformLogin('spotify') ? '查看 Spotify' : '连接 Spotify';
   if (logoutBtn) logoutBtn.textContent = activeAccountProvider === 'qq' ? '退出 QQ 音乐' : (activeAccountProvider === 'spotify' ? '断开 Spotify' : '退出网易云');
   if (hint) hint.textContent = dualAccountMode
-    ? '右上角已切换为双平台并排展示。'
-    : '可切换右上角展示的平台；“我两个都要”会并排放两个登录状态。';
+    ? '右上角已切换为多平台并排展示。'
+    : '可切换右上角展示的平台；“我三个都要”会把已登录的平台并排展示。';
 }
 function showUserModal() {
   if (!hasAnyPlatformLogin()) return showLoginModal();
@@ -24090,22 +24253,14 @@ function setActiveAccountProvider(provider) {
   updateUserModalUi();
 }
 function enableDualAccountView() {
-  if (!hasPlatformLogin('netease') && !hasPlatformLogin('qq')) {
-    openProviderLogin('netease');
-    return;
-  }
-  if (!hasPlatformLogin('netease')) {
-    openProviderLogin('netease');
-    return;
-  }
-  if (!hasPlatformLogin('qq')) {
-    openProviderLogin('qq');
-    return;
-  }
+  // “我三个都要”：依次补登缺失的平台，三家都登录后并排展示。
+  if (!hasPlatformLogin('netease')) { openProviderLogin('netease'); return; }
+  if (!hasPlatformLogin('qq')) { openProviderLogin('qq'); return; }
+  if (!hasPlatformLogin('spotify')) { openProviderLogin('spotify'); return; }
   dualAccountMode = true;
   renderUserBtn();
   updateUserModalUi();
-  showToast('已启用双平台账号展示');
+  showToast('已启用三平台账号展示');
 }
 function requestDualLoginMode() {
   enableDualAccountView();
@@ -24119,9 +24274,11 @@ function openProviderLogin(provider) {
 async function logoutActiveAccount() {
   if (activeAccountProvider === 'spotify') {
     try { await apiJson('/api/spotify/logout'); } catch (e) {}
+    if (playbackMode === 'spotify') { playbackMode = 'audio'; try { spotifyPausePlayback(); } catch (e) {} }
+    stopSpotifyLoopbackViz(); // Phase 4: 断开账号时停止 loopback 抓取
     applySpotifyLoginStatus(null);
     userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'spotify'; });
-    dualAccountMode = false;
+    if (loggedProviderCount() < 2) dualAccountMode = false;
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
@@ -24139,7 +24296,7 @@ async function logoutActiveAccount() {
     qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
     qqPlaylists = [];
     userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'qq'; });
-    dualAccountMode = false;
+    if (loggedProviderCount() < 2) dualAccountMode = false;
     activeAccountProvider = firstLoggedProvider();
     renderUserBtn();
     if (hasAnyPlatformLogin()) updateUserModalUi();
@@ -24157,7 +24314,7 @@ async function doLogout() {
     }
   } catch (e) {}
   loginStatus = { loggedIn: false };
-  if (!hasPlatformLogin('netease') || !hasPlatformLogin('qq')) dualAccountMode = false;
+  if (loggedProviderCount() < 2) dualAccountMode = false;
   activeAccountProvider = firstLoggedProvider();
   userPlaylists = qqPlaylists.slice();
   myPodcastCollections = [];
@@ -26987,10 +27144,11 @@ function animate() {
   // 真正的 mid 乐器/和声: 3000-6000Hz → bin 140-280
   // treble: 6000Hz+ → bin 280+
   beatOnsetFlag = false;
-  if (analyser && playing && audio && !audio.paused) {
+  var vizSpec = vizSpectrumAnalyser(); // Phase 4: Spotify loopback 活跃时读专用分析器
+  if (vizSpec && visualizerAudioLive()) {
     if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
-    analyser.getByteFrequencyData(frequencyData);
-    analyser.getByteTimeDomainData(timeDomainData);
+    vizSpec.getByteFrequencyData(frequencyData);
+    vizSpec.getByteTimeDomainData(timeDomainData);
     var len = frequencyData.length;
     // 精确频段
     var kickEnd  = 7;                          // 60-150 Hz, 鼓 kick
