@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+> 修改声明（GPL-3.0 §5(a)）：以下 Spotify 接入为外部贡献，新增于 2026-06-28，贡献者与逐项改动以 Git 提交历史为准。
+
+- 新增 Spotify 音乐源：搜索、歌单读取（私有/协作）、Web Playback SDK 整曲播放（需 Spotify Premium）。
+- Spotify 登录采用 **BYO Client ID + Authorization Code with PKCE**：由用户在 Spotify 开发者后台自建应用并在登录区域填入自己的 Client ID，软件不内置、不共享任何 Client ID/Secret，也不使用 Client Secret。登录区域新增 Client ID 输入、Redirect URI 展示与复制、保存按钮；换 Client ID 会自动清除旧登录态与 PKCE 临时态。
+- 多平台账号「我三个都要」：网易云 / QQ / Spotify 三家可并排展示，依次补登缺失平台，已登录平台数 ≥2 时保持并排。
+- 首页「我的歌单」按最近播放来源优先：最近一首歌来自哪个平台，对应歌单分组就顶到列表最上面（其余保持原相对顺序）。
+- 打包发布加入 EVS 生产 VMP 签名：`build/after-pack.js` 在 rcedit 改写 exe 后调用 castLabs EVS `sign-pkg` 写出 `Mineradio.exe.sig`，使下载用户的 Spotify 整曲播放不被 Widevine 生产授权服务器拒绝。支持 `SKIP_VMP_SIGN` / `MINERADIO_REQUIRE_VMP` / `EVS_PYTHON` 开关。
+- 本机凭据保护：`.spotify-token`、`.spotify-config` 仅存于本机用户数据目录并加入 `.gitignore`，不入库。
+- 新增贡献文档：`CONTRIBUTING.md`、`docs/SPOTIFY_SETUP.md`；同步更新 `README.md`、`NOTICE.md`。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.
