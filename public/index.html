@@ -1322,6 +1322,10 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .pl-detail-play{height:30px;min-width:98px;padding:0 12px;border-radius:999px;border:1px solid rgba(var(--fc-accent-rgb),.32);background:rgba(var(--fc-accent-rgb),.10);color:#fff;font:700 11.5px var(--font-sans);display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
 .pl-detail-play svg{width:13px;height:13px;fill:currentColor}
 .pl-detail-top-btn{height:30px;min-width:82px;flex:0 0 auto;padding:0 12px}
+.pl-detail-collapse-btn{height:30px;min-width:82px;flex:0 0 auto;padding:0 12px}
+.pl-inline-detail.collapsed{padding-bottom:4px}
+.pl-inline-detail.collapsed .pl-detail-sticky{margin-bottom:0}
+.pl-detail-collapsed-note{height:30px;display:flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.022);color:rgba(255,255,255,.36);font-size:10.5px}
 .pl-detail-list{display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
 .pl-detail-row{display:flex;align-items:center;gap:9px;padding:7px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.04);cursor:pointer}
 .pl-detail-row:hover{background:rgba(255,255,255,.055)}
@@ -19458,7 +19462,7 @@ async function refreshUserPlaylists(force) {
     scheduleShelfRebuild('refresh-user-playlists', true);
   } catch (e) { console.warn(e); }
 }
-var playlistPanelDetailState = { key: '', loading: false, playlist: null, tracks: [], token: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER };
+var playlistPanelDetailState = { key: '', loading: false, playlist: null, tracks: [], token: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, collapsed: false };
 function playlistPanelKey(provider, id) {
   return (provider === 'qq' ? 'qq' : 'netease') + ':' + String(id || '');
 }
@@ -19470,12 +19474,15 @@ function playlistPanelDetailHtml(pl, provider) {
   if (playlistPanelDetailState.key !== key) return '';
   var tracks = playlistPanelDetailState.tracks || [];
   var loading = playlistPanelDetailState.loading;
+  var collapsed = !!playlistPanelDetailState.collapsed;
   var cover = pl && pl.cover ? (provider === 'qq' ? pl.cover : (pl.cover + '?param=96y96')) : '';
   var img = cover ? '<img class="pl-detail-cover" src="' + escHtml(cover) + '" alt="" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="pl-detail-cover"></div>';
   var renderLimit = loading ? 0 : Math.max(PLAYLIST_DETAIL_INITIAL_RENDER, playlistPanelDetailState.renderLimit || PLAYLIST_DETAIL_INITIAL_RENDER);
   renderLimit = Math.min(tracks.length, renderLimit);
-  var visibleTracks = loading ? [] : tracks.slice(0, renderLimit);
-  var rows = loading
+  var visibleTracks = (loading || collapsed) ? [] : tracks.slice(0, renderLimit);
+  var rows = collapsed
+    ? '<div class="pl-detail-collapsed-note">歌曲列表已折叠</div>'
+    : loading
     ? '<div class="pl-detail-row"><div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06)"></div><div style="flex:1;min-width:0"><div class="pl-detail-row-title">正在载入歌单</div><div class="pl-detail-row-artist">请稍候</div></div></div>'
     : visibleTracks.map(function(song, i){
         var thumb = songCoverSrc(song, 60);
@@ -19486,16 +19493,16 @@ function playlistPanelDetailHtml(pl, provider) {
           '<button type="button" class="pl-detail-row-artist" data-pl-detail-artist="' + i + '">' + escHtml(song.artist || '未知歌手') + '</button></div>' +
         '</div>';
       }).join('');
-  if (!loading && !rows) rows = '<div style="text-align:center;padding:14px 0;color:rgba(255,255,255,.30);font-size:11.5px">歌单暂无可播放歌曲</div>';
-  if (!loading && tracks.length > renderLimit) {
+  if (!collapsed && !loading && !rows) rows = '<div style="text-align:center;padding:14px 0;color:rgba(255,255,255,.30);font-size:11.5px">歌单暂无可播放歌曲</div>';
+  if (!collapsed && !loading && tracks.length > renderLimit) {
     rows += '<button type="button" class="fx-mini-btn ghost pl-detail-load-more" data-pl-detail-load-more="1">加载更多 ' + renderLimit + '/' + tracks.length + '</button>';
-  } else if (!loading && tracks.length > PLAYLIST_DETAIL_INITIAL_RENDER) {
+  } else if (!collapsed && !loading && tracks.length > PLAYLIST_DETAIL_INITIAL_RENDER) {
     rows += '<div class="pl-detail-progress">已显示全部 ' + tracks.length + ' 首</div>';
   }
-  return '<div class="pl-inline-detail" data-pl-detail="' + escHtml(key) + '">' +
+  return '<div class="pl-inline-detail' + (collapsed ? ' collapsed' : '') + '" data-pl-detail="' + escHtml(key) + '">' +
     '<div class="pl-detail-sticky">' +
       '<div class="pl-detail-head">' + img + '<div style="flex:1;min-width:0"><div class="pl-detail-title">' + escHtml(pl.name || '歌单详情') + '</div><div class="pl-detail-sub">' + escHtml((pl.trackCount || tracks.length || 0) + ' 首 · ' + (pl.creator || (provider === 'qq' ? 'QQ 音乐' : '网易云音乐'))) + '</div></div><div class="pl-detail-count">' + (loading ? '载入中' : (renderLimit + '/' + tracks.length)) + '</div></div>' +
-      '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button><button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
+      '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button><button class="fx-mini-btn ghost pl-detail-collapse-btn" type="button" data-pl-detail-collapse="1">' + (collapsed ? '展开歌曲' : '折叠歌曲') + '</button><button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
     '</div>' +
     '<div class="pl-detail-list">' + rows + '</div>' +
   '</div>';
@@ -19508,6 +19515,15 @@ function scrollPlaylistPanelToTop() {
   if (!panel) return;
   try { panel.scrollTo({ top: 0, behavior: 'smooth' }); }
   catch (e) { panel.scrollTop = 0; }
+}
+function togglePlaylistPanelDetailCollapsed() {
+  var st = playlistPanelDetailState;
+  if (!st || !st.key) return;
+  var panel = document.getElementById('playlist-panel');
+  var keepTop = panel ? panel.scrollTop : 0;
+  st.collapsed = !st.collapsed;
+  renderPlaylistPanelDetailState();
+  if (panel) panel.scrollTop = Math.min(keepTop, Math.max(0, panel.scrollHeight - panel.clientHeight));
 }
 function scrollPlaylistPanelDetailIntoView(key) {
   var panel = document.getElementById('playlist-panel');
@@ -19538,11 +19554,12 @@ async function openPlaylistPanelDetail(provider, pid, title) {
     playlistPanelDetailState.tracks = [];
     playlistPanelDetailState.playlist = null;
     playlistPanelDetailState.renderLimit = PLAYLIST_DETAIL_INITIAL_RENDER;
+    playlistPanelDetailState.collapsed = false;
     renderPlaylistPanelDetailState();
     return;
   }
   var token = ++playlistPanelDetailState.token;
-  playlistPanelDetailState = { key: key, loading: true, playlist: pl, tracks: [], token: token, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER };
+  playlistPanelDetailState = { key: key, loading: true, playlist: pl, tracks: [], token: token, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, collapsed: false };
   renderPlaylistPanelDetailState();
   scrollPlaylistPanelDetailIntoView(key);
   try {
@@ -19716,6 +19733,13 @@ document.getElementById('pl-list').addEventListener('click', function(e){
     e.preventDefault();
     e.stopPropagation();
     scrollPlaylistPanelToTop();
+    return;
+  }
+  var detailCollapse = e.target && e.target.closest ? e.target.closest('[data-pl-detail-collapse]') : null;
+  if (detailCollapse) {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePlaylistPanelDetailCollapsed();
     return;
   }
   var playDetail = e.target && e.target.closest ? e.target.closest('[data-pl-detail-play]') : null;
