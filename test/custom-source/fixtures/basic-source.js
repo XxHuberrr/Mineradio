@@ -3,6 +3,7 @@
  * @version 1.0.0
  */
 if (globalThis.lx) {
+  if (typeof require !== 'undefined' || typeof process !== 'undefined') throw new Error('sandbox escape');
   const { EVENT_NAMES, on, send } = globalThis.lx;
 
   on(EVENT_NAMES.request, ({ action, info }) => {

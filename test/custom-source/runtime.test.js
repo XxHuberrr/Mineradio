@@ -317,6 +317,22 @@ test('rejects initialization immediately when the source sends invalid metadata'
   assert.equal(ipcMain.listenerCount('mineradio-lx-bootstrap'), 0);
 });
 
+test('rejects and tears down a source that never initializes', async () => {
+  FakeBrowserWindow.instances.length = 0;
+  const { LxSourceRuntime } = loadRuntime();
+  const ipcMain = new FakeIpcMain();
+  const runtime = new LxSourceRuntime({
+    script: 'void 0',
+    currentScriptInfo: {},
+    initTimeout: 10,
+    electron: { BrowserWindow: FakeBrowserWindow, ipcMain, app: { isPackaged: false } },
+  });
+
+  await assert.rejects(runtime.start(), /INIT_TIMEOUT/);
+  assert.equal(runtime.window, null);
+  assert.equal(ipcMain.handlers.size, 0);
+});
+
 test('tears down the runtime when preload reports an initialization error', async () => {
   FakeBrowserWindow.instances.length = 0;
   const { LxSourceRuntime } = loadRuntime();
@@ -421,7 +437,7 @@ test('HTTP service parses responses, supports cancellation, and aborts on stop',
     runtimeId: runtime.runtimeId,
     requestId: 'second',
   });
-  await assert.rejects(pending);
+  assert.match((await pending).error, /cancel/i);
   runtime.stop();
   assert.equal(signals.every(signal => signal.aborted || signals.indexOf(signal) === 0), true);
   await assert.rejects(started, /stopped/i);
@@ -446,11 +462,11 @@ test('HTTP service rejects oversized responses before buffering untrusted bodies
   });
   const started = runtime.start();
   const win = FakeBrowserWindow.instances[0];
-  await assert.rejects(
-    ipcMain.handlers.get('mineradio-lx-http')(
+  assert.match(
+    (await ipcMain.handlers.get('mineradio-lx-http')(
       { sender: win.webContents },
       { runtimeId: runtime.runtimeId, requestId: 'large', url: 'https://example.com', options: {} },
-    ),
+    )).error,
     /HTTP_FAILED: Response too large/,
   );
   runtime.stop();
@@ -474,11 +490,11 @@ test('HTTP service rejects non-streaming responses without a bounded content len
   });
   const started = runtime.start();
   const win = FakeBrowserWindow.instances[0];
-  await assert.rejects(
-    ipcMain.handlers.get('mineradio-lx-http')(
+  assert.match(
+    (await ipcMain.handlers.get('mineradio-lx-http')(
       { sender: win.webContents },
       { runtimeId: runtime.runtimeId, requestId: 'fallback', url: 'https://example.com', options: {} },
-    ),
+    )).error,
     /HTTP_FAILED: Response length is unknown/,
   );
   runtime.stop();

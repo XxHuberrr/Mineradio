@@ -248,7 +248,13 @@ function installHost(ipcMain) {
   }));
   sync('mineradio-lx-crypto', (_runtime, payload) => runCrypto(payload));
   handle('mineradio-lx-zlib', async (_runtime, payload) => runZlib(payload));
-  handle('mineradio-lx-http', (runtime, payload) => runtime.handleHttp(payload));
+  handle('mineradio-lx-http', async (runtime, payload) => {
+    try {
+      return await runtime.handleHttp(payload);
+    } catch (error) {
+      return errorResult(error);
+    }
+  });
   handle('mineradio-lx-inited', (runtime, payload) => {
     try {
       return runtime.handleInited(payload.data);
@@ -281,6 +287,7 @@ class LxSourceRuntime {
     fetchImpl = globalThis.fetch,
     logger = console,
     onUpdateAlert = null,
+    initTimeout = INIT_TIMEOUT,
   }) {
     if (typeof script !== 'string') throw new TypeError('script must be a string');
     this.script = script;
@@ -289,6 +296,9 @@ class LxSourceRuntime {
     this.fetchImpl = fetchImpl;
     this.logger = logger;
     this.onUpdateAlert = onUpdateAlert;
+    this.initTimeout = Number.isFinite(Number(initTimeout))
+      ? Math.min(Math.max(Number(initTimeout), 1), 60_000)
+      : INIT_TIMEOUT;
     this.runtimeId = crypto.randomUUID();
     this.window = null;
     this.host = null;
@@ -319,7 +329,7 @@ class LxSourceRuntime {
       resolve: resolveInit,
       reject: rejectInit,
       settled: false,
-      timer: setTimeout(() => this.failInit('INIT_FAILED: Timed out', { stopRuntime: true }), INIT_TIMEOUT),
+      timer: setTimeout(() => this.failInit('INIT_TIMEOUT: Script did not initialize', { stopRuntime: true }), this.initTimeout),
     };
 
     try {

@@ -57,7 +57,10 @@ contextBridge.exposeInMainWorld('lx', {
   request(url, options = {}, callback) {
     const requestId = `http_${Date.now()}_${Math.random()}`;
     ipcRenderer.invoke('mineradio-lx-http', { runtimeId, requestId, url, options })
-      .then(result => callback(null, result.response, result.body))
+      .then(result => {
+        if (result && result.error) callback(new Error(result.error), null, null);
+        else callback(null, result.response, result.body);
+      })
       .catch(error => callback(error, null, null));
     return () => ipcRenderer.send('mineradio-lx-http-cancel', { runtimeId, requestId });
   },
