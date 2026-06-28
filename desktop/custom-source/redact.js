@@ -1,4 +1,4 @@
-const SECRET_KEY = /^(cookie|set-cookie|authorization|proxy-authorization)$|token|secret|api[-_]?key/i;
+const SECRET_KEY = /^(cookie|set-cookie|authorization|proxy-authorization|password|passwd|pwd|credentials?)$|token|secret|api[-_]?key/i;
 
 function redactSecrets(value, seen = new WeakSet()) {
   if (!value || typeof value !== 'object') return value;

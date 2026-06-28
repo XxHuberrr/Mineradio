@@ -18,3 +18,20 @@ test('redacts circular array references', () => {
   const output = redactSecrets(input);
   assert.deepEqual(output, ['safe', '[CIRCULAR]']);
 });
+
+test('redacts nested password and credential keys', () => {
+  const output = redactSecrets({
+    auth: {
+      password: 'one',
+      passwd: 'two',
+      pwd: 'three',
+      credential: 'four',
+      credentials: 'five',
+    },
+  });
+  assert.equal(output.auth.password, '[REDACTED]');
+  assert.equal(output.auth.passwd, '[REDACTED]');
+  assert.equal(output.auth.pwd, '[REDACTED]');
+  assert.equal(output.auth.credential, '[REDACTED]');
+  assert.equal(output.auth.credentials, '[REDACTED]');
+});

@@ -19,6 +19,10 @@ function toLxMusicInfo(song) {
   const songId = source === 'tx' ? (song.mid || song.songmid || song.id) : song.id;
   if (songId == null || songId === '') throw new Error('SOURCE_UNSUPPORTED: Missing song id');
   const albumId = song.albumMid || song.albumId || '';
+  const rawInterval = song.duration || song.dt || song.interval;
+  const interval = source === 'wy' && (song.duration != null || song.dt != null)
+    ? formatInterval(Number(song.duration ?? song.dt) / 1000)
+    : formatInterval(rawInterval);
   const meta = {
     songId,
     albumName: String(song.album || ''),
@@ -37,7 +41,7 @@ function toLxMusicInfo(song) {
     name: String(song.name || song.title || ''),
     singer: String(song.artist || ''),
     source,
-    interval: formatInterval(song.duration || song.dt || song.interval),
+    interval,
     meta,
     songmid: songId,
     albumId,

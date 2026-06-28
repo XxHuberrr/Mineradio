@@ -19,10 +19,16 @@ test('maps QQ identifiers to tx fields and legacy aliases', () => {
   assert.equal(info.meta.strMediaMid, 'media1');
   assert.equal(info.meta.albumMid, 'album1');
   assert.equal(info.songmid, 'mid1');
+  assert.equal(info.interval, '03:20');
 });
 
 test('uses QQ songId as media mid alias before computed songmid fallback', () => {
   const info = toLxMusicInfo({ provider: 'qq', mid: 'song-mid', songId: 'media-from-songid' });
   assert.equal(info.meta.strMediaMid, 'media-from-songid');
   assert.equal(info.songmid, 'song-mid');
+});
+
+test('formats NetEase millisecond durations below ten seconds', () => {
+  const info = toLxMusicInfo({ provider: 'netease', id: 1, duration: 9000 });
+  assert.equal(info.interval, '00:09');
 });
