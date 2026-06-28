@@ -18432,6 +18432,8 @@ var spotifyDeviceId = '';
 var spotifyConnectPromise = null;
 var spotifyState = { positionMs: 0, durationMs: 0, paused: true, uri: '', syncAt: 0, trackName: '' };
 var spotifyEndHandled = false;
+var spotifyMaxPosMs = 0;       // 当前曲已达到的最大进度，用于区分"刚开播的 pos0 瞬态"与"真正播完"
+var spotifyStartGuardAt = 0;   // 开播时间戳，开头若干秒内不判结束
 
 function spotifyIsActive() { return playbackMode === 'spotify'; }
 
@@ -18458,19 +18460,28 @@ async function spotifyFetchToken() {
 
 function onSpotifyStateChanged(state) {
   if (!state) return;
-  spotifyState.positionMs = state.position || 0;
-  spotifyState.durationMs = state.duration || 0;
+  var pos = state.position || 0;
+  var dur = state.duration || 0;
+  spotifyState.positionMs = pos;
+  spotifyState.durationMs = dur;
   spotifyState.paused = !!state.paused;
   spotifyState.syncAt = performance.now();
-  var t = state.track_window && state.track_window.current_track;
-  if (t) { spotifyState.uri = t.uri || spotifyState.uri; spotifyState.trackName = t.name || ''; }
+  if (pos > spotifyMaxPosMs) spotifyMaxPosMs = pos;
+  var tw = state.track_window || {};
+  var cur = tw.current_track;
+  if (cur) { spotifyState.uri = cur.uri || spotifyState.uri; spotifyState.trackName = cur.name || ''; }
   if (spotifyIsActive()) { playing = !state.paused; setPlayIcon(!state.paused); }
-  // 整曲结束：Spotify 在曲尾会 paused 且 position 归 0
-  if (spotifyIsActive() && state.paused && (state.position || 0) === 0 && spotifyState.durationMs > 0 && !spotifyEndHandled) {
+  if (pos > 0) spotifyEndHandled = false;
+  // 整曲结束判定（避开"刚开播的 paused+pos0 瞬态"导致的重启循环）：
+  //  ① 当前曲被移入 previous_tracks —— Spotify 自然结束的标志；或
+  //  ② paused 且 position 归 0，且本曲确实播到过接近结尾（maxPos ≈ duration）。
+  // 同时开播 4s 内一律不判结束，做双保险。
+  var startedLongEnough = (performance.now() - spotifyStartGuardAt) > 4000;
+  var endedByHistory = !!(cur && (tw.previous_tracks || []).some(function(p){ return p && p.id === cur.id; }));
+  var endedByPosition = state.paused && pos === 0 && dur > 0 && spotifyMaxPosMs >= (dur - 2500);
+  if (spotifyIsActive() && startedLongEnough && (endedByHistory || endedByPosition) && !spotifyEndHandled) {
     spotifyEndHandled = true;
     setTimeout(onSpotifyTrackEnded, 0);
-  } else if ((state.position || 0) > 0) {
-    spotifyEndHandled = false;
   }
 }
 
@@ -18557,6 +18568,9 @@ async function playSpotifyTrack(song, token, opts) {
     if (!uri) throw new Error('NO_SPOTIFY_URI');
     if (!hasPlatformLogin('spotify')) { hideLoading(); forcePlaybackControlsInteractive(); showToast('请先登录 Spotify'); openProviderLogin('spotify'); return; }
     spotifyState = { positionMs: 0, durationMs: (normalizePlaybackDurationSeconds(song.duration || 0) * 1000) || 0, paused: false, uri: uri, syncAt: performance.now(), trackName: song.name || '' };
+    spotifyMaxPosMs = 0;
+    spotifyStartGuardAt = performance.now();
+    spotifyEndHandled = false;
     await spotifyPlayUri(uri);
     if (token !== trackSwitchToken) return;
     playing = true; setPlayIcon(true);
@@ -20202,6 +20216,12 @@ progressBar.addEventListener('pointerup', endProgressDrag);
 progressBar.addEventListener('pointercancel', endProgressDrag);
 progressBar.addEventListener('lostpointercapture', function(){ progressDragState.active = false; progressBar.classList.remove('is-dragging'); });
 setInterval(function(){
+  // Spotify：player_state_changed 不连续触发，用插值进度持续抬高 maxPos，
+  // 让"播到接近结尾"的结束判定可靠。
+  if (spotifyIsActive() && !spotifyState.paused) {
+    var sp = spotifyCurrentPositionMs();
+    if (sp > spotifyMaxPosMs) spotifyMaxPosMs = sp;
+  }
   if (!audio) { updatePlaybackProgressUi(); return; }
   updateListenStatsTick(false);
   updatePlaybackProgressUi();
