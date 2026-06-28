@@ -186,6 +186,288 @@ function saveQQCookie(c) {
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
 }
 
+// ---------- Spotify (Web API 元数据 + PKCE OAuth) ----------
+// 说明：Spotify 不提供直链音频，播放在前端由 Web Playback SDK 负责（Phase 3）。
+// 后端只做：登录(PKCE)、token 持久化/刷新、搜索、歌单。
+// OAuth 回调使用固定端口 127.0.0.1:8888（主 server 端口是动态的，Spotify 要求 redirect 精确匹配）。
+const SPOTIFY_TOKEN_FILE = process.env.SPOTIFY_TOKEN_FILE || path.join(__dirname, '.spotify-token');
+// BYO Client ID：用户在登录界面自行填入（PKCE，不需要 secret）。持久化到 userData 的配置文件，
+// 不在仓库里硬编码、也没有公用 ID。env SPOTIFY_CLIENT_ID 仅作开发期可选回退。
+const SPOTIFY_CONFIG_FILE = process.env.SPOTIFY_CONFIG_FILE || path.join(__dirname, '.spotify-config');
+function loadSpotifyClientId() {
+  try {
+    if (fs.existsSync(SPOTIFY_CONFIG_FILE)) {
+      const cfg = JSON.parse(fs.readFileSync(SPOTIFY_CONFIG_FILE, 'utf8'));
+      if (cfg && cfg.clientId) return String(cfg.clientId).trim();
+    }
+  } catch (e) {}
+  return (process.env.SPOTIFY_CLIENT_ID || '').trim();
+}
+let SPOTIFY_CLIENT_ID = loadSpotifyClientId();
+function saveSpotifyClientId(id) {
+  SPOTIFY_CLIENT_ID = String(id || '').trim();
+  try {
+    if (SPOTIFY_CLIENT_ID) fs.writeFileSync(SPOTIFY_CONFIG_FILE, JSON.stringify({ clientId: SPOTIFY_CLIENT_ID }));
+    else if (fs.existsSync(SPOTIFY_CONFIG_FILE)) fs.unlinkSync(SPOTIFY_CONFIG_FILE);
+  } catch (e) {}
+  return SPOTIFY_CLIENT_ID;
+}
+const SPOTIFY_REDIRECT_PORT = Number(process.env.SPOTIFY_REDIRECT_PORT || 8888);
+const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || ('http://127.0.0.1:' + SPOTIFY_REDIRECT_PORT + '/callback');
+const SPOTIFY_SCOPES = [
+  'streaming',
+  'user-read-email',
+  'user-read-private',
+  'user-read-playback-state',
+  'user-modify-playback-state',
+  'playlist-read-private',
+  'playlist-read-collaborative',
+].join(' ');
+const SPOTIFY_ACCOUNTS = 'https://accounts.spotify.com';
+const SPOTIFY_API = 'https://api.spotify.com/v1';
+
+let spotifyToken = null;      // { access_token, refresh_token, scope, token_type, expires_at }
+let spotifyPkce = null;       // { verifier, state, createdAt } —— /login 与 /callback 之间的临时态
+let spotifyCallbackServer = null;
+try {
+  if (fs.existsSync(SPOTIFY_TOKEN_FILE)) spotifyToken = JSON.parse(fs.readFileSync(SPOTIFY_TOKEN_FILE, 'utf8'));
+} catch (e) { spotifyToken = null; }
+
+function saveSpotifyToken(tok) {
+  spotifyToken = tok || null;
+  try {
+    if (tok) fs.writeFileSync(SPOTIFY_TOKEN_FILE, JSON.stringify(tok));
+    else if (fs.existsSync(SPOTIFY_TOKEN_FILE)) fs.unlinkSync(SPOTIFY_TOKEN_FILE);
+  } catch (e) {}
+}
+
+function spotifyB64Url(buf) {
+  return Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function spotifyMakePkce() {
+  const verifier = spotifyB64Url(crypto.randomBytes(64));
+  const challenge = spotifyB64Url(crypto.createHash('sha256').update(verifier).digest());
+  const state = spotifyB64Url(crypto.randomBytes(16));
+  return { verifier, challenge, state };
+}
+
+function spotifyBuildAuthUrl() {
+  if (!SPOTIFY_CLIENT_ID) throw new Error('SPOTIFY_CLIENT_ID 未配置');
+  const pkce = spotifyMakePkce();
+  spotifyPkce = { verifier: pkce.verifier, state: pkce.state, createdAt: Date.now() };
+  const p = new URLSearchParams({
+    client_id: SPOTIFY_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: SPOTIFY_REDIRECT_URI,
+    scope: SPOTIFY_SCOPES,
+    code_challenge_method: 'S256',
+    code_challenge: pkce.challenge,
+    state: pkce.state,
+  });
+  return SPOTIFY_ACCOUNTS + '/authorize?' + p.toString();
+}
+
+function spotifyStoreTokenResponse(tok) {
+  const next = {
+    access_token: tok.access_token,
+    refresh_token: tok.refresh_token || (spotifyToken && spotifyToken.refresh_token) || '',
+    scope: tok.scope || (spotifyToken && spotifyToken.scope) || '',
+    token_type: tok.token_type || 'Bearer',
+    expires_at: Date.now() + ((Number(tok.expires_in) || 3600) * 1000),
+  };
+  saveSpotifyToken(next);
+}
+
+async function spotifyExchangeCode(code) {
+  if (!spotifyPkce) throw new Error('NO_PENDING_PKCE');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: SPOTIFY_REDIRECT_URI,
+    client_id: SPOTIFY_CLIENT_ID,
+    code_verifier: spotifyPkce.verifier,
+  }).toString();
+  const text = await requestText(SPOTIFY_ACCOUNTS + '/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  }, body);
+  spotifyStoreTokenResponse(JSON.parse(text));
+  spotifyPkce = null;
+  return spotifyToken;
+}
+
+async function spotifyRefresh() {
+  if (!spotifyToken || !spotifyToken.refresh_token) throw new Error('NO_REFRESH_TOKEN');
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: spotifyToken.refresh_token,
+    client_id: SPOTIFY_CLIENT_ID,
+  }).toString();
+  const text = await requestText(SPOTIFY_ACCOUNTS + '/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  }, body);
+  spotifyStoreTokenResponse(JSON.parse(text));
+  return spotifyToken;
+}
+
+async function spotifyAccessToken() {
+  if (!spotifyToken || !spotifyToken.access_token) throw new Error('SPOTIFY_LOGIN_REQUIRED');
+  if (Date.now() > (spotifyToken.expires_at - 60000)) await spotifyRefresh();
+  return spotifyToken.access_token;
+}
+
+async function spotifyApiGet(apiPath, params) {
+  let target = apiPath.startsWith('http') ? apiPath : (SPOTIFY_API + apiPath);
+  if (params) {
+    const usp = new URLSearchParams(params);
+    target += (target.includes('?') ? '&' : '?') + usp.toString();
+  }
+  let token = await spotifyAccessToken();
+  try {
+    return JSON.parse(await requestText(target, { headers: { Authorization: 'Bearer ' + token } }));
+  } catch (err) {
+    if (err.statusCode === 401) {
+      await spotifyRefresh();
+      token = spotifyToken.access_token;
+      return JSON.parse(await requestText(target, { headers: { Authorization: 'Bearer ' + token } }));
+    }
+    throw err;
+  }
+}
+
+function spotifyCallbackHtml(msg) {
+  return '<!doctype html><meta charset="utf-8"><title>Mineradio · Spotify</title>'
+    + '<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f14;color:#e6f0e6;font-family:system-ui,Segoe UI,Microsoft YaHei,sans-serif">'
+    + '<div style="text-align:center;line-height:1.8"><div style="font-size:34px">🎵</div><div style="font-size:18px">'
+    + String(msg || '').replace(/</g, '&lt;') + '</div></div>';
+}
+
+function spotifyEnsureCallbackServer() {
+  if (spotifyCallbackServer) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cb = http.createServer(async (req, res) => {
+      try {
+        const u = new URL(req.url, SPOTIFY_REDIRECT_URI);
+        if (u.pathname !== '/callback') { res.writeHead(404); res.end('Not Found'); return; }
+        const code = u.searchParams.get('code');
+        const state = u.searchParams.get('state');
+        const oerr = u.searchParams.get('error');
+        if (oerr) { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(spotifyCallbackHtml('登录被取消或失败：' + oerr)); return; }
+        if (!spotifyPkce || state !== spotifyPkce.state) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(spotifyCallbackHtml('状态校验失败，请回到 Mineradio 重试登录。')); return;
+        }
+        await spotifyExchangeCode(code);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(spotifyCallbackHtml('Spotify 登录成功，可以关闭此页面返回 Mineradio。'));
+      } catch (e) {
+        console.error('[SpotifyCallback]', e);
+        res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(spotifyCallbackHtml('登录处理失败：' + (e && e.message)));
+      }
+    });
+    // 绑定失败（最常见 EADDRINUSE：8888 被其他程序/残留进程占用）必须明确报错，
+    // 否则回调会被占用端口的旧进程接走，表现为诡异的 state 校验失败。
+    cb.on('error', e => {
+      console.error('[SpotifyCallbackServer]', e.message);
+      if (!settled) {
+        settled = true;
+        const err = new Error(e.code === 'EADDRINUSE' ? 'SPOTIFY_CALLBACK_PORT_BUSY' : ('SPOTIFY_CALLBACK_SERVER_ERROR: ' + e.message));
+        err.code = e.code;
+        reject(err);
+      }
+    });
+    cb.listen(SPOTIFY_REDIRECT_PORT, '127.0.0.1', () => { settled = true; spotifyCallbackServer = cb; resolve(); });
+  });
+}
+
+function spotifyMapTrack(t) {
+  t = t || {};
+  const album = t.album || {};
+  const images = album.images || [];
+  const artists = (t.artists || []).map(a => ({ id: a.id, name: a.name }));
+  return {
+    provider: 'spotify',
+    source: 'spotify',
+    type: 'spotify',
+    id: t.id,
+    uri: t.uri || (t.id ? 'spotify:track:' + t.id : ''),
+    name: t.name || '',
+    artist: artists.map(a => a.name).join(' / '),
+    artists,
+    artistId: artists[0] && artists[0].id,
+    album: album.name || '',
+    cover: (images[0] && images[0].url) || '',
+    duration: t.duration_ms || 0,
+    explicit: !!t.explicit,
+    previewUrl: t.preview_url || '',
+  };
+}
+
+function spotifyMapPlaylist(pl) {
+  pl = pl || {};
+  const images = pl.images || [];
+  return {
+    provider: 'spotify',
+    source: 'spotify',
+    id: pl.id,
+    uri: pl.uri || '',
+    name: pl.name || '',
+    cover: (images[0] && images[0].url) || '',
+    trackCount: (pl.tracks && pl.tracks.total) || 0,
+    creator: (pl.owner && (pl.owner.display_name || pl.owner.id)) || '',
+  };
+}
+
+async function getSpotifyLoginInfo() {
+  if (!spotifyToken || !spotifyToken.access_token) {
+    return { provider: 'spotify', loggedIn: false, configured: !!SPOTIFY_CLIENT_ID };
+  }
+  try {
+    const me = await spotifyApiGet('/me');
+    return {
+      provider: 'spotify',
+      loggedIn: true,
+      configured: true,
+      userId: me.id,
+      nickname: me.display_name || me.id,
+      email: me.email || '',
+      product: me.product || '',
+      premium: me.product === 'premium',
+      avatar: (me.images && me.images[0] && me.images[0].url) || '',
+    };
+  } catch (e) {
+    console.warn('[SpotifyLogin] profile check failed:', e.message);
+    return { provider: 'spotify', loggedIn: false, configured: !!SPOTIFY_CLIENT_ID, error: e.message };
+  }
+}
+
+async function handleSpotifySearch(keywords, limit) {
+  console.log('[SpotifySearch]', keywords, 'limit:', limit);
+  if (!keywords) return [];
+  const data = await spotifyApiGet('/search', { q: keywords, type: 'track', limit: String(limit), market: 'from_token' });
+  const items = (data.tracks && data.tracks.items) || [];
+  return items.map(spotifyMapTrack).filter(t => t.id);
+}
+
+async function handleSpotifyUserPlaylists() {
+  const info = await getSpotifyLoginInfo();
+  if (!info.loggedIn) return { provider: 'spotify', loggedIn: false, playlists: [] };
+  const data = await spotifyApiGet('/me/playlists', { limit: '50' });
+  const playlists = ((data && data.items) || []).map(spotifyMapPlaylist).filter(p => p.id);
+  return { provider: 'spotify', loggedIn: true, playlists };
+}
+
+async function handleSpotifyPlaylistTracks(id) {
+  const info = await getSpotifyLoginInfo();
+  if (!info.loggedIn) return { provider: 'spotify', loggedIn: false, tracks: [] };
+  if (!id) return { provider: 'spotify', loggedIn: true, error: 'Missing Spotify playlist id', tracks: [] };
+  const data = await spotifyApiGet('/playlists/' + encodeURIComponent(id) + '/tracks', { limit: '100', market: 'from_token' });
+  const tracks = ((data && data.items) || []).map(it => spotifyMapTrack(it && it.track)).filter(t => t.id);
+  return { provider: 'spotify', loggedIn: true, tracks };
+}
+
 // ---------- 工具 ----------
 function serveStatic(res, filePath) {
   const ext = path.extname(filePath);
@@ -3553,6 +3835,105 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[QQSongComments]', err);
       sendJSON(res, { provider: 'qq', error: err.message, comments: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- Spotify ----------
+  if (pn === '/api/spotify/config') {
+    if (req.method === 'POST') {
+      const body = await readRequestBody(req);
+      const prev = SPOTIFY_CLIENT_ID;
+      const next = saveSpotifyClientId(body && body.clientId);
+      // 换了 Client ID = 换了 Spotify app，旧 token / 待定 PKCE 都失效，清掉避免串号
+      if (next !== prev) { saveSpotifyToken(null); spotifyPkce = null; }
+      sendJSON(res, {
+        provider: 'spotify',
+        ok: true,
+        configured: !!SPOTIFY_CLIENT_ID,
+        clientId: SPOTIFY_CLIENT_ID || '',
+        redirectUri: SPOTIFY_REDIRECT_URI,
+      });
+      return;
+    }
+    sendJSON(res, {
+      provider: 'spotify',
+      configured: !!SPOTIFY_CLIENT_ID,
+      clientId: SPOTIFY_CLIENT_ID || '',
+      redirectUri: SPOTIFY_REDIRECT_URI,
+      scopes: SPOTIFY_SCOPES,
+    });
+    return;
+  }
+
+  if (pn === '/api/spotify/login') {
+    try {
+      if (!SPOTIFY_CLIENT_ID) { sendJSON(res, { provider: 'spotify', error: 'SPOTIFY_CLIENT_ID_MISSING', message: '后端未配置 Spotify Client ID' }, 400); return; }
+      await spotifyEnsureCallbackServer();
+      const authUrl = spotifyBuildAuthUrl();
+      sendJSON(res, { provider: 'spotify', authUrl, redirectUri: SPOTIFY_REDIRECT_URI });
+    } catch (err) {
+      console.error('[SpotifyLogin]', err);
+      const busy = err.code === 'EADDRINUSE' || err.message === 'SPOTIFY_CALLBACK_PORT_BUSY';
+      sendJSON(res, {
+        provider: 'spotify',
+        error: err.message,
+        message: busy ? '回调端口 8888 被其他程序占用，请关闭占用它的程序后重试' : undefined,
+      }, busy ? 409 : 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/login/status') {
+    try { sendJSON(res, await getSpotifyLoginInfo()); }
+    catch (err) { console.error('[SpotifyLoginStatus]', err); sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message }, 500); }
+    return;
+  }
+
+  if (pn === '/api/spotify/logout') {
+    saveSpotifyToken(null);
+    sendJSON(res, { provider: 'spotify', ok: true, loggedIn: false });
+    return;
+  }
+
+  // Web Playback SDK 的 getOAuthToken 回调取 token 用（Phase 3）
+  if (pn === '/api/spotify/token') {
+    try {
+      const token = await spotifyAccessToken();
+      sendJSON(res, { provider: 'spotify', accessToken: token, expiresAt: spotifyToken && spotifyToken.expires_at });
+    } catch (err) {
+      sendJSON(res, { provider: 'spotify', error: err.message }, 401);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/search') {
+    try {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
+      const songs = await handleSpotifySearch(kw, limit);
+      sendJSON(res, { provider: 'spotify', songs });
+    } catch (err) {
+      console.error('[SpotifySearch]', err);
+      const status = err.message === 'SPOTIFY_LOGIN_REQUIRED' ? 401 : 500;
+      sendJSON(res, { provider: 'spotify', error: err.message, songs: [] }, status);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/user/playlists') {
+    try { sendJSON(res, await handleSpotifyUserPlaylists()); }
+    catch (err) { console.error('[SpotifyUserPlaylists]', err); sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message, playlists: [] }, 500); }
+    return;
+  }
+
+  if (pn === '/api/spotify/playlist/tracks') {
+    try {
+      const id = url.searchParams.get('id') || '';
+      sendJSON(res, await handleSpotifyPlaylistTracks(id));
+    } catch (err) {
+      console.error('[SpotifyPlaylistTracks]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, tracks: [] }, 500);
     }
     return;
   }

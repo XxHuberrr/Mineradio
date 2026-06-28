@@ -993,6 +993,7 @@ Function un.MineradioRemoveInstalledFiles
   SetOutPath $TEMP
 
   Delete "$INSTDIR\${PRODUCT_FILENAME}.exe"
+  Delete "$INSTDIR\${PRODUCT_FILENAME}.exe.sig"
   Delete "$INSTDIR\Uninstall ${PRODUCT_FILENAME}.exe"
   Delete "$INSTDIR\uninstallerIcon.ico"
 
@@ -1010,13 +1011,23 @@ Function un.MineradioRemoveInstalledFiles
   Delete "$INSTDIR\resources.pak"
   Delete "$INSTDIR\snapshot_blob.bin"
   Delete "$INSTDIR\v8_context_snapshot.bin"
+  Delete "$INSTDIR\version"
   Delete "$INSTDIR\vk_swiftshader.dll"
   Delete "$INSTDIR\vk_swiftshader_icd.json"
   Delete "$INSTDIR\vulkan-1.dll"
 
-  RMDir "$INSTDIR\locales"
-  RMDir "$INSTDIR\resources"
-  RMDir "$INSTDIR\swiftshader"
+  ; These subfolders are created solely by the installer (Electron runtime +
+  ; the bundled app under resources\app). Users never place their own files
+  ; here, so a recursive delete is both safe and required for a clean uninstall
+  ; (a plain RMDir leaves them behind because they are never empty).
+  RMDir /r "$INSTDIR\locales"
+  RMDir /r "$INSTDIR\resources"
+  RMDir /r "$INSTDIR\swiftshader"
+
+  ; Drop the ownership marker last so the directory can be removed. The final
+  ; RMDir is intentionally non-recursive: if the user left their own files in
+  ; the install root, those files and the folder survive instead of being wiped.
+  Delete "$INSTDIR\${MINERADIO_INSTALL_MARKER}"
 
   RMDir "$INSTDIR"
 FunctionEnd
