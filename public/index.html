@@ -62,6 +62,8 @@ body.desktop-shell #desktop-titlebar #update-entry::before,
 body.desktop-shell #desktop-titlebar #update-entry::after{display:none}
 body.desktop-shell #desktop-titlebar #visual-guide-btn:hover,
 body.desktop-shell #desktop-titlebar #update-entry:hover{background:rgba(255,83,103,.10);border-color:rgba(255,83,103,.32);color:#fff;transform:translateY(-1px)}
+body.desktop-shell.desktop-platform-darwin #desktop-titlebar{padding-left:92px}
+body.desktop-shell.desktop-platform-darwin .desktop-window-btn{display:none}
 body.desktop-shell #search-area{top:-92px}
 body.desktop-shell #search-area.peek{top:34px}
 body.desktop-shell #search-area.stage-mode.peek{top:32px}
@@ -26410,6 +26412,7 @@ function toggleFullscreen() {
 
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');
+  document.body.classList.add('desktop-platform-' + (api.platform || 'unknown'));
   document.body.classList.remove('desktop-fullscreen');
   desktopFullscreenActive = false;
   syncCursorAutoHideMode();
