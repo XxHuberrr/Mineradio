@@ -1,5 +1,15 @@
 # Changelog
 
+## mac-native-port
+
+- 新增 macOS Apple Silicon 构建链路：`build:mac` 生成 `.app`、`.dmg`、`.zip` 和 `latest-mac.yml`，`build:mac:dir` 生成本地验证用 `.app`。
+- 新增 macOS 图标 `build/icon.icns`、hardened runtime entitlements 和 notarization-ready 打包配置；无 Developer ID 凭据时可通过 `CSC_IDENTITY_AUTO_DISCOVERY=false` 生成 ad-hoc 包。
+- 主进程新增 macOS 应用菜单、Mac 平台信息暴露、原生 traffic lights 窗口模式和 Dock 友好的窗口生命周期。
+- 桌面歌词和壁纸模式增加 macOS overlay/window fallback；Windows 仍保留中键轮询和 WorkerW 桌面绑定逻辑。
+- 更新检测改为平台感知选择资产：macOS 优先 `.dmg/.zip`，Windows 继续优先 `.exe/.msi`，并修复 manifest 多资产场景下重复套镜像的问题。
+- 节拍缓存路径改为跨平台用户数据目录，不再在 macOS 上回落到 `D:\MineradioCache\beatmaps`。
+- 本轮验证记录见 `docs/MAC_BUILD_VERIFICATION_2026-06-28.md`。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

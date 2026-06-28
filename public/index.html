@@ -21,6 +21,7 @@ try {
 html,body{font-family:var(--font-sans);background:#000;color:#fff;overflow:hidden;height:100vh;width:100vw;user-select:none;-webkit-font-smoothing:antialiased}
 body.cursor-hidden,body.cursor-hidden *{cursor:none!important}
 html.desktop-shell-root,html.desktop-shell-root body{background:transparent}
+html.desktop-shell-root.desktop-mac,html.desktop-shell-root.desktop-mac body{background:#000}
 :root{--font-sans:"Noto Sans SC","PingFang SC","HarmonyOS Sans SC","Alibaba PuHuiTi","Inter",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;--font-mono:"JetBrains Mono","Geist Mono","SF Mono",ui-monospace,monospace;--fc-bg:#08090B;--fc-paper:#0E1014;--fc-ink:#E8ECEF;--fc-ink-2:#D2D7DC;--fc-muted:#8A9099;--fc-hair:#1A1D22;--fc-hair-2:#262A31;--fc-accent:#00F5D4;--fc-accent-hov:#00E0BE;--fc-accent-rgb:0,245,212;--fc-blue:#2442ff;--fc-warm:#f8f4ee;--chill-ink:#030608;--chill-deep:#061116;--chill-cyan:#8fe9ff;--chill-blue:#73a7ff;--chill-mint:#9cffdf;--chill-soft:rgba(214,248,255,.9);--champagne:#f4d28a;--champagne-deep:#9a6f2c;--home-accent:#00f5d4;--home-accent-rgb:0,245,212;--visual-tint:#9db8cf;--source-netease:#d95b67;--source-qq:#00F5D4;--source-local:#9db8cf}
 :root{--glass-bg:linear-gradient(112deg,rgba(72,74,76,.62),rgba(24,27,30,.70) 48%,rgba(8,12,14,.74));--glass-bg-focus:linear-gradient(112deg,rgba(88,91,92,.68),rgba(28,32,35,.76) 50%,rgba(8,13,15,.82));--glass-border:rgba(0,245,212,.30);--glass-border-soft:rgba(255,255,255,.095);--glass-shadow:0 22px 64px rgba(0,0,0,.30),0 0 34px rgba(0,245,212,.052),inset 0 1px 0 rgba(255,255,255,.16),inset 0 -24px 58px rgba(0,0,0,.16);--glass-shadow-focus:0 24px 72px rgba(0,0,0,.34),0 0 0 1px rgba(0,245,212,.13),0 0 42px rgba(0,245,212,.075),inset 0 1px 0 rgba(255,255,255,.20)}
 :root{--saved-panel-glass-bg:rgba(0,0,0,.10);--saved-panel-glass-filter:blur(12px) saturate(1.8) brightness(1.16);--saved-panel-glass-svg-filter:url(#mineradio-control-glass-filter) saturate(1);--saved-panel-glass-shadow:inset 0 0 2px 1px rgba(255,255,255,.35),inset 0 0 10px 4px rgba(255,255,255,.15),0 4px 16px rgba(17,17,26,.05),0 8px 24px rgba(17,17,26,.05),0 16px 56px rgba(17,17,26,.05),inset 0 4px 16px rgba(17,17,26,.05),inset 0 8px 24px rgba(17,17,26,.05),inset 0 16px 56px rgba(17,17,26,.05);--saved-panel-glass-radius:50px;--saved-button-glass-bg:rgba(0,0,0,.10);--saved-button-glass-filter:blur(12px) saturate(1.8) brightness(1.16);--saved-button-glass-svg-filter:url(#mineradio-control-glass-filter) saturate(1);--saved-button-glass-shadow:inset 0 0 2px 1px rgba(255,255,255,.34),inset 0 0 10px 4px rgba(255,255,255,.13),0 10px 30px rgba(0,0,0,.18);--saved-button-glass-hover-bg:rgba(255,255,255,.055);--saved-button-glass-hover-shadow:inset 0 0 2px 1px rgba(255,255,255,.42),inset 0 0 12px 5px rgba(255,255,255,.17),0 12px 34px rgba(0,0,0,.22),0 0 18px rgba(255,255,255,.06)}
@@ -36,9 +37,12 @@ body::after,#desktop-window-shell::after{content:none}
 #desktop-window-shell{display:contents}
 #desktop-titlebar{display:none}
 body.desktop-shell{background:transparent}
+body.desktop-shell.desktop-mac{background:#000}
 body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border-radius:34px;clip-path:inset(0 round 34px);background:transparent;box-shadow:0 24px 80px rgba(0,0,0,.46);transform:translateZ(0)}
+body.desktop-shell.desktop-mac #desktop-window-shell{border-radius:0;clip-path:none;background:#000;box-shadow:none;transform:none}
 body.desktop-shell.desktop-maximized #desktop-window-shell,body.desktop-shell.desktop-fullscreen #desktop-window-shell,html:fullscreen body.desktop-shell #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
 body.desktop-shell #desktop-titlebar{position:fixed;z-index:500;top:0;left:0;right:0;height:44px;padding:0 12px 0 18px;display:flex;align-items:center;justify-content:space-between;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;-webkit-app-region:drag;pointer-events:none}
+body.desktop-shell.desktop-mac #desktop-titlebar{padding-left:88px}
 body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-drag-region{height:100%;flex:1;display:flex;align-items:center;gap:9px;min-width:0;color:rgba(224,250,255,.74);font-size:12px;font-weight:600;letter-spacing:0;text-transform:uppercase;-webkit-app-region:drag;pointer-events:auto}
 .desktop-app-mark{display:none}
@@ -48,6 +52,7 @@ body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-window-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
 .desktop-window-btn:hover{background:rgba(244,210,138,.14);color:#fff1bd;transform:translateY(-1px)}
 .desktop-window-btn.close:hover{background:rgba(255,86,100,.86);color:#fff}
+body.desktop-shell.desktop-mac .desktop-window-btn{display:none}
 .desktop-mode-btn{height:30px;min-width:78px;padding:0 12px;border:1px solid rgba(255,255,255,.08);border-radius:999px;background:rgba(4,8,10,.42);color:rgba(224,250,255,.70);font-family:inherit;font-size:11px;font-weight:760;letter-spacing:.08em;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:background .18s,color .18s,transform .18s,border-color .18s,box-shadow .18s}
 .desktop-mode-btn::before{content:'';width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.28);box-shadow:0 0 0 rgba(255,83,103,0);transition:background .18s,box-shadow .18s}
 .desktop-mode-btn:hover{background:rgba(255,83,103,.10);border-color:rgba(255,83,103,.34);color:#fff;transform:translateY(-1px)}
@@ -101,8 +106,8 @@ body.custom-background-override #album-bg{opacity:0!important}
 body.render-deep-sleep #canvas-container,body.render-deep-sleep #idle-guide-canvas,body.render-deep-sleep #splash-canvas,body.render-deep-sleep #hand-canvas{opacity:0!important;visibility:hidden!important}
 body.splash-active:not(.splash-revealing) #canvas-container{opacity:.16;transform:scale(1)}
 body.splash-active.splash-revealing #canvas-container{opacity:1;transform:scale(1)}
-#idle-guide-canvas{position:fixed;inset:0;z-index:2;width:100%;height:100%;pointer-events:none;opacity:0;transition:opacity .7s cubic-bezier(.22,1,.36,1)}
-body.idle-guide-on #idle-guide-canvas{opacity:1!important}
+#idle-guide-canvas{position:fixed;inset:0;z-index:2;width:100%;height:100%;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .7s cubic-bezier(.22,1,.36,1),visibility 0s linear .7s}
+body.idle-guide-on #idle-guide-canvas{opacity:1!important;visibility:visible;transition:opacity .7s cubic-bezier(.22,1,.36,1)}
 body.home-wallpaper-preview #idle-guide-canvas{opacity:0!important;visibility:hidden!important}
 body.idle-guide-interactive #canvas-container{cursor:grab}
 body.idle-guide-dragging #canvas-container{cursor:grabbing}
@@ -119,6 +124,7 @@ body.idle-guide-dragging #canvas-container{cursor:grabbing}
 #splash.exiting{pointer-events:none;opacity:0;transform:scale(1.018)}
 #splash-canvas{position:absolute;inset:0;z-index:1;opacity:1;transition:opacity 1100ms cubic-bezier(.22,1,.36,1),transform 1100ms cubic-bezier(.22,1,.36,1)}
 #splash.exiting #splash-canvas{opacity:.30;transform:scale(1.012)}
+#splash.hide #splash-canvas{display:none}
 .splash-bg-noise{position:absolute;inset:0;z-index:3;opacity:.038;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");background-size:180px 180px;mix-blend-mode:screen;pointer-events:none}
 .splash-content{position:relative;z-index:10;display:flex;flex-direction:column;align-items:center;gap:16px;pointer-events:none;transform:translateY(4px);transition:opacity 680ms cubic-bezier(.22,1,.36,1),transform 860ms cubic-bezier(.22,1,.36,1)}
 .splash-wordmark{position:relative;display:flex;align-items:baseline;justify-content:center;height:clamp(70px,12vw,136px);min-width:min(74vw,760px);font-size:clamp(52px,8.8vw,112px);line-height:.92;font-weight:720;letter-spacing:-.055em;color:#f8f8f2;text-shadow:0 20px 82px rgba(0,0,0,.68),-2px 0 18px rgba(255,83,103,.16),2px 0 18px rgba(122,215,194,.12);isolation:isolate;filter:drop-shadow(0 0 22px rgba(244,210,138,.075))}
@@ -783,8 +789,8 @@ body.immersive-mode::after{content:'';position:fixed;left:0;right:0;bottom:0;hei
 #trial-banner .close:hover{color:#fff}
 
 /* ---------- 模态 ---------- */
-#login-guide-canvas{position:fixed;inset:0;z-index:49;width:100%;height:100%;opacity:0;pointer-events:none;transition:opacity .24s ease}
-body.login-guide-active #login-guide-canvas{opacity:1}
+#login-guide-canvas{position:fixed;inset:0;z-index:49;width:100%;height:100%;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .24s ease,visibility 0s linear .24s}
+body.login-guide-active #login-guide-canvas{opacity:1;visibility:visible;transition:opacity .24s ease}
 .modal-mask{position:fixed;inset:0;z-index:50;background:radial-gradient(circle at 50% 48%,rgba(244,210,138,.07),transparent 34%),rgba(0,0,0,0.78);display:none;align-items:center;justify-content:center;opacity:0;visibility:hidden}
 .modal-mask.show{display:flex;opacity:1;visibility:visible}
 .modal-mask::before{content:none}
@@ -1825,8 +1831,8 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 .gesture-meter{height:3px;background:rgba(255,255,255,.10);border-radius:4px;overflow:hidden;margin-top:8px}
 .gesture-meter span{display:block;height:100%;width:0%;background:var(--champagne);border-radius:4px;transition:width .08s linear}
 .gesture-legend{font-size:10px;color:rgba(255,255,255,.4);margin-top:6px;line-height:1.5}
-#hand-canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:22;opacity:0;transition:opacity .35s}
-#hand-canvas.show{opacity:1}
+#hand-canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:22;opacity:0;visibility:hidden;transition:opacity .35s,visibility 0s linear .35s}
+#hand-canvas.show{opacity:1;visibility:visible;transition:opacity .35s}
 
 /* ============================================================ */
 /*  响应式                                                        */
@@ -3432,6 +3438,7 @@ var desktopRuntimeState = {
 };
 var renderPowerState = { mode: '', width: 0, height: 0, pixelRatio: 0 };
 var backgroundCacheTrimTimer = 0;
+var MAC_IDLE_RENDER_FPS = 30;
 var runtimePerfState = {
   lastCacheTrimAt: 0,
   cacheTrimCount: 0,
@@ -3440,6 +3447,28 @@ var runtimePerfState = {
   heapMB: 0,
   cacheCounts: {}
 };
+function isMacDesktopRuntime() {
+  return !!(window.desktopWindow && (window.desktopWindow.isMac || window.desktopWindow.platform === 'darwin'));
+}
+function hasActivePlaybackVisualRuntime() {
+  return !!(playing || (audio && !audio.paused));
+}
+function hasForegroundVisualWork() {
+  if (document.body.classList.contains('splash-active')) return true;
+  if (immersiveMode || visualGuideActive || loginGuideAnimating) return true;
+  if (freeCamera && (freeCamera.active || freeCamera.resetTween)) return true;
+  if (orbit && (orbit.rotating || orbit.recentering)) return true;
+  if (typeof shelfManager !== 'undefined' && shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) return true;
+  return false;
+}
+function isMacVisibleIdleRenderMode() {
+  if (!isMacDesktopRuntime()) return false;
+  if (isDeepBackgroundMode()) return false;
+  if (hasActivePlaybackVisualRuntime()) return false;
+  if (hasForegroundVisualWork()) return false;
+  if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) return false;
+  return true;
+}
 function isDeepBackgroundMode() {
   if (isLiveBackgroundKeepMode()) return false;
   return !!(document.hidden || desktopRuntimeState.minimized || desktopRuntimeState.visible === false);
@@ -3658,10 +3687,11 @@ function maybeTrimRuntimeCaches(now) {
 function applyRendererPowerMode() {
   if (typeof renderer === 'undefined' || !renderer) return;
   var deep = isDeepBackgroundMode();
+  var macIdle = !deep && isMacVisibleIdleRenderMode();
   var width = deep ? 4 : Math.max(1, innerWidth);
   var height = deep ? 4 : Math.max(1, innerHeight);
   var pixelRatio = getRenderPixelRatio();
-  var mode = deep ? 'sleep' : 'active';
+  var mode = deep ? 'sleep' : (macIdle ? 'mac-idle' : 'active');
   if (renderPowerState.mode === mode && renderPowerState.width === width && renderPowerState.height === height && Math.abs(renderPowerState.pixelRatio - pixelRatio) < 0.001) return;
   renderPowerState = { mode: mode, width: width, height: height, pixelRatio: pixelRatio };
   renderer.setPixelRatio(pixelRatio);
@@ -3743,6 +3773,7 @@ function renderQualityProfile() {
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
+  if (isMacVisibleIdleRenderMode()) return Math.min(device, 1.0);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
@@ -5606,6 +5637,7 @@ window.addEventListener('mousemove', function(e){
     return;
   }
   if (isPointerOverUi(e) && !orbit.rotating) { mouseActive = false; return; }
+  if (!orbit.rotating) markRenderInteraction('canvas-hover', 260);
   if (orbit.rotating) {
     markRenderInteraction('canvas-drag', 900);
     unlockCenteredView();
@@ -23842,7 +23874,7 @@ function runLoginGuideParticles(done) {
   loginGuideAnimating = true;
   document.body.classList.add('login-guide-active');
   var ctx = canvas.getContext('2d');
-  var dpr = Math.min(window.devicePixelRatio || 1, 1.8);
+  var dpr = Math.min(window.devicePixelRatio || 1, isMacDesktopRuntime() ? 1.35 : 1.8);
   var w = window.innerWidth, h = window.innerHeight;
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
@@ -25738,11 +25770,13 @@ function drawMineradioSplashWebgl(elapsed) {
     splashCtx = splashCanvas.getContext('2d');
   }
   function resize() {
-    splashPixelRatio = Math.min(1.6, Math.max(1, window.devicePixelRatio || 1));
+    splashPixelRatio = Math.min(isMacDesktopRuntime() ? 1.35 : 1.6, Math.max(1, window.devicePixelRatio || 1));
     splashW = window.innerWidth;
     splashH = window.innerHeight;
     splashCanvas.width = Math.max(1, Math.floor(splashW * splashPixelRatio));
     splashCanvas.height = Math.max(1, Math.floor(splashH * splashPixelRatio));
+    splashCanvas.style.width = splashW + 'px';
+    splashCanvas.style.height = splashH + 'px';
     if (splashCtx) splashCtx.setTransform(splashPixelRatio, 0, 0, splashPixelRatio, 0, 0);
     if (splashGl) splashGl.viewport(0, 0, splashCanvas.width, splashCanvas.height);
     splashDust = [];
@@ -26410,6 +26444,13 @@ function toggleFullscreen() {
 
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');
+  if (api.isMac || api.platform === 'darwin') {
+    document.documentElement.classList.add('desktop-mac', 'desktop-platform-darwin');
+    document.body.classList.add('desktop-mac', 'desktop-platform-darwin');
+  } else if (api.platform) {
+    document.documentElement.classList.add('desktop-platform-' + api.platform);
+    document.body.classList.add('desktop-platform-' + api.platform);
+  }
   document.body.classList.remove('desktop-fullscreen');
   desktopFullscreenActive = false;
   syncCursorAutoHideMode();
@@ -26581,6 +26622,7 @@ function isMainSceneCoveredBySplash() {
 }
 function getAdaptiveRenderFps() {
   if (isDeepBackgroundMode()) return 1;
+  if (isMacVisibleIdleRenderMode()) return MAC_IDLE_RENDER_FPS;
   if (RENDER_VISIBLE_VSYNC) return 0;
   var tier = (typeof getRenderLoadTier === 'function') ? getRenderLoadTier() : 0;
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive()) {
@@ -26620,6 +26662,7 @@ function sampleRenderPerf(now, dt) {
 function animate() {
   requestAnimationFrame(animate);
   var now = performance.now();
+  applyRendererPowerMode();
   if (shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
