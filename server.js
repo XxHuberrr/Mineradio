@@ -508,7 +508,7 @@ function beatCacheRootInfo() {
   const dir = path.resolve(BEATMAP_CACHE_DIR);
   const root = path.parse(dir).root;
   const drive = root ? root.replace(/[\\\/]+$/, '').toUpperCase() : '';
-  const allowed = !!root && !/^C:$/i.test(drive);
+  const allowed = !!root;
   const available = allowed && fs.existsSync(root);
   return { dir, root, drive, allowed, available };
 }
@@ -3343,7 +3343,7 @@ const server = http.createServer(async (req, res) => {
       enabled: info.allowed && info.available,
       dir: info.dir,
       drive: info.drive,
-      reason: !info.allowed ? 'C_DRIVE_DISABLED' : (!info.available ? 'TARGET_DRIVE_UNAVAILABLE' : ''),
+      reason: !info.available ? 'TARGET_DRIVE_UNAVAILABLE' : '',
       mode: info.allowed && info.available ? 'disk' : 'memory-only',
     });
     return;
