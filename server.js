@@ -48,6 +48,7 @@ const http = require('http');
 const https = require('https');
 const fs   = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const tls = require('tls');
 const { once } = require('events');
@@ -62,7 +63,8 @@ const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-c
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+const UPDATE_PLATFORM = process.env.MINERADIO_UPDATE_PLATFORM || process.platform;
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || defaultBeatmapCacheDir();
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
@@ -84,6 +86,12 @@ const WEATHER_DEFAULT_LOCATION = {
   longitude: 121.4737,
   timezone: 'Asia/Shanghai',
 };
+
+function defaultBeatmapCacheDir() {
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Caches', 'Mineradio', 'beatmaps');
+  if (process.platform === 'win32') return 'D:\\MineradioCache\\beatmaps';
+  return path.join(os.homedir(), '.cache', 'Mineradio', 'beatmaps');
+}
 
 const updateDownloadJobs = new Map();
 
@@ -362,9 +370,29 @@ function extractReleaseNotes(body) {
   });
   return notes.slice(0, 4);
 }
+function updateAssetExtensionsForPlatform() {
+  if (UPDATE_PLATFORM === 'darwin') return ['dmg', 'zip'];
+  if (UPDATE_PLATFORM === 'win32') return ['exe', 'msi'];
+  return ['AppImage', 'deb', 'rpm', 'tar.gz', 'zip', '7z'];
+}
+function defaultUpdateAssetName(version) {
+  const normalized = version || APP_VERSION;
+  if (UPDATE_PLATFORM === 'darwin') return `Mineradio-${normalized}-Mac.dmg`;
+  if (UPDATE_PLATFORM === 'win32') return `Mineradio-${normalized}-Setup.exe`;
+  return `Mineradio-${normalized}.zip`;
+}
+function assetMatchesExtensions(asset, extensions) {
+  const name = String(asset && asset.name || '');
+  return extensions.some((ext) => {
+    if (ext === 'tar.gz') return /\.tar\.gz$/i.test(name);
+    return new RegExp('\\.' + ext.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i').test(name);
+  });
+}
 function pickReleaseAsset(assets) {
   const list = Array.isArray(assets) ? assets : [];
-  const preferred = list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
+  const platformExtensions = updateAssetExtensionsForPlatform();
+  const preferred = list.find(a => assetMatchesExtensions(a, platformExtensions))
+    || list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
     || list.find(a => /\.(zip|7z)$/i.test(a && a.name || ''))
     || list[0];
   if (!preferred) return null;
@@ -453,7 +481,7 @@ function normalizeManifestUpdateInfo(data) {
     ? release.notes.slice(0, 4).map(cleanReleaseLine).filter(Boolean)
     : (extractReleaseNotes(release.body || data.body).length ? extractReleaseNotes(release.body || data.body) : UPDATE_FALLBACK_NOTES);
   const assetInfo = downloadUrl ? {
-    name: asset.name || updateAssetNameFromUrl(downloadUrl) || `Mineradio-${latestVersion}-Setup.exe`,
+    name: asset.name || updateAssetNameFromUrl(downloadUrl) || defaultUpdateAssetName(latestVersion),
     size: Number(asset.size || 0) || 0,
     contentType: asset.contentType || asset.content_type || '',
     downloadUrl,
@@ -667,7 +695,7 @@ function githubReleaseDownloadUrl(version, fileName) {
 }
 function parseLatestYmlUpdateInfo(text, reason) {
   const latestVersion = normalizeVersion(yamlScalar(text, 'version') || APP_VERSION) || APP_VERSION;
-  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || `Mineradio-${latestVersion}-Setup.exe`;
+  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || defaultUpdateAssetName(latestVersion);
   const sha512 = normalizeDigest(yamlScalar(text, 'sha512'), 'sha512');
   const size = Number(yamlScalar(text, 'size') || 0) || 0;
   const releaseDate = yamlScalar(text, 'releaseDate');
@@ -764,13 +792,13 @@ async function fetchLatestUpdateInfo() {
   }
 }
 function safeUpdateFileName(name, version) {
-  const raw = String(name || '').trim() || `Mineradio-${version || APP_VERSION}.exe`;
+  const raw = String(name || '').trim() || defaultUpdateAssetName(version || APP_VERSION);
   const cleaned = raw
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
-  return cleaned || `Mineradio-${version || APP_VERSION}.exe`;
+  return cleaned || defaultUpdateAssetName(version || APP_VERSION);
 }
 function publicUpdateJob(job) {
   if (!job) return { ok: false, error: 'UPDATE_JOB_NOT_FOUND' };
@@ -1347,7 +1375,7 @@ function startUpdatePatchJob(info) {
     received: 0,
     total: patch.size || 0,
     mode: 'patch',
-    fileName: patch.name || safeUpdateFileName('', version).replace(/\.exe$/i, '.patch.json'),
+    fileName: patch.name || `Mineradio-${version || APP_VERSION}.patch.json`,
     filePath: '',
     version,
     downloadUrl,
