@@ -31,7 +31,10 @@ const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
-const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+// 窗口图标按平台选择：Windows 用 .ico，其它平台（Linux/macOS）用 .png。
+const APP_ICON_ICO = process.platform === 'win32'
+  ? path.join(__dirname, '..', 'build', 'icon.ico')
+  : path.join(__dirname, '..', 'build', 'icon.png');
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -48,11 +51,21 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
+  // Angle 后端按平台选择：Windows 用 d3d11，Linux 优先 OpenGL（兼容性最稳）。
+  ['use-angle', process.platform === 'win32' ? 'd3d11' : 'gl'],
 ];
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
+}
+
+// Linux 下让 Electron/X11 应用在不同会话（X11 / Wayland）下都能正常合成透明窗口。
+// 当会话是 Wayland 时用 wayland 后端，否则回落到默认 X11。
+if (process.platform === 'linux') {
+  if (process.env.XDG_SESSION_TYPE === 'wayland' || !!(process.env.WAYLAND_DISPLAY)) {
+    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform,WaylandWindowDecorations');
+  }
 }
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -1184,6 +1197,17 @@ ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
       return { ok: false, error: 'INVALID_UPDATE_PATH' };
     }
     if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
+
+    // Linux 上更新产物通常是 AppImage：它是一个可执行文件，不能用 xdg-open 打开。
+    // 需要补上可执行权限后直接启动；其它格式（deb/rpm）交给系统默认程序。
+    if (process.platform === 'linux' && /\.appimage$/i.test(target)) {
+      try { fs.chmodSync(target, 0o755); } catch (_) {}
+      const child = spawn(target, { detached: true, stdio: 'ignore' });
+      child.on('error', () => {});
+      child.unref();
+      return { ok: true };
+    }
+
     const error = await shell.openPath(target);
     return error ? { ok: false, error } : { ok: true };
   } catch (e) {

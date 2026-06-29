@@ -1,8 +1,119 @@
-# Mineradio
+# Mineradio for Linux
 
 ![Mineradio 暗场启动页](./docs/assets/readme/cinema-beat-smoke.png)
 
-Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、搜索播放、歌词舞台、粒子视觉和 3D 歌单架组合成一个更接近现场感的私人音乐空间。
+> **Linux x86 适配版** — 基于 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio)，由 [jade2-fff](https://github.com/jade2-fff) 移植，保持与上游同步更新。
+
+Mineradio 是一款沉浸式音乐播放器，把天气电台、搜索播放、歌词舞台、粒子视觉和 3D 歌单架组合成一个更接近现场感的私人音乐空间。本仓库是针对 Linux x86_64 平台的适配版本。
+
+## 立即下载 Linux 版
+
+| 安装方式 | 适用发行版 | 下载 |
+| --- | --- | --- |
+| AppImage（免安装，推荐） | 所有主流发行版 | [Mineradio-1.1.1-x86_64.AppImage](https://github.com/jade2-fff/Mineradio-for-linux/releases/download/v1.1.1/Mineradio-1.1.1-x86_64.AppImage) |
+| deb 包 | Debian / Ubuntu / 深度 | [Mineradio-1.1.1-amd64.deb](https://github.com/jade2-fff/Mineradio-for-linux/releases/download/v1.1.1/Mineradio-1.1.1-amd64.deb) |
+
+> [查看所有 Release](https://github.com/jade2-fff/Mineradio-for-linux/releases)
+
+## Linux 适配说明
+
+- **构建目标**：AppImage + deb（x64）
+- **GPU 渲染**：Windows d3d11 → Linux OpenGL + Wayland 自适应（ozone）
+- **已适配**：窗口图标、更新选包、AppImage 自动 chmod+启动、节奏缓存目录跨平台化
+- **已知降级**（不影响核心播放）：
+  - 桌面歌词中键全局解锁（依赖 Windows PowerShell，Linux 上静默跳过）
+  - 壁纸嵌入桌面图标层（依赖 Win32 WorkerW API，Linux 上静默跳过）
+
+### 推荐安装字体
+
+```bash
+sudo apt install fonts-noto-cjk fonts-inter
+```
+
+## 同步上游更新
+
+本项目保持与原作者仓库 [XxHuberrr/Mineradio](https://github.com/XxHuberrr/Mineradio) 同步。当上游有新版本发布时，执行以下命令拉取合并：
+
+```bash
+git fetch upstream
+git merge upstream/main
+# 如有冲突，手动解决后：
+# git add .
+# git commit
+git push origin main
+```
+
+## Linux 安装
+
+有两种安装方式，按需选择：
+
+### 方式一：AppImage（免安装，推荐）
+
+AppImage 是单个可执行文件，下载后赋予执行权限即可双击运行，无需安装。
+
+```bash
+# 下载后赋予执行权限（文件名以实际 Release 为准）
+chmod +x Mineradio-1.1.1-x86_64.AppImage
+
+# 运行
+./Mineradio-1.1.1-x86_64.AppImage
+```
+
+> 如果双击无法运行，可能是文件管理器未启用「允许执行」，在文件属性里勾选「作为程序执行」即可。
+
+### 方式二：deb 包（系统安装，适合 Debian/Ubuntu 系）
+
+```bash
+# 安装
+sudo dpkg -i Mineradio-1.1.1-x64.deb
+
+# 如提示缺少依赖，补一下再安装
+sudo apt-get install -f
+
+# 安装后从应用菜单启动 Mineradio，或命令行运行
+mineradio
+```
+
+安装包会自动注册到系统应用菜单，卸载使用 `sudo apt remove mineradio`。
+
+### 系统依赖
+
+基于 Electron 的应用需要以下运行库，大多数桌面发行版已默认包含，缺失时按需安装：
+
+```bash
+sudo apt install libgtk-3-0 libnotify4 libnss3 libxss1 libxtst6 \
+  xdg-utils libatspi2.0-0 libdrm2 libgbm1
+```
+
+> AppImage 用户通常无需手动安装，AppImage 会自带大部分依赖。
+
+### 常见问题：双击没反应 / 启动秒退
+
+deb 安装后双击没反应，通常是 Electron 的 `chrome-sandbox` 权限不对。一条命令修复：
+
+```bash
+sudo chown root:root /opt/Mineradio/chrome-sandbox && sudo chmod 4755 /opt/Mineradio/chrome-sandbox
+```
+
+> AppImage 用户如果也遇到，先解包再执行相同操作：
+> ```bash
+> ./Mineradio-*.AppImage --appimage-extract
+> sudo chown root:root squashfs-root/chrome-sandbox && sudo chmod 4755 squashfs-root/chrome-sandbox
+> ./squashfs-root/AppRun
+> ```
+
+### 从源码构建
+
+如果 Release 里没有你需要的包，可从源码自行构建：
+
+```bash
+git clone https://github.com/jade2-fff/Mineradio-for-linux.git
+cd Mineradio-for-linux
+npm install
+npm run build:linux        # 生成 AppImage + deb，产物在 dist/
+```
+
+## 原版 Windows 下载
 
 ## 立即下载 Windows 安装包
 
@@ -69,11 +180,21 @@ Windows 用户可以在 GitHub Releases 中下载安装包。
 
 ```bash
 npm install
+
+# 开发模式启动
 npm start
+
+# Windows 构建
 npm run build:win
+
+# Linux 构建（AppImage + deb）
+npm run build:linux
+
+# Linux 仅打包目录（调试用，更快）
+npm run build:linux:dir
 ```
 
-桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
+桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，`npm run build:linux` 会生成 AppImage 和 deb 安装包，产物均位于 `dist/`。
 
 ## 更新机制
 

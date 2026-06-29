@@ -62,13 +62,36 @@ const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-c
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
-const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\MineradioCache\\beatmaps';
+// 节奏分析缓存目录：优先用环境变量覆盖，否则按平台放在用户数据目录下，
+// 避免硬编码 Windows 盘符路径在 Linux/macOS 上失效。
+const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || (
+  process.platform === 'win32'
+    ? 'D:\\MineradioCache\\beatmaps'
+    : path.join(require('os').homedir(), '.cache', 'mineradio', 'beatmaps')
+);
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
 const PATCH_ALLOWED_FILES = new Set(['server.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
+// 不同平台更新安装包的扩展名优先级，用于从 GitHub Release 产物里挑选本平台可用的安装包。
+const PLATFORM_INSTALLER_EXT = process.platform === 'win32'
+  ? ['exe', 'msi']
+  : process.platform === 'darwin'
+    ? ['dmg', 'zip', 'pkg']
+    : ['appimage', 'deb', 'rpm', 'tar.gz'];
+// 不同平台更新安装包的默认文件名（含扩展名），用于缺失名字时的兜底。
+const PLATFORM_DEFAULT_INSTALLER = process.platform === 'win32'
+  ? `Mineradio-${APP_VERSION}-Setup.exe`
+  : process.platform === 'darwin'
+    ? `Mineradio-${APP_VERSION}.dmg`
+    : `Mineradio-${APP_VERSION}-x86_64.AppImage`;
+// 判断 Release 产物文件名是否属于本平台可安装包。
+function isPlatformInstallerName(name) {
+  const lower = String(name || '').toLowerCase();
+  return PLATFORM_INSTALLER_EXT.some((ext) => lower.endsWith('.' + ext));
+}
 const UPDATE_FALLBACK_NOTES = [
   '电影镜头节奏更松',
   '音源失败自动换源',
@@ -364,7 +387,8 @@ function extractReleaseNotes(body) {
 }
 function pickReleaseAsset(assets) {
   const list = Array.isArray(assets) ? assets : [];
-  const preferred = list.find(a => /\.(exe|msi)$/i.test(a && a.name || ''))
+  // 优先挑选本平台安装包；其次退回到任意归档包；最后取第一个资产。
+  const preferred = list.find(a => isPlatformInstallerName(a && a.name || ''))
     || list.find(a => /\.(zip|7z)$/i.test(a && a.name || ''))
     || list[0];
   if (!preferred) return null;
@@ -453,7 +477,7 @@ function normalizeManifestUpdateInfo(data) {
     ? release.notes.slice(0, 4).map(cleanReleaseLine).filter(Boolean)
     : (extractReleaseNotes(release.body || data.body).length ? extractReleaseNotes(release.body || data.body) : UPDATE_FALLBACK_NOTES);
   const assetInfo = downloadUrl ? {
-    name: asset.name || updateAssetNameFromUrl(downloadUrl) || `Mineradio-${latestVersion}-Setup.exe`,
+    name: asset.name || updateAssetNameFromUrl(downloadUrl) || PLATFORM_DEFAULT_INSTALLER.replace(/\$\{?version\}?/gi, latestVersion),
     size: Number(asset.size || 0) || 0,
     contentType: asset.contentType || asset.content_type || '',
     downloadUrl,
@@ -667,7 +691,7 @@ function githubReleaseDownloadUrl(version, fileName) {
 }
 function parseLatestYmlUpdateInfo(text, reason) {
   const latestVersion = normalizeVersion(yamlScalar(text, 'version') || APP_VERSION) || APP_VERSION;
-  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || `Mineradio-${latestVersion}-Setup.exe`;
+  const assetPath = yamlScalar(text, 'path') || yamlScalar(text, 'url') || PLATFORM_DEFAULT_INSTALLER.replace(/\$\{?version\}?/gi, latestVersion);
   const sha512 = normalizeDigest(yamlScalar(text, 'sha512'), 'sha512');
   const size = Number(yamlScalar(text, 'size') || 0) || 0;
   const releaseDate = yamlScalar(text, 'releaseDate');
@@ -764,13 +788,13 @@ async function fetchLatestUpdateInfo() {
   }
 }
 function safeUpdateFileName(name, version) {
-  const raw = String(name || '').trim() || `Mineradio-${version || APP_VERSION}.exe`;
+  const raw = String(name || '').trim() || PLATFORM_DEFAULT_INSTALLER.replace(/\$\{?version\}?/gi, version || APP_VERSION);
   const cleaned = raw
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
-  return cleaned || `Mineradio-${version || APP_VERSION}.exe`;
+  return cleaned || PLATFORM_DEFAULT_INSTALLER.replace(/\$\{?version\}?/gi, version || APP_VERSION);
 }
 function publicUpdateJob(job) {
   if (!job) return { ok: false, error: 'UPDATE_JOB_NOT_FOUND' };
@@ -1347,7 +1371,7 @@ function startUpdatePatchJob(info) {
     received: 0,
     total: patch.size || 0,
     mode: 'patch',
-    fileName: patch.name || safeUpdateFileName('', version).replace(/\.exe$/i, '.patch.json'),
+    fileName: patch.name || safeUpdateFileName('', version).replace(/\.(exe|msi|appimage|deb|rpm|dmg|pkg)$/i, '.patch.json').replace(/\.tar\.gz$/i, '.patch.json'),
     filePath: '',
     version,
     downloadUrl,

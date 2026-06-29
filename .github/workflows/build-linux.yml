@@ -1,0 +1,76 @@
+name: Build Linux (AppImage + deb)
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux (AppImage + deb)
+        run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mineradio-AppImage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mineradio-deb
+          path: dist/*.deb
+          if-no-files-found: error
+
+  release:
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: Mineradio-AppImage
+
+      - name: Download deb
+        uses: actions/download-artifact@v4
+        with:
+          name: Mineradio-deb
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.AppImage
+            *.deb
+          generate_release_notes: true
