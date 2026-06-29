@@ -23719,31 +23719,40 @@ async function openSpotifyWebLogin() {
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
   if (!api || !api.isDesktop || typeof api.openSpotifyLogin !== 'function') {
-    if (statusEl) { statusEl.textContent = '当前环境不支持 Spotify 网页登录'; statusEl.className = 'fail'; }
+    if (statusEl) { statusEl.textContent = '当前环境不支持 Spotify OAuth 登录'; statusEl.className = 'fail'; }
     return;
   }
   spotifyWebLoginBusy = true;
   updateLoginProviderUi();
-  if (statusEl) { statusEl.textContent = '已打开 Spotify 窗口，请登录…'; statusEl.className = 'preview'; }
+  if (statusEl) { statusEl.textContent = '已打开浏览器进行 Spotify 授权…'; statusEl.className = 'preview'; }
   try {
     var result = await api.openSpotifyLogin();
-    if (!result || !result.ok || !result.cookie) {
-      throw new Error((result && (result.message || result.error)) || 'Spotify 登录未完成');
+    if (!result || !result.ok || !result.accessToken) {
+      throw new Error((result && (result.message || result.error)) || 'Spotify 授权未完成');
     }
-    if (statusEl) { statusEl.textContent = '正在同步 Spotify 会话…'; statusEl.className = 'preview'; }
-    var info = await apiJson('/api/spotify/login/cookie', {
+    if (statusEl) { statusEl.textContent = '正在同步 Spotify 令牌…'; statusEl.className = 'preview'; }
+    var info = await apiJson('/api/spotify/login/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cookie: result.cookie })
+      body: JSON.stringify({ accessToken: result.accessToken, refreshToken: result.refreshToken || '', expiresIn: result.expiresIn || 3600 })
     });
-    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'Spotify 会话不可用');
-    spotifyLoginStatus = info;
+    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'Spotify 令牌不可用');
+    try {
+      var profile = await apiJson('/api/spotify/user/profile');
+      if (profile && profile.display_name) {
+        spotifyLoginStatus = { provider: 'spotify', loggedIn: true, nickname: profile.display_name, userId: profile.id || '', avatar: (profile.images && profile.images[0] && profile.images[0].url) || '' };
+      } else {
+        spotifyLoginStatus = { provider: 'spotify', loggedIn: true, nickname: 'Spotify', userId: '', avatar: '' };
+      }
+    } catch (e) {
+      spotifyLoginStatus = { provider: 'spotify', loggedIn: true, nickname: 'Spotify', userId: '', avatar: '' };
+    }
     activeAccountProvider = 'spotify';
     renderUserBtn();
-    if (statusEl) { statusEl.textContent = 'Spotify 会话已保存'; statusEl.className = 'scan'; }
+    if (statusEl) { statusEl.textContent = 'Spotify 已授权登录'; statusEl.className = 'scan'; }
     setTimeout(function(){
       closeLoginModal();
-      showToast('Spotify 已登录');
+      showToast('Spotify 已登录: ' + (spotifyLoginStatus.nickname || ''));
     }, 420);
   } catch (e) {
     spotifyWebLoginBusy = false;

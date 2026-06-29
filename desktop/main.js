@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dia
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const { execFile, spawn } = require('child_process');
 
 let mainWindow = null;
@@ -37,7 +40,10 @@ const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
-const SPOTIFY_LOGIN_URL = 'https://accounts.spotify.com/login';
+const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || 'YOUR_SPOTIFY_CLIENT_ID';
+const SPOTIFY_REDIRECT_PORT = process.env.SPOTIFY_REDIRECT_PORT || 34567;
+const SPOTIFY_SCOPES = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read user-top-read';
+const SPOTIFY_TOKEN_FILE = path.join(app.getPath('userData'), 'spotify-token.json');
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -639,88 +645,199 @@ async function clearQQMusicLoginSession() {
 }
 
 async function openSpotifyLoginWindow(owner) {
-  const cookieSession = session.fromPartition(SPOTIFY_LOGIN_PARTITION);
-  const initialCookie = await readSpotifyLoginCookieHeader(cookieSession);
-  if (spotifyCookieHasLogin(initialCookie)) return { ok: true, cookie: initialCookie, reused: true };
+  if (SPOTIFY_CLIENT_ID === 'YOUR_SPOTIFY_CLIENT_ID') {
+    return { ok: false, error: 'SPOTIFY_CLIENT_ID_NOT_SET', message: '请先在设置中填写 Spotify Client ID' };
+  }
+  const existingToken = loadSpotifyToken();
+  if (existingToken && existingToken.refresh_token) {
+    const refreshed = await refreshSpotifyToken(existingToken.refresh_token);
+    if (refreshed) return { ok: true, accessToken: refreshed.access_token, expiresIn: refreshed.expires_in };
+  }
 
   return new Promise((resolve) => {
     let settled = false;
-    let pollTimer = null;
+    let callbackServer = null;
 
-    const loginWindow = new BrowserWindow({
-      width: 900,
-      height: 720,
-      minWidth: 760,
-      minHeight: 560,
-      parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: 'Spotify 登录',
-      backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: SPOTIFY_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const finish = async (result) => {
+    const finish = (result) => {
       if (settled) return;
       settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      if (loginWindow && !loginWindow.isDestroyed()) {
-        loginWindow.close();
+      if (callbackServer) {
+        try { callbackServer.close(); } catch (e) {}
+        callbackServer = null;
       }
       resolve(result);
     };
 
-    const checkCookies = async () => {
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    const authUrl = new URL('https://accounts.spotify.com/authorize');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', SPOTIFY_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', `http://localhost:${SPOTIFY_REDIRECT_PORT}/callback`);
+    authUrl.searchParams.set('scope', SPOTIFY_SCOPES);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('code_challenge', codeChallenge);
+    authUrl.searchParams.set('show_dialog', 'false');
+
+    callbackServer = http.createServer(async (req, res) => {
+      const parsedUrl = new URL(req.url || '/', `http://localhost:${SPOTIFY_REDIRECT_PORT}`);
+      if (parsedUrl.pathname !== '/callback') {
+        res.writeHead(404);
+        res.end('Not Found');
+        return;
+      }
+      const code = parsedUrl.searchParams.get('code');
+      const error = parsedUrl.searchParams.get('error');
+      if (error) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<html><body><h2>授权失败</h2><p>错误: ' + escHtml(error) + '</p><p>可以关闭此窗口</p></body></html>');
+        finish({ ok: false, error: error, message: 'Spotify 授权被拒绝: ' + error });
+        return;
+      }
+      if (!code) {
+        res.writeHead(400);
+        res.end('Missing code');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end('<html><body><h2>Spotify 授权成功</h2><p>可以关闭此窗口，返回 Mineradio</p></body></html>');
       try {
-        const cookie = await readSpotifyLoginCookieHeader(cookieSession);
-        if (spotifyCookieHasLogin(cookie)) {
-          finish({ ok: true, cookie });
-        }
+        const tokenData = await exchangeSpotifyCode(code, codeVerifier);
+        finish({ ok: true, accessToken: tokenData.access_token, expiresIn: tokenData.expires_in, refreshToken: tokenData.refresh_token });
       } catch (e) {
-        console.warn('Spotify login cookie check failed:', e.message);
-      }
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\/([^/]+\.)?spotify\.com/i.test(url)) {
-        loginWindow.loadURL(url).catch((e) => console.warn('Spotify login popup navigation failed:', e.message));
-      } else if (/^https?:\/\//i.test(url)) {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('did-finish-load', () => {
-      checkCookies();
-    });
-
-    loginWindow.on('ready-to-show', () => loginWindow.show());
-    loginWindow.on('closed', async () => {
-      if (settled) return;
-      if (pollTimer) clearInterval(pollTimer);
-      try {
-        const cookie = await readSpotifyLoginCookieHeader(cookieSession);
-        resolve(spotifyCookieHasLogin(cookie)
-          ? { ok: true, cookie }
-          : { ok: false, cancelled: true, message: 'Spotify 登录窗口已关闭' });
-      } catch (e) {
-        resolve({ ok: false, error: e.message || 'Spotify 登录窗口已关闭' });
+        console.error('[SpotifyOAuth] token exchange failed:', e.message);
+        finish({ ok: false, error: 'TOKEN_EXCHANGE_FAILED', message: 'Spotify token 交换失败: ' + e.message });
       }
     });
 
-    pollTimer = setInterval(checkCookies, 1200);
-    loginWindow.loadURL(SPOTIFY_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
+    callbackServer.listen(SPOTIFY_REDIRECT_PORT, '127.0.0.1', () => {
+      shell.openExternal(authUrl.toString()).catch((e) => {
+        console.warn('Spotify OAuth browser open failed:', e.message);
+      });
+    });
+
+    callbackServer.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        finish({ ok: false, error: 'PORT_IN_USE', message: `端口 ${SPOTIFY_REDIRECT_PORT} 被占用，请关闭占用该端口的程序后重试` });
+      } else {
+        finish({ ok: false, error: e.code, message: 'Spotify 回调服务器启动失败: ' + e.message });
+      }
+    });
   });
 }
 
+function escHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function exchangeSpotifyCode(code, codeVerifier) {
+  return new Promise((resolve, reject) => {
+    const postData = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: `http://localhost:${SPOTIFY_REDIRECT_PORT}/callback`,
+      client_id: SPOTIFY_CLIENT_ID,
+      code_verifier: codeVerifier,
+    }).toString();
+
+    const options = {
+      hostname: 'accounts.spotify.com',
+      port: 443,
+      path: '/api/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode >= 400) {
+            reject(new Error(json.error_description || json.error || 'Token exchange failed'));
+          } else {
+            saveSpotifyToken(json);
+            resolve(json);
+          }
+        } catch (e) {
+          reject(new Error('Token response parse error'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Spotify token request timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+function refreshSpotifyToken(refreshToken) {
+  return new Promise((resolve, reject) => {
+    const postData = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: SPOTIFY_CLIENT_ID,
+    }).toString();
+
+    const options = {
+      hostname: 'accounts.spotify.com',
+      port: 443,
+      path: '/api/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode >= 400) {
+            reject(new Error(json.error_description || json.error || 'Token refresh failed'));
+          } else {
+            json.refresh_token = json.refresh_token || refreshToken;
+            saveSpotifyToken(json);
+            resolve(json);
+          }
+        } catch (e) {
+          reject(new Error('Token refresh parse error'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Spotify token refresh timeout')); });
+    req.write(postData);
+    req.end();
+  });
+}
+
+function loadSpotifyToken() {
+  try {
+    if (!fs.existsSync(SPOTIFY_TOKEN_FILE)) return null;
+    const raw = fs.readFileSync(SPOTIFY_TOKEN_FILE, 'utf8');
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveSpotifyToken(tokenData) {
+  try {
+    tokenData.saved_at = Math.floor(Date.now() / 1000);
+    fs.writeFileSync(SPOTIFY_TOKEN_FILE, JSON.stringify(tokenData, null, 2));
+  } catch (e) {
+    console.warn('[Spotify] failed to save token:', e.message);
+  }
+}
+
 async function clearSpotifyLoginSession() {
+  try { if (fs.existsSync(SPOTIFY_TOKEN_FILE)) fs.unlinkSync(SPOTIFY_TOKEN_FILE); } catch (e) {}
   const cookieSession = session.fromPartition(SPOTIFY_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
     storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
