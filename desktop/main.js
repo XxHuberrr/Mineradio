@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
 const net = require('net');
+const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
@@ -121,6 +122,51 @@ function waitForServer(server) {
     server.once('listening', resolve);
     server.once('error', reject);
   });
+}
+
+function waitForLocalHttpReady(port, timeoutMs = 8000) {
+  const startedAt = Date.now();
+
+  return new Promise((resolve, reject) => {
+    function probe() {
+      const req = http.get({
+        host: '127.0.0.1',
+        port,
+        path: '/',
+        timeout: 900,
+      }, (res) => {
+        res.resume();
+        resolve();
+      });
+
+      req.on('timeout', () => req.destroy(new Error('HTTP_READY_TIMEOUT')));
+      req.on('error', (error) => {
+        if (Date.now() - startedAt >= timeoutMs) {
+          reject(error);
+          return;
+        }
+        setTimeout(probe, 180);
+      });
+    }
+
+    probe();
+  });
+}
+
+async function loadUrlWithRetry(win, url, attempts = 5) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await win.loadURL(url);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!win || win.isDestroyed() || attempt >= attempts) break;
+      console.warn(`Main window load failed, retrying (${attempt}/${attempts}):`, error.message);
+      await new Promise((resolve) => setTimeout(resolve, 260 * attempt));
+    }
+  }
+  throw lastError || new Error('MAIN_WINDOW_LOAD_FAILED');
 }
 
 function sendWindowState(win) {
@@ -1342,6 +1388,7 @@ async function createWindow() {
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
+  await waitForLocalHttpReady(port);
 
   const initialBounds = getWindowedBounds();
 
@@ -1423,7 +1470,7 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  await loadUrlWithRetry(mainWindow, `http://127.0.0.1:${port}`);
 }
 
 app.setName(APP_NAME);
