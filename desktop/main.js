@@ -41,7 +41,7 @@ const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || 'd1e318a1f35a48cb8b03e62a4d589491';
-const SPOTIFY_REDIRECT_PORT = process.env.SPOTIFY_REDIRECT_PORT || 34567;
+const SPOTIFY_REDIRECT_PORT = process.env.SPOTIFY_REDIRECT_PORT || 8000;
 const SPOTIFY_SCOPES = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative user-library-read user-top-read';
 const SPOTIFY_TOKEN_FILE = path.join(app.getPath('userData'), 'spotify-token.json');
 
@@ -673,14 +673,14 @@ async function openSpotifyLoginWindow(owner) {
     const authUrl = new URL('https://accounts.spotify.com/authorize');
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('client_id', SPOTIFY_CLIENT_ID);
-    authUrl.searchParams.set('redirect_uri', `http://localhost:${SPOTIFY_REDIRECT_PORT}/callback`);
+    authUrl.searchParams.set('redirect_uri', `http://127.0.0.1:${SPOTIFY_REDIRECT_PORT}/callback`);
     authUrl.searchParams.set('scope', SPOTIFY_SCOPES);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('show_dialog', 'false');
 
     callbackServer = http.createServer(async (req, res) => {
-      const parsedUrl = new URL(req.url || '/', `http://localhost:${SPOTIFY_REDIRECT_PORT}`);
+      const parsedUrl = new URL(req.url || '/', `http://127.0.0.1:${SPOTIFY_REDIRECT_PORT}`);
       if (parsedUrl.pathname !== '/callback') {
         res.writeHead(404);
         res.end('Not Found');
@@ -735,7 +735,7 @@ function exchangeSpotifyCode(code, codeVerifier) {
     const postData = new URLSearchParams({
       grant_type: 'authorization_code',
       code: code,
-      redirect_uri: `http://localhost:${SPOTIFY_REDIRECT_PORT}/callback`,
+      redirect_uri: `http://127.0.0.1:${SPOTIFY_REDIRECT_PORT}/callback`,
       client_id: SPOTIFY_CLIENT_ID,
       code_verifier: codeVerifier,
     }).toString();
