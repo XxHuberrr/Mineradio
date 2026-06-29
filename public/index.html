@@ -3770,7 +3770,32 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+function createRendererFallback(reason) {
+  var canvas = document.createElement('canvas');
+  canvas.className = 'webgl-fallback-canvas';
+  canvas.setAttribute('aria-hidden', 'true');
+  console.warn('WebGL renderer unavailable, continuing with UI-only fallback:', reason && (reason.message || reason));
+  return {
+    domElement: canvas,
+    info: { memory: { geometries: 0, textures: 0 }, render: { calls: 0, triangles: 0 } },
+    capabilities: { getMaxAnisotropy: function(){ return 1; } },
+    renderLists: { dispose: function(){} },
+    setClearColor: function(){},
+    setPixelRatio: function(v){ this._pixelRatio = v || 1; },
+    getPixelRatio: function(){ return this._pixelRatio || 1; },
+    setSize: function(w, h){ canvas.width = Math.max(1, Math.floor(w || 1)); canvas.height = Math.max(1, Math.floor(h || 1)); },
+    render: function(){},
+    compile: function(){},
+    initTexture: function(){},
+    dispose: function(){}
+  };
+}
+var renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+} catch (e) {
+  renderer = createRendererFallback(e);
+}
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);
@@ -26108,6 +26133,12 @@ function markSplashReadyToEnter() {
   s.setAttribute('role', 'button');
   s.setAttribute('tabindex', '0');
   s.setAttribute('aria-label', '点击进入 Mineradio');
+  if (!splashTimer) {
+    splashTimer = setTimeout(function(){
+      splashTimer = null;
+      if (document.body.classList.contains('splash-active')) dismissSplash();
+    }, 1200);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function(){
