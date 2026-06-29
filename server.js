@@ -43,6 +43,10 @@ const {
   sati_resource_sub_list,
   lyric,
   lyric_new,
+  toplist,
+  playlist_catlist,
+  top_playlist,
+  album_new,
 } = require('NeteaseCloudMusicApi');
 const http = require('http');
 const https = require('https');
@@ -191,7 +195,7 @@ function serveStatic(res, filePath) {
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
     res.end(data);
   });
 }
@@ -3377,6 +3381,69 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[DiscoverHome]', err);
       sendJSON(res, { error: err.message, loggedIn: false, dailySongs: [], playlists: [], podcasts: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- 发现页: 排行榜 ----------
+  if (pn === '/api/discover/rankings') {
+    try {
+      const result = await toplist({ cookie: userCookie });
+      const list = result.body && result.body.list ? result.body.list : [];
+      const rankings = list.slice(0, 12).map(item => ({
+        id: item.id,
+        name: item.name || '',
+        cover: item.coverImgUrl || item.picUrl || '',
+        description: item.description || item.updateFrequency || '',
+        playCount: item.playCount || 0,
+        trackCount: item.trackCount || 0,
+        updateFrequency: item.updateFrequency || '',
+      }));
+      sendJSON(res, { ok: true, rankings });
+    } catch (err) {
+      console.error('[DiscoverRankings]', err);
+      sendJSON(res, { ok: false, error: err.message, rankings: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- 发现页: 歌单分类 ----------
+  if (pn === '/api/discover/categories') {
+    try {
+      const result = await playlist_catlist({ cookie: userCookie });
+      const raw = (result.body && (result.body.sub || result.body.categories || result.body.data)) || [];
+      const cats = (Array.isArray(raw) ? raw : (raw['0'] || raw['1'] || raw['2'] || raw['3'] || raw['4'] || [])).map(item => ({
+        name: typeof item === 'string' ? item : (item.name || item.categoryName || ''),
+        hot: !!(item.hot || item.isHot),
+      })).filter(c => c.name).slice(0, 24);
+      sendJSON(res, { ok: true, categories: cats });
+    } catch (err) {
+      console.error('[DiscoverCategories]', err);
+      sendJSON(res, { ok: false, error: err.message, categories: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- 发现页: 按分类浏览歌单 ----------
+  if (pn === '/api/discover/playlists-by-tag') {
+    try {
+      const cat = url.searchParams.get('cat') || '华语';
+      const limit = Math.max(4, Math.min(30, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const result = await top_playlist({ cat, limit, offset, cookie: userCookie });
+      const raw = (result.body && (result.body.playlists || result.body.data)) || [];
+      const playlists = raw.map(pl => ({
+        id: pl.id,
+        name: pl.name || pl.title || '',
+        cover: pl.coverImgUrl || pl.picUrl || pl.cover || '',
+        trackCount: pl.trackCount || 0,
+        playCount: pl.playCount || pl.playcount || 0,
+        creator: (pl.creator && pl.creator.nickname) || pl.creatorName || '',
+      }));
+      sendJSON(res, { ok: true, cat, playlists });
+    } catch (err) {
+      console.error('[DiscoverPlaylistsByTag]', err);
+      sendJSON(res, { ok: false, error: err.message, cat: '', playlists: [] }, 500);
     }
     return;
   }
