@@ -9,7 +9,9 @@
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "build:linux": "electron-builder --linux AppImage deb",
+    "build:linux:dir": "electron-builder --linux dir"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -60,6 +62,41 @@
       "installerHeader": "build/installerHeader.bmp",
       "include": "build/installer.nsh",
       "artifactName": "Mineradio-${version}-Setup.${ext}"
+    },
+    "linux": {
+      "executableName": "mineradio",
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "mimeTypes": ["audio/mpeg", "audio/mp3", "audio/flac"],
+      "maintainer": "Mineradio",
+      "desktop": {
+        "entry": {
+          "Name": "Mineradio",
+          "Comment": "沉浸式音乐播放器",
+          "StartupWMClass": "Mineradio",
+          "Categories": "AudioVideo;Audio;Player;"
+        }
+      },
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "appImage": {
+      "artifactName": "Mineradio-${version}-${arch}.AppImage"
+    },
+    "deb": {
+      "artifactName": "Mineradio-${version}-${arch}.deb",
+      "depends": [
+        "libgtk-3-0", "libnotify4", "libnss3", "libxss1",
+        "libxtst6", "xdg-utils", "libatspi2.0-0", "libdrm2", "libgbm1"
+      ]
     },
     "publish": [
       {
