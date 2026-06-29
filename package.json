@@ -8,6 +8,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "build:mac": "electron-builder --mac dmg zip",
+    "build:mac:dir": "electron-builder --mac dir",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
@@ -18,6 +20,7 @@
       "output": "dist",
       "buildResources": "build"
     },
+    "electronVersion": "42.4.1",
     "afterPack": "build/after-pack.js",
     "toolsets": {
       "winCodeSign": "1.1.0"
@@ -45,6 +48,26 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "Mineradio-${version}-Mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Mineradio-${version}-Mac-${arch}.${ext}",
+      "backgroundColor": "#111217",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
     "nsis": {
       "oneClick": false,
