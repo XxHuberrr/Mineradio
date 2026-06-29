@@ -59,6 +59,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
+const SPOTIFY_COOKIE_FILE = process.env.SPOTIFY_COOKIE_FILE || path.join(__dirname, '.spotify-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
@@ -184,6 +185,14 @@ catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+}
+
+let spotifyCookie = '';
+try { if (fs.existsSync(SPOTIFY_COOKIE_FILE)) spotifyCookie = fs.readFileSync(SPOTIFY_COOKIE_FILE, 'utf8').trim(); }
+catch (e) { spotifyCookie = ''; }
+function saveSpotifyCookie(c) {
+  spotifyCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  try { fs.writeFileSync(SPOTIFY_COOKIE_FILE, spotifyCookie); } catch (e) {}
 }
 
 // ---------- 工具 ----------
@@ -2292,6 +2301,49 @@ function normalizeQQProfile(body, cookieObj) {
   };
 }
 
+// ---------- Spotify 工具 ----------
+async function spotifyFetch(spotifyUrl) {
+  if (!spotifyCookie) {
+    return { error: 'NOT_LOGGED_IN', loggedIn: false };
+  }
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(spotifyUrl);
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: 443,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': UA,
+        'Cookie': spotifyCookie,
+        'Accept': 'application/json',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode === 401) {
+            resolve({ error: 'UNAUTHORIZED', loggedIn: false, status: 401 });
+          } else if (res.statusCode >= 400) {
+            resolve({ error: json.error || json.message || 'SPOTIFY_API_ERROR', status: res.statusCode, loggedIn: !!spotifyCookie });
+          } else {
+            resolve(json);
+          }
+        } catch (e) {
+          resolve({ error: 'PARSE_ERROR', raw: data, loggedIn: !!spotifyCookie });
+        }
+      });
+    });
+    req.on('error', (e) => reject(e));
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('SPOTIFY_TIMEOUT')); });
+    req.end();
+  });
+}
+
 async function getQQLoginInfo() {
   const cookieObj = qqCookieObject();
   const uin = qqCookieUin(cookieObj);
@@ -3556,6 +3608,149 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+
+  // ========== Spotify ==========
+
+  if (pn === '/api/spotify/login/status') {
+    const loggedIn = !!spotifyCookie;
+    sendJSON(res, { provider: 'spotify', loggedIn });
+    return;
+  }
+
+  if (pn === '/api/spotify/login/cookie') {
+    try {
+      const body = await readRequestBody(req);
+      const raw = body.cookie || body.data || body.text || '';
+      if (!raw || typeof raw !== 'string') {
+        sendJSON(res, { provider: 'spotify', loggedIn: false, error: 'INVALID_SPOTIFY_COOKIE', message: '缺少 Spotify cookie' }, 400);
+        return;
+      }
+      const normalized = normalizeCookieHeader(raw) || rawCookieFallback(raw);
+      const obj = parseCookieString(normalized);
+      if (!obj.sp_dc && !obj.sp_key) {
+        sendJSON(res, { provider: 'spotify', loggedIn: false, error: 'INVALID_SPOTIFY_COOKIE', message: 'Spotify cookie 缺少 sp_dc 或 sp_key' }, 400);
+        return;
+      }
+      saveSpotifyCookie(normalized);
+      sendJSON(res, { provider: 'spotify', loggedIn: true, saved: true });
+    } catch (err) {
+      console.error('[SpotifyLoginCookie]', err);
+      sendJSON(res, { provider: 'spotify', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/logout') {
+    saveSpotifyCookie('');
+    sendJSON(res, { provider: 'spotify', ok: true, loggedIn: false });
+    return;
+  }
+
+  if (pn === '/api/spotify/search') {
+    try {
+      const keywords = String(url.searchParams.get('keywords') || '').trim();
+      const type = String(url.searchParams.get('type') || 'track').trim();
+      const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!keywords) { sendJSON(res, { provider: 'spotify', results: {} }); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(keywords)}&type=${encodeURIComponent(type)}&limit=${limit}&offset=${offset}`;
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifySearch]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, results: {} }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/track') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { provider: 'spotify', error: 'MISSING_TRACK_ID', track: null }, 400); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/tracks/${encodeURIComponent(id)}`;
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifyTrack]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, track: null }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/track/audio') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { provider: 'spotify', error: 'MISSING_TRACK_ID', url: null }, 400); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/tracks/${encodeURIComponent(id)}`;
+      const resp = await spotifyFetch(spotifyUrl);
+      const previewUrl = (resp.track && resp.track.preview_url) || null;
+      sendJSON(res, { provider: 'spotify', id, url: previewUrl });
+    } catch (err) {
+      console.error('[SpotifyTrackAudio]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, url: null }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/user/playlists') {
+    try {
+      const spotifyUrl = 'https://api.spotify.com/v1/me/playlists?limit=50';
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifyUserPlaylists]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, playlists: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/playlist/tracks') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      const limit = Math.max(1, Math.min(100, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!id) { sendJSON(res, { provider: 'spotify', error: 'MISSING_PLAYLIST_ID', tracks: [] }, 400); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/playlists/${encodeURIComponent(id)}/tracks?limit=${limit}&offset=${offset}&fields=items(track(name,id,uri,artists(name,id),album(name,id,images),duration_ms,preview_url)),total`;
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifyPlaylistTracks]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, tracks: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/artist/top-tracks') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      if (!id) { sendJSON(res, { provider: 'spotify', error: 'MISSING_ARTIST_ID', tracks: [] }, 400); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/artists/${encodeURIComponent(id)}/top-tracks?market=from_token`;
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifyArtistTopTracks]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, tracks: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/spotify/artist/albums') {
+    try {
+      const id = String(url.searchParams.get('id') || '').trim();
+      const limit = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      if (!id) { sendJSON(res, { provider: 'spotify', error: 'MISSING_ARTIST_ID', albums: [] }, 400); return; }
+      const spotifyUrl = `https://api.spotify.com/v1/artists/${encodeURIComponent(id)}/albums?limit=${limit}&offset=${offset}&include_groups=album,single,appears_on`;
+      const resp = await spotifyFetch(spotifyUrl);
+      sendJSON(res, { provider: 'spotify', ...resp });
+    } catch (err) {
+      console.error('[SpotifyArtistAlbums]', err);
+      sendJSON(res, { provider: 'spotify', error: err.message, albums: [] }, 500);
+    }
+    return;
+  }
+
+  // ========== Spotify END ==========
 
   if (pn === '/api/podcast/search') {
     try {

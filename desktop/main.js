@@ -36,6 +36,8 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
+const SPOTIFY_LOGIN_URL = 'https://accounts.spotify.com/login';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -88,6 +90,16 @@ const NETEASE_LOGIN_COOKIE_PRIORITY = [
   'WEVNSM',
   'WNMCID',
   'JSESSIONID-WYYY',
+];
+const SPOTIFY_LOGIN_COOKIE_PRIORITY = [
+  'sp_dc',
+  'sp_key',
+  'sp_adid',
+  'sp_landing',
+  'sp_cid',
+  'sp_t',
+  'sp_s',
+  'sp_us',
 ];
 
 function findOpenPort(startPort) {
@@ -361,6 +373,14 @@ function isNeteaseCookieDomain(domain) {
     normalized === 'netease.com' || normalized.endsWith('.netease.com');
 }
 
+function isSpotifyCookieDomain(domain) {
+  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
+  return normalized === 'spotify.com' || normalized.endsWith('.spotify.com') ||
+    normalized === 'accounts.spotify.com' || normalized.endsWith('.accounts.spotify.com') ||
+    normalized === 'open.spotify.com' || normalized.endsWith('.open.spotify.com') ||
+    normalized === 'api.spotify.com' || normalized.endsWith('.api.spotify.com');
+}
+
 function buildCookieHeaderFor(cookies, isAllowedDomain, priority) {
   const picked = new Map();
   (cookies || []).forEach((cookie) => {
@@ -395,6 +415,16 @@ async function readQQLoginCookieHeader(cookieSession) {
 async function readNeteaseLoginCookieHeader(cookieSession) {
   const cookies = await cookieSession.cookies.get({});
   return buildCookieHeaderFor(cookies, isNeteaseCookieDomain, NETEASE_LOGIN_COOKIE_PRIORITY);
+}
+
+function spotifyCookieHasLogin(cookieText) {
+  const obj = parseCookieHeader(cookieText);
+  return !!(obj.sp_dc && obj.sp_key);
+}
+
+async function readSpotifyLoginCookieHeader(cookieSession) {
+  const cookies = await cookieSession.cookies.get({});
+  return buildCookieHeaderFor(cookies, isSpotifyCookieDomain, SPOTIFY_LOGIN_COOKIE_PRIORITY);
 }
 
 async function openNeteaseMusicLoginWindow(owner) {
@@ -602,6 +632,96 @@ async function openQQMusicLoginWindow(owner) {
 
 async function clearQQMusicLoginSession() {
   const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
+  await cookieSession.clearStorageData({
+    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
+  });
+  return { ok: true };
+}
+
+async function openSpotifyLoginWindow(owner) {
+  const cookieSession = session.fromPartition(SPOTIFY_LOGIN_PARTITION);
+  const initialCookie = await readSpotifyLoginCookieHeader(cookieSession);
+  if (spotifyCookieHasLogin(initialCookie)) return { ok: true, cookie: initialCookie, reused: true };
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let pollTimer = null;
+
+    const loginWindow = new BrowserWindow({
+      width: 900,
+      height: 720,
+      minWidth: 760,
+      minHeight: 560,
+      parent: owner && !owner.isDestroyed() ? owner : undefined,
+      modal: false,
+      show: false,
+      autoHideMenuBar: true,
+      title: 'Spotify 登录',
+      backgroundColor: '#111111',
+      icon: APP_ICON_ICO,
+      webPreferences: {
+        partition: SPOTIFY_LOGIN_PARTITION,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+
+    const finish = async (result) => {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (loginWindow && !loginWindow.isDestroyed()) {
+        loginWindow.close();
+      }
+      resolve(result);
+    };
+
+    const checkCookies = async () => {
+      try {
+        const cookie = await readSpotifyLoginCookieHeader(cookieSession);
+        if (spotifyCookieHasLogin(cookie)) {
+          finish({ ok: true, cookie });
+        }
+      } catch (e) {
+        console.warn('Spotify login cookie check failed:', e.message);
+      }
+    };
+
+    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\/([^/]+\.)?spotify\.com/i.test(url)) {
+        loginWindow.loadURL(url).catch((e) => console.warn('Spotify login popup navigation failed:', e.message));
+      } else if (/^https?:\/\//i.test(url)) {
+        shell.openExternal(url).catch(() => {});
+      }
+      return { action: 'deny' };
+    });
+
+    loginWindow.webContents.on('did-finish-load', () => {
+      checkCookies();
+    });
+
+    loginWindow.on('ready-to-show', () => loginWindow.show());
+    loginWindow.on('closed', async () => {
+      if (settled) return;
+      if (pollTimer) clearInterval(pollTimer);
+      try {
+        const cookie = await readSpotifyLoginCookieHeader(cookieSession);
+        resolve(spotifyCookieHasLogin(cookie)
+          ? { ok: true, cookie }
+          : { ok: false, cancelled: true, message: 'Spotify 登录窗口已关闭' });
+      } catch (e) {
+        resolve({ ok: false, error: e.message || 'Spotify 登录窗口已关闭' });
+      }
+    });
+
+    pollTimer = setInterval(checkCookies, 1200);
+    loginWindow.loadURL(SPOTIFY_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
+  });
+}
+
+async function clearSpotifyLoginSession() {
+  const cookieSession = session.fromPartition(SPOTIFY_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
     storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
   });
@@ -1174,6 +1294,14 @@ ipcMain.handle('qq-music-open-login', async (event) => {
 
 ipcMain.handle('qq-music-clear-login', async () => {
   return clearQQMusicLoginSession();
+});
+
+ipcMain.handle('spotify-open-login', async (event) => {
+  return openSpotifyLoginWindow(getSenderWindow(event));
+});
+
+ipcMain.handle('spotify-clear-login', async () => {
+  return clearSpotifyLoginSession();
 });
 
 ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
