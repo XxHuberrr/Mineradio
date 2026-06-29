@@ -1910,6 +1910,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       <button id="search-mode-song" class="active" type="button" onclick="setSearchMode('song')" aria-selected="true">All</button>
       <button id="search-mode-netease" type="button" onclick="setSearchMode('netease')" aria-selected="false">NE</button>
       <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
+      <button id="search-mode-spotify" type="button" onclick="setSearchMode('spotify')" aria-selected="false">Spotify</button>
       <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')" aria-selected="false">Podcast</button>
     </div>
     <div id="search-results"></div>
@@ -2468,6 +2469,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     <div class="login-platform-tabs" id="login-platform-tabs">
       <button id="login-provider-netease" class="netease active" type="button" onclick="setLoginProvider('netease')">网易云</button>
       <button id="login-provider-qq" class="qq" type="button" onclick="setLoginProvider('qq')">QQ 音乐</button>
+      <button id="login-provider-spotify" class="spotify" type="button" onclick="setLoginProvider('spotify')">Spotify</button>
     </div>
     <div class="login-intro">
       <div class="login-intro-kicker">Mineradio</div>
@@ -2694,6 +2696,7 @@ var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleB
 var searchMode = 'song', podcastResults = [], podcastPrograms = [], podcastCurrentRadio = null;
 var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
 var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
+var spotifyLoginStatus = { provider: 'spotify', loggedIn: false, nickname: 'Spotify', userId: '', avatar: '' };
 var qqLoginAutoRefreshTimer = null;
 var qqLoginWasLoggedIn = false;
 var loginProvider = 'netease';
@@ -2702,6 +2705,7 @@ var dualAccountMode = false;
 var qqCookieBusy = false;
 var neteaseWebLoginBusy = false;
 var qqWebLoginBusy = false;
+var spotifyWebLoginBusy = false;
 var qqManualCookieOpen = false;
 var loginStatusChecked = false, loginStatusCheckFailed = false;
 var qrPollTimer = null, qrKey = null;
@@ -17267,6 +17271,7 @@ function updateSearchModeTabs() {
   var songBtn = document.getElementById('search-mode-song');
   var neteaseBtn = document.getElementById('search-mode-netease');
   var qqBtn = document.getElementById('search-mode-qq');
+  var spotifyBtn = document.getElementById('search-mode-spotify');
   var podcastBtn = document.getElementById('search-mode-podcast');
   if (songBtn) {
     songBtn.classList.toggle('active', searchMode === 'song');
@@ -17280,6 +17285,10 @@ function updateSearchModeTabs() {
     qqBtn.classList.toggle('active', searchMode === 'qq');
     qqBtn.setAttribute('aria-selected', searchMode === 'qq' ? 'true' : 'false');
   }
+  if (spotifyBtn) {
+    spotifyBtn.classList.toggle('active', searchMode === 'spotify');
+    spotifyBtn.setAttribute('aria-selected', searchMode === 'spotify' ? 'true' : 'false');
+  }
   if (podcastBtn) {
     podcastBtn.classList.toggle('active', searchMode === 'podcast');
     podcastBtn.setAttribute('aria-selected', searchMode === 'podcast' ? 'true' : 'false');
@@ -17287,12 +17296,12 @@ function updateSearchModeTabs() {
   if ($input) {
     $input.placeholder = searchMode === 'podcast'
       ? '搜索播客、电台...'
-      : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...'));
+      : (searchMode === 'spotify' ? '搜索 Spotify...' : (searchMode === 'qq' ? '搜索 QQ 音乐...' : (searchMode === 'netease' ? '搜索网易云音乐...' : '搜索歌曲、歌手...')));
   }
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq') ? mode : 'song';
+  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'spotify') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
   updateSearchModeTabs();
@@ -17506,12 +17515,13 @@ document.addEventListener('click', function(e){
 updateSearchModeTabs();
 
 function songProviderKey(song) {
+  if (song && (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify')) return 'spotify';
   if (song && (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq')) return 'qq';
   return 'netease';
 }
 function songSourceTagHtml(song) {
   var key = songProviderKey(song);
-  var label = key === 'qq' ? 'QQ' : 'NE';
+  var label = key === 'spotify' ? 'SP' : (key === 'qq' ? 'QQ' : 'NE');
   return '<span class="tag-source ' + key + '">' + label + '</span>';
 }
 function searchResultMetaText(song) {
@@ -17646,6 +17656,27 @@ function mergeSongSearchResults(neteaseSongs, qqSongs, limit, q) {
   return out.slice(0, limit);
 }
 async function fetchMusicSearchResults(q, mode) {
+  if (mode === 'spotify') {
+    var spData = await apiJson('/api/spotify/search?keywords=' + encodeURIComponent(q) + '&type=track&limit=18');
+    var spTracks = (spData && spData.tracks && spData.tracks.items) || [];
+    return spTracks.map(function(t) {
+      var artists = (t.artists || []).map(function(a){ return a.name || ''; }).join(' / ');
+      var album = (t.album && t.album.name) || '';
+      var cover = (t.album && t.album.images && t.album.images[0] && t.album.images[0].url) || '';
+      return {
+        id: t.id,
+        name: t.name,
+        artist: artists,
+        album: album,
+        cover: cover,
+        preview_url: t.preview_url || null,
+        duration: t.duration_ms ? Math.round(t.duration_ms / 1000) : 0,
+        provider: 'spotify',
+        source: 'spotify',
+        type: 'spotify',
+      };
+    });
+  }
   if (mode === 'qq') {
     var qqOnly = await apiJson('/api/qq/search?keywords=' + encodeURIComponent(q) + '&limit=12');
     return mergeSongSearchResults([], qqOnly.songs || [], 18, q);
@@ -18133,10 +18164,12 @@ function playSearchResult(i) {
 var firstPlayDone = false;
 
 function playbackProviderLabel(song) {
-  return songProviderKey(song) === 'qq' ? 'QQ 音乐' : '网易云';
+  var key = songProviderKey(song);
+  return key === 'spotify' ? 'Spotify' : (key === 'qq' ? 'QQ 音乐' : '网易云');
 }
 function playbackLoginProvider(song) {
-  return songProviderKey(song) === 'qq' ? 'qq' : 'netease';
+  var key = songProviderKey(song);
+  return key === 'spotify' ? 'spotify' : (key === 'qq' ? 'qq' : 'netease');
 }
 function playbackRestrictionMessage(song, data) {
   data = data || {};
@@ -18461,6 +18494,40 @@ async function playQueueAt(idx, opts) {
 
   try {
     markPlayPhase('source-url');
+    var isSpotifyPlayback = songProviderKey(song) === 'spotify';
+    if (isSpotifyPlayback) {
+      var previewUrl = song.preview_url || null;
+      if (!previewUrl) {
+        var spAudio = await apiJson('/api/spotify/track/audio?id=' + encodeURIComponent(song.id || ''));
+        previewUrl = spAudio && spAudio.url ? spAudio.url : null;
+      }
+      if (token !== trackSwitchToken) return;
+      if (!previewUrl) {
+        handlePlaybackUnavailable(song, { error: 'SPOTIFY_NO_PREVIEW', message: 'Spotify 未返回可播放预览' });
+        return;
+      }
+      markPlayPhase('audio-element');
+      if (!audio) { audio = new Audio(); audio.crossOrigin = 'anonymous'; }
+      else { audioFadeSerial++; clearAudioFadeTimers(); audio.pause(); }
+      bindPlaybackProgressEvents(audio);
+      applyVolumeToAudio();
+      audio.src = previewUrl;
+      song.playingUrl = previewUrl;
+      song.resolvedLevel = 'preview';
+      updatePlaybackProgressUi();
+      audio.onended = function(){
+        if (token !== trackSwitchToken) return;
+        finalizeListenSession(true);
+        if (playMode === 'single') setTimeout(function(){ playQueueAt(currentIdx, { autoRepeat: true }); }, 0);
+        else setTimeout(nextTrack, 0);
+      };
+      audio.load();
+      document.getElementById('trial-text').textContent = 'Spotify 预览片段（30秒）';
+      var trialLoginBtn = document.getElementById('trial-login-btn');
+      if (trialLoginBtn) { trialLoginBtn.style.display = 'none'; }
+      document.getElementById('trial-banner').classList.add('show');
+      markPlayPhase('visual-prep');
+    }
     var isQQPlayback = songProviderKey(song) === 'qq';
     var requestedQuality = normalizePlaybackQuality(opts.qualityOverride || playbackQuality);
     if (!isQQPlayback && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
@@ -23233,9 +23300,11 @@ function onUserBtnClick() {
 }
 function platformMeta(provider) {
   if (provider === 'qq') return { key: 'qq', short: 'QQ', label: 'QQ 音乐', app: 'QQ 音乐 App', dot: 'qq' };
+  if (provider === 'spotify') return { key: 'spotify', short: 'SP', label: 'Spotify', app: 'Spotify', dot: 'spotify' };
   return { key: 'netease', short: 'NE', label: '网易云音乐', app: '网易云音乐 App', dot: 'netease' };
 }
 function platformStatus(provider) {
+  if (provider === 'spotify') return spotifyLoginStatus;
   return provider === 'qq' ? qqLoginStatus : loginStatus;
 }
 function providerVipType(provider, status) {
@@ -23273,12 +23342,13 @@ function hasPlatformLogin(provider) {
   return !!(st && st.loggedIn);
 }
 function hasAnyPlatformLogin() {
-  return hasPlatformLogin('netease') || hasPlatformLogin('qq');
+  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('spotify');
 }
 function firstLoggedProvider() {
   if (hasPlatformLogin(activeAccountProvider)) return activeAccountProvider;
   if (hasPlatformLogin('netease')) return 'netease';
   if (hasPlatformLogin('qq')) return 'qq';
+  if (hasPlatformLogin('spotify')) return 'spotify';
   return 'netease';
 }
 function providerAvatarSrc(provider, status) {
@@ -23419,7 +23489,7 @@ function renderUserBtn() {
 }
 async function showLoginModal(opts) {
   opts = opts || {};
-  if (opts.provider) loginProvider = opts.provider === 'qq' ? 'qq' : 'netease';
+  if (opts.provider) loginProvider = opts.provider === 'spotify' ? 'spotify' : (opts.provider === 'qq' ? 'qq' : 'netease');
   var modal = document.getElementById('login-modal');
   openGsapModal(modal);
   updateLoginProviderUi();
@@ -23430,13 +23500,14 @@ function closeLoginModal() {
   closeGsapModal(document.getElementById('login-modal'));
 }
 function setLoginProvider(provider, silent) {
-  loginProvider = provider === 'qq' ? 'qq' : 'netease';
+  loginProvider = provider === 'spotify' ? 'spotify' : (provider === 'qq' ? 'qq' : 'netease');
   updateLoginProviderUi();
   if (!silent && document.getElementById('login-modal').classList.contains('show')) refreshQr();
 }
 function updateLoginProviderUi() {
   var meta = platformMeta(loginProvider);
   var isQQ = loginProvider === 'qq';
+  var isSpotify = loginProvider === 'spotify';
   var title = document.getElementById('login-modal-title');
   var desc = document.getElementById('login-modal-desc');
   var shell = document.getElementById('qr-shell');
@@ -23447,19 +23518,25 @@ function updateLoginProviderUi() {
   var qqCard = document.getElementById('qq-web-login-card');
   var neteaseBtn = document.getElementById('login-provider-netease');
   var qqBtn = document.getElementById('login-provider-qq');
+  var spotifyBtn = document.getElementById('login-provider-spotify');
   var canOpenNeteaseWeb = !!(window.desktopWindow && typeof window.desktopWindow.openNeteaseMusicLogin === 'function');
+  var canOpenSpotifyWeb = !!(window.desktopWindow && typeof window.desktopWindow.openSpotifyLogin === 'function');
   if (neteaseBtn) neteaseBtn.classList.toggle('active', loginProvider === 'netease');
   if (qqBtn) qqBtn.classList.toggle('active', isQQ);
-  if (title) title.textContent = '扫码登录' + meta.label;
-  if (desc) desc.innerHTML = isQQ
+  if (spotifyBtn) spotifyBtn.classList.toggle('active', isSpotify);
+  if (title) title.textContent = isSpotify ? '登录 Spotify' : ('扫码登录' + meta.label);
+  if (desc) desc.innerHTML = isSpotify
+    ? '打开 <b>Spotify 官方网页登录窗口</b>，登录成功后会自动同步账号会话。'
+    : isQQ
     ? '打开 <b>QQ 音乐官方网页登录窗口</b> 扫码，成功后会自动同步账号会话。'
     : (canOpenNeteaseWeb
       ? '打开 <b>网易云音乐官方网页登录窗口</b> 扫码，避开接口二维码风控；成功后会自动同步账号会话。'
       : '使用 <b>网易云音乐 App</b> 扫码，可同步歌单、红心与播客。');
   if (shell) {
-    shell.classList.toggle('web-login-preview', isQQ || canOpenNeteaseWeb);
+    shell.classList.toggle('web-login-preview', isQQ || canOpenNeteaseWeb || isSpotify);
     shell.classList.toggle('qq-preview', isQQ);
-    shell.classList.toggle('netease-preview', !isQQ && canOpenNeteaseWeb);
+    shell.classList.toggle('netease-preview', !isQQ && !isSpotify && canOpenNeteaseWeb);
+    shell.classList.toggle('spotify-preview', isSpotify);
   }
   if (qqPanel) qqPanel.classList.toggle('show', isQQ && qqManualCookieOpen);
   if (qqCookieToggle) {
@@ -23467,24 +23544,30 @@ function updateLoginProviderUi() {
     qqCookieToggle.textContent = qqManualCookieOpen ? '收起导入' : '手动导入';
   }
   if (qqCard) {
-    qqCard.disabled = isQQ ? !!qqWebLoginBusy : !!neteaseWebLoginBusy;
+    qqCard.disabled = isSpotify ? !!spotifyWebLoginBusy : (isQQ ? !!qqWebLoginBusy : !!neteaseWebLoginBusy);
     var cardMark = qqCard.querySelector('b');
     var cardLabel = qqCard.querySelector('span');
-    if (cardMark) cardMark.textContent = isQQ ? 'QQ' : 'NE';
-    if (cardLabel) cardLabel.textContent = isQQ
+    if (cardMark) cardMark.textContent = isSpotify ? 'SP' : (isQQ ? 'QQ' : 'NE');
+    if (cardLabel) cardLabel.textContent = isSpotify
+      ? (spotifyWebLoginBusy ? '等待登录确认' : '打开 Spotify 登录窗口')
+      : isQQ
       ? (qqWebLoginBusy ? '等待扫码确认' : '打开官方扫码窗口')
       : (neteaseWebLoginBusy ? '等待扫码确认' : '打开官方登录窗口');
   }
   if (st) {
-    st.className = isQQ ? 'preview' : '';
-    st.textContent = isQQ
+    st.className = (isQQ || isSpotify) ? 'preview' : '';
+    st.textContent = isSpotify
+      ? (spotifyLoginStatus.loggedIn ? ('已保存 Spotify 会话 · ' + (spotifyLoginStatus.nickname || '')) : '点击“网页登录”打开 Spotify 官方窗口')
+      : isQQ
       ? (qqLoginStatus.loggedIn ? ('已保存 QQ 音乐会话 · ' + (qqLoginStatus.nickname || '')) : '点击“扫码登录”打开 QQ 音乐官方窗口')
       : (canOpenNeteaseWeb ? '点击“网页登录”打开网易云官方窗口' : '正在生成二维码…');
   }
   if (refreshBtn) {
-    refreshBtn.disabled = isQQ ? !!qqWebLoginBusy : !!neteaseWebLoginBusy;
-    refreshBtn.textContent = isQQ ? (qqWebLoginBusy ? '等待扫码…' : '扫码登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码');
-    refreshBtn.onclick = isQQ ? openQQWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr);
+    refreshBtn.disabled = isSpotify ? !!spotifyWebLoginBusy : (isQQ ? !!qqWebLoginBusy : !!neteaseWebLoginBusy);
+    refreshBtn.textContent = isSpotify
+      ? (spotifyWebLoginBusy ? '等待登录…' : '网页登录')
+      : isQQ ? (qqWebLoginBusy ? '等待扫码…' : '扫码登录') : (canOpenNeteaseWeb ? (neteaseWebLoginBusy ? '等待扫码…' : '网页登录') : '刷新二维码');
+    refreshBtn.onclick = isSpotify ? openSpotifyWebLogin : (isQQ ? openQQWebLogin : (canOpenNeteaseWeb ? openNeteaseWebLogin : refreshQr));
   }
 }
 async function refreshQr() {
@@ -23534,6 +23617,7 @@ function toggleQQCookiePanel() {
   updateLoginProviderUi();
 }
 function openProviderWebLogin() {
+  if (loginProvider === 'spotify') return openSpotifyWebLogin();
   if (loginProvider === 'qq') return openQQWebLogin();
   return openNeteaseWebLogin();
 }
@@ -23626,6 +23710,48 @@ async function openQQWebLogin() {
   } finally {
     if (qqWebLoginBusy) {
       qqWebLoginBusy = false;
+      updateLoginProviderUi();
+    }
+  }
+}
+async function openSpotifyWebLogin() {
+  if (spotifyWebLoginBusy) return;
+  var statusEl = document.getElementById('qr-status');
+  var api = window.desktopWindow;
+  if (!api || !api.isDesktop || typeof api.openSpotifyLogin !== 'function') {
+    if (statusEl) { statusEl.textContent = '当前环境不支持 Spotify 网页登录'; statusEl.className = 'fail'; }
+    return;
+  }
+  spotifyWebLoginBusy = true;
+  updateLoginProviderUi();
+  if (statusEl) { statusEl.textContent = '已打开 Spotify 窗口，请登录…'; statusEl.className = 'preview'; }
+  try {
+    var result = await api.openSpotifyLogin();
+    if (!result || !result.ok || !result.cookie) {
+      throw new Error((result && (result.message || result.error)) || 'Spotify 登录未完成');
+    }
+    if (statusEl) { statusEl.textContent = '正在同步 Spotify 会话…'; statusEl.className = 'preview'; }
+    var info = await apiJson('/api/spotify/login/cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookie: result.cookie })
+    });
+    if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'Spotify 会话不可用');
+    spotifyLoginStatus = info;
+    activeAccountProvider = 'spotify';
+    renderUserBtn();
+    if (statusEl) { statusEl.textContent = 'Spotify 会话已保存'; statusEl.className = 'scan'; }
+    setTimeout(function(){
+      closeLoginModal();
+      showToast('Spotify 已登录');
+    }, 420);
+  } catch (e) {
+    spotifyWebLoginBusy = false;
+    updateLoginProviderUi();
+    if (statusEl) { statusEl.textContent = e && e.message ? e.message : 'Spotify 登录失败'; statusEl.className = 'fail'; }
+  } finally {
+    if (spotifyWebLoginBusy) {
+      spotifyWebLoginBusy = false;
       updateLoginProviderUi();
     }
   }
@@ -23778,12 +23904,35 @@ function requestDualLoginMode() {
   enableDualAccountView();
 }
 function openProviderLogin(provider) {
+  if (provider === 'spotify') {
+    closeUserModal();
+    loginProvider = 'spotify';
+    showLoginModal({ provider: 'spotify' });
+    return;
+  }
   provider = provider === 'qq' ? 'qq' : 'netease';
   closeUserModal();
   loginProvider = provider;
   showLoginModal({ provider: provider });
 }
 async function logoutActiveAccount() {
+  if (activeAccountProvider === 'spotify') {
+    try { await apiJson('/api/spotify/logout'); } catch (e) {}
+    try {
+      if (window.desktopWindow && typeof window.desktopWindow.clearSpotifyLogin === 'function') {
+        await window.desktopWindow.clearSpotifyLogin();
+      }
+    } catch (e) {}
+    spotifyLoginStatus = { provider: 'spotify', loggedIn: false, nickname: 'Spotify', userId: '', avatar: '' };
+    userPlaylists = userPlaylists.filter(function(pl){ return pl.provider !== 'spotify'; });
+    dualAccountMode = false;
+    activeAccountProvider = firstLoggedProvider();
+    renderUserBtn();
+    if (hasAnyPlatformLogin()) updateUserModalUi();
+    else closeUserModal();
+    showToast('已退出 Spotify');
+    return;
+  }
   if (activeAccountProvider === 'qq') {
     try { await apiJson('/api/qq/logout'); } catch (e) {}
     try {
