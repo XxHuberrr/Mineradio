@@ -18635,8 +18635,8 @@ async function attemptAudioPlay(opts) {
       if (!audioReady) initAudio();
       if (opts.fade !== false) preparePlaybackFadeIn();
       if (opts.manual) {
-        var manualPlay = audio.play();
         await resumeAudioAnalysis();
+        var manualPlay = audio.play();
         await manualPlay;
       } else {
         await resumeAudioAnalysis();
