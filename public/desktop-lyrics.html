@@ -726,7 +726,7 @@
       if (motion.beatPulse != null) state.beatPulse = motion.beatPulse;
       if (motion.bass != null) state.bass = motion.bass;
       var text = String(state.text || 'Mineradio').replace(/\s+/g, ' ').trim() || 'Mineradio';
-      baseFontSize = Math.round(58 * clamp(state.size, .72, 1.55, 1));
+      baseFontSize = Math.round(58 * clamp(state.size, .35, 1.55, 1));
       state.progress = clamp(state.progress, 0, 1, 0);
       state.progressSpan = clamp(state.progressSpan, .75, 18, 4.8);
       state.progressReceivedAt = performance.now();
