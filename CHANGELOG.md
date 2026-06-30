@@ -1,6 +1,11 @@
 # Changelog
 
-## v1.1.1
+## v1.1.2
+
+- 新增 **Spotify 登录**（OAuth PKCE 授权码流程）：支持搜索歌曲、获取播放链接、读取用户歌单和歌手专辑
+- Spotify 使用官方 Web API，支持 Bearer Token 自动刷新，会话持久化到 `spotify-token.json`
+- 搜索栏新增 Spotify 专属 tab，歌曲来源标识为 `SP` 标签
+- 网易云和 QQ 音乐登录流程保持不变
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.
 - The installer now forces the target path into a dedicated `Mineradio` folder, blocks non-empty non-Mineradio-owned targets, and blocks C drive installs when a D-Z drive is available.
