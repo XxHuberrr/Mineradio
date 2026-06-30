@@ -8,6 +8,8 @@
 const {
   search,
   cloudsearch,
+  album,
+  album_sublist,
   song_detail,
   song_url,
   song_url_v1,
@@ -1588,6 +1590,26 @@ function mapSongRecord(s) {
     fee: s.fee,
   };
 }
+function mapAlbumRecord(a) {
+  a = a || {};
+  const artists = mapArtists(a.artists || a.artist && [a.artist] || []);
+  const artistName = a.artistName || a.artist && a.artist.name || artists.map(item => item.name).join(' / ');
+  const id = a.id || a.albumId;
+  return {
+    provider: 'netease',
+    source: 'netease',
+    type: 'album',
+    id,
+    name: a.name || a.albumName || '',
+    artist: artistName || '',
+    artists,
+    artistId: artists[0] && artists[0].id || a.artist && a.artist.id,
+    cover: a.picUrl || a.coverUrl || a.blurPicUrl || '',
+    songCount: a.size || a.songCount || a.trackCount || 0,
+    publishTime: a.publishTime || a.publishTimeStr || 0,
+    company: a.company || '',
+  };
+}
 function mapDiscoverPlaylist(pl, tag) {
   pl = pl || {};
   const creator = pl.creator || pl.user || {};
@@ -1666,6 +1688,35 @@ async function handleSearch(keywords, limit) {
   return mapped;
 }
 
+async function handleAlbumSearch(keywords, limit) {
+  console.log('[AlbumSearch]', keywords, 'limit:', limit);
+  const result = await cloudsearch({ keywords, type: 10, limit, cookie: userCookie, timestamp: Date.now() });
+  const albums = result.body && result.body.result && result.body.result.albums ? result.body.result.albums : [];
+  return albums.map(mapAlbumRecord).filter(a => a.id && a.name);
+}
+
+async function handleAlbumTracks(id) {
+  const r = await album({ id, cookie: userCookie, timestamp: Date.now() });
+  const body = r.body || r || {};
+  const albumMeta = mapAlbumRecord(body.album || body.data && body.data.album || { id });
+  const rawSongs = body.songs || body.data && body.data.songs || [];
+  const tracks = (Array.isArray(rawSongs) ? rawSongs : []).map(mapSongRecord).filter(s => s.id);
+  if (!albumMeta.songCount) albumMeta.songCount = tracks.length;
+  return { album: albumMeta, tracks };
+}
+
+async function handleUserAlbums(limit, offset) {
+  const r = await album_sublist({ limit, offset, cookie: userCookie, timestamp: Date.now() });
+  const body = r.body || r || {};
+  const raw = body.data || body.albums || [];
+  const albums = (Array.isArray(raw) ? raw : []).map(mapAlbumRecord).filter(a => a.id && a.name);
+  return {
+    albums,
+    count: body.count || body.total || albums.length,
+    hasMore: !!body.hasMore,
+  };
+}
+
 async function handleDiscoverHome() {
   const info = await getLoginInfo();
   const loggedIn = !!(info && info.loggedIn);
@@ -1675,6 +1726,7 @@ async function handleDiscoverHome() {
       user: null,
       dailySongs: [],
       playlists: [],
+      albums: [],
       podcasts: [],
       mode: 'starter',
       updatedAt: Date.now(),
@@ -1685,6 +1737,7 @@ async function handleDiscoverHome() {
     dj_hot({ limit: 6, offset: 0, cookie: userCookie, timestamp: Date.now() }),
     recommend_resource({ cookie: userCookie, timestamp: Date.now() }),
     recommend_songs({ cookie: userCookie, timestamp: Date.now() }),
+    album_sublist({ limit: 8, offset: 0, cookie: userCookie, timestamp: Date.now() }),
   ];
   const result = await Promise.allSettled(tasks);
 
@@ -1721,11 +1774,22 @@ async function handleDiscoverHome() {
       .slice(0, 12);
   }
 
+  let albums = [];
+  if (result[4].status === 'fulfilled' && result[4].value) {
+    const body = result[4].value.body || {};
+    const raw = body.data || body.albums || [];
+    albums = (Array.isArray(raw) ? raw : [])
+      .map(mapAlbumRecord)
+      .filter(a => a.id && a.name)
+      .slice(0, 8);
+  }
+
   return {
     loggedIn,
     user: loggedIn ? { userId: info.userId, nickname: info.nickname || '', avatar: info.avatar || '' } : null,
     dailySongs,
     playlists: privatePlaylists.concat(publicPlaylists).slice(0, 10),
+    albums,
     podcasts,
     updatedAt: Date.now(),
   };
@@ -3423,6 +3487,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/album/search') {
+    try {
+      const kw = url.searchParams.get('keywords') || '';
+      const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '8', 10) || 8));
+      const albums = await handleAlbumSearch(kw, limit);
+      sendJSON(res, { albums });
+    } catch (err) {
+      console.error('[AlbumSearch]', err);
+      sendJSON(res, { error: err.message, albums: [] }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qq/search') {
     try {
       const kw = url.searchParams.get('keywords') || '';
@@ -3858,6 +3935,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/user/albums') {
+    try {
+      const info = await getLoginInfo();
+      if (!info.loggedIn) { sendJSON(res, { loggedIn: false, albums: [] }); return; }
+      const limit = Math.max(12, Math.min(100, parseInt(url.searchParams.get('limit') || '60', 10) || 60));
+      const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+      const data = await handleUserAlbums(limit, offset);
+      sendJSON(res, { loggedIn: true, albums: data.albums, count: data.count, hasMore: data.hasMore });
+    } catch (err) {
+      console.error('[UserAlbums]', err);
+      sendJSON(res, { error: err.message, loggedIn: false, albums: [] }, 500);
+    }
+    return;
+  }
+
   // ---------- 红心状态 ----------
   if (pn === '/api/song/like/check') {
     try {
@@ -4126,6 +4218,20 @@ const server = http.createServer(async (req, res) => {
       sendJSON(res, { playlist: playlistMeta, tracks });
     } catch (err) {
       console.error('[PlaylistTracks]', err);
+      sendJSON(res, { error: err.message, tracks: [] }, 500);
+    }
+    return;
+  }
+
+  // ---------- 专辑曲目详情 ----------
+  if (pn === '/api/album/tracks') {
+    try {
+      const id = url.searchParams.get('id');
+      if (!id) { sendJSON(res, { error: 'Missing album id', tracks: [] }, 400); return; }
+      const data = await handleAlbumTracks(id);
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[AlbumTracks]', err);
       sendJSON(res, { error: err.message, tracks: [] }, 500);
     }
     return;
