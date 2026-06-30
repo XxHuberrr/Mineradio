@@ -2768,7 +2768,7 @@ var lyricSourceMode = 'original';
 var originalLyricsState = { lines: [], hasNativeKaraoke: false, timingSource: 'none' };
 var localBeatAnalysis = { song:null, audioUrl:'', mode:'mr', active:false, token:0 };
 var likedSongMap = {}, likeBusyMap = {}, likeStatusToken = 0;
-var collectTargetSong = null, collectBusy = false;
+var collectTargetSong = null, collectTargetProvider = 'netease', collectBusy = false;
 var uploadTipTimer = null, uploadTipAttempts = 0;
 var visualGuideActive = false, visualGuideStep = 0, visualGuideResizeBound = false;
 var visualGuideState = { bottomWasVisible: false, searchWasPeek: false, manual: false };
@@ -17072,13 +17072,24 @@ function toggleLikeSearchResult(i) { if (playlist[i]) toggleLikeSong(playlist[i]
 function toggleLikeQueueIndex(i) { if (playQueue[i]) toggleLikeSong(playQueue[i]); }
 function toggleLikeDetailSong(song) { toggleLikeSong(song); }
 function openCollectModal(song) {
-  if (!isCloudSong(song)) {
-    var provider = songProviderKey(song);
-    showToast(provider === 'qq' ? 'QQ 音乐收藏到歌单待登录接口接入' : (provider === 'kugou' ? '酷狗概念版收藏到歌单待接口接入' : '本地文件暂不支持收藏到网易云歌单'));
+  var provider = songProviderKey(song);
+  var providerReady = provider === 'kugou' ? hasPlatformLogin('kugou') : (provider === 'netease' && isCloudSong(song) && loginStatus.loggedIn);
+  if (provider === 'qq') {
+    showToast('QQ 音乐收藏到歌单待登录接口接入');
     return;
   }
-  if (!ensureLoggedInForAction()) return;
+  if (provider === 'kugou' && !providerReady) {
+    showToast('登录酷狗概念版后可收藏到酷狗歌单');
+    openProviderLogin('kugou');
+    return;
+  }
+  if (provider !== 'kugou' && !isCloudSong(song)) {
+    showToast('本地文件暂不支持收藏到网易云歌单');
+    return;
+  }
+  if (provider === 'netease' && !providerReady && !ensureLoggedInForAction()) return;
   collectTargetSong = song;
+  collectTargetProvider = provider;
   renderCollectModal();
   openGsapModal(document.getElementById('collect-modal'));
   refreshUserPlaylists(true).then(function(){ renderCollectModal(); }).catch(function(){ renderCollectModal(); });
@@ -17090,6 +17101,7 @@ function collectDetailSong(song) { openCollectModal(song); }
 function closeCollectModal() {
   closeGsapModal(document.getElementById('collect-modal'), function(){
     collectTargetSong = null;
+    collectTargetProvider = 'netease';
     var input = document.getElementById('collect-new-name');
     if (input) input.value = '';
   });
@@ -17099,20 +17111,23 @@ function renderCollectModal() {
   var list = document.getElementById('collect-list');
   if (!current || !list) return;
   var song = collectTargetSong || {};
+  var provider = normalizePlaylistProvider(collectTargetProvider || songProviderKey(song));
+  var createRow = document.querySelector('.collect-create');
+  if (createRow) createRow.style.display = provider === 'netease' ? '' : 'none';
   var cover = songCoverSrc(song, 80);
   current.innerHTML = (cover ? '<img src="' + cover + '" alt="">' : '<div class="cover-placeholder"></div>') +
     '<div style="min-width:0"><div class="collect-title">' + escHtml(song.name || '当前歌曲') + '</div><div class="collect-sub">' + escHtml(song.artist || '') + '</div></div>';
-  if (!loginStatus.loggedIn) {
-    list.innerHTML = '<div class="collect-empty">登录后显示你的歌单</div>';
+  if (provider === 'kugou' ? !hasPlatformLogin('kugou') : !loginStatus.loggedIn) {
+    list.innerHTML = '<div class="collect-empty">登录后显示你的' + playlistProviderLabel(provider) + '歌单</div>';
     return;
   }
   if (!userPlaylists.length) {
     list.innerHTML = miniQueueSkeleton();
     return;
   }
-  var mine = userPlaylists.filter(function(pl){ return !pl.subscribed; });
+  var mine = userPlaylists.filter(function(pl){ return normalizePlaylistProvider(pl.provider) === provider && !pl.subscribed; });
   if (!mine.length) {
-    list.innerHTML = '<div class="collect-empty">还没有可写入的歌单，可以先新建一个</div>';
+    list.innerHTML = '<div class="collect-empty">还没有可写入的' + playlistProviderLabel(provider) + '歌单</div>';
     return;
   }
   list.innerHTML = mine.map(function(pl){
@@ -17132,6 +17147,10 @@ function setCollectBusyPid(pid, busy) {
   });
 }
 async function createPlaylistFromCollect() {
+  if (collectTargetProvider !== 'netease') {
+    showToast('酷狗概念版新建歌单待接口接入');
+    return;
+  }
   if (!ensureLoggedInForAction()) return;
   var input = document.getElementById('collect-new-name');
   var name = input ? input.value.trim() : '';
@@ -17153,22 +17172,29 @@ async function createPlaylistFromCollect() {
 function collectResultMessage(r) {
   if (!r) return '收藏失败';
   var msg = r.error || r.message || r.msg || '';
-  if (msg === 'LOGIN_REQUIRED') return '登录后可同步到网易云';
+  if (msg === 'LOGIN_REQUIRED') return collectTargetProvider === 'kugou' ? '登录酷狗概念版后可同步到酷狗歌单' : '登录后可同步到网易云';
+  if (msg === 'KUGOU_PLAYLIST_ADD_FAILED') return '酷狗歌单写入失败';
   if (/exist|重复|已存在|already/i.test(String(msg))) return '歌曲已在歌单中';
   return msg ? ('收藏失败: ' + msg) : '收藏失败';
 }
-async function verifySongInPlaylist(pid, songId) {
+async function verifySongInPlaylist(pid, songId, provider) {
   songId = String(songId || '');
+  provider = normalizePlaylistProvider(provider);
   if (!pid || !songId) return false;
   for (var attempt = 0; attempt < 3; attempt++) {
     if (attempt) {
       await new Promise(function(resolve){ setTimeout(resolve, attempt === 1 ? 360 : 820); });
     }
     try {
-      var detail = await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(pid));
+      var detail = await apiJson((provider === 'kugou' ? '/api/kugou/playlist/tracks?id=' : '/api/playlist/tracks?id=') + encodeURIComponent(pid));
       var tracks = (detail && detail.tracks) || [];
       for (var i = 0; i < tracks.length; i++) {
-        if (String(tracks[i].id) === songId) return true;
+        if (provider === 'kugou') {
+          var values = [tracks[i].id, tracks[i].hash, tracks[i].albumAudioId, tracks[i].album_audio_id].map(function(value){ return String(value || '').toLowerCase(); });
+          if (values.indexOf(songId.toLowerCase()) >= 0) return true;
+        } else if (String(tracks[i].id) === songId) {
+          return true;
+        }
       }
     } catch (e) {
       console.warn('collect verify failed:', e);
@@ -17178,23 +17204,36 @@ async function verifySongInPlaylist(pid, songId) {
 }
 async function addCollectTargetToPlaylist(pid) {
   if (collectBusy || !collectTargetSong || !pid) return;
+  var provider = normalizePlaylistProvider(collectTargetProvider || songProviderKey(collectTargetSong));
   collectBusy = true;
   setCollectBusyPid(pid, true);
   updateLikeButtons();
   showToast('正在收藏到歌单...');
   try {
-    var songId = String(collectTargetSong.id || '');
-    var r = await apiJson('/api/playlist/add-song', {
+    var songId = String(provider === 'kugou'
+      ? (collectTargetSong.hash || collectTargetSong.albumAudioId || collectTargetSong.album_audio_id || collectTargetSong.id || '')
+      : (collectTargetSong.id || ''));
+    var payload = provider === 'kugou'
+      ? {
+          pid: pid,
+          hash: collectTargetSong.hash || '',
+          id: collectTargetSong.id || '',
+          name: collectTargetSong.name || '',
+          albumId: collectTargetSong.albumId || collectTargetSong.album_id || '',
+          albumAudioId: collectTargetSong.albumAudioId || collectTargetSong.album_audio_id || ''
+        }
+      : { pid: pid, id: songId };
+    var r = await apiJson(provider === 'kugou' ? '/api/kugou/playlist/add-song' : '/api/playlist/add-song', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: pid, id: songId })
+      body: JSON.stringify(payload)
     });
     if (!(r && r.success)) throw new Error(collectResultMessage(r));
     showToast('已收藏到歌单');
     closeCollectModal();
     refreshUserPlaylists(true);
     setTimeout(function(){
-      verifySongInPlaylist(pid, songId).then(function(ok){
+      verifySongInPlaylist(pid, songId, provider).then(function(ok){
         if (!ok) console.warn('collect submitted but verify did not find song yet:', pid, songId);
       });
     }, 900);
@@ -19084,6 +19123,16 @@ async function fetchLyric(songOrId, token) {
       var mid = song.mid || song.songmid || song.id || '';
       var qqId = song.qqId || (/^\d+$/.test(String(song.id || '')) ? song.id : '');
       endpoint = '/api/qq/lyric?mid=' + encodeURIComponent(mid) + '&id=' + encodeURIComponent(qqId);
+    } else if (provider === 'kugou') {
+      var kugouHash = song.hash || '';
+      var kugouAlbumAudioId = song.albumAudioId || song.album_audio_id || '';
+      var kugouKeywords = ((song.name || '') + ' ' + (song.artist || '')).trim();
+      endpoint = '/api/kugou/lyric?hash=' + encodeURIComponent(kugouHash) +
+        '&albumAudioId=' + encodeURIComponent(kugouAlbumAudioId) +
+        '&duration=' + encodeURIComponent(song.duration || 0) +
+        '&keywords=' + encodeURIComponent(kugouKeywords) +
+        '&name=' + encodeURIComponent(song.name || '') +
+        '&artist=' + encodeURIComponent(song.artist || '');
     } else {
       var songId = song ? song.id : songOrId;
       endpoint = '/api/lyric?id=' + encodeURIComponent(songId);
