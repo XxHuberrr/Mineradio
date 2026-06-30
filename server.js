@@ -2948,7 +2948,6 @@ async function handleKugouPlaylistCreate(params) {
       list_create_gid: params.list_create_gid || '',
       from_shupinmv: 0,
     },
-    headers: { 'x-router': 'cloudlist.service.kugou.com' },
   });
   const data = body && (body.data || body.body || body);
   const rawPlaylist = data && (data.info || data.playlist || data.list || data);
@@ -3028,7 +3027,6 @@ async function handleKugouPlaylistAddSong(params) {
       scene: 'false;null',
       data: [resource],
     },
-    headers: { 'x-router': 'cloudlist.service.kugou.com' },
   });
   const code = kugouPlaylistAddCode(body);
   const message = kugouPlaylistAddMessage(body);

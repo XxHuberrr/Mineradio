@@ -17204,6 +17204,13 @@ function setCollectBusyPid(pid, busy) {
     item.classList.toggle('busy', !!busy && item.getAttribute('data-collect-pid') === String(pid));
   });
 }
+function createPlaylistResultMessage(r, provider) {
+  if (!r) return '创建歌单失败';
+  var msg = r.error || r.message || r.msg || '';
+  if (msg === 'LOGIN_REQUIRED') return provider === 'kugou' ? '登录酷狗概念版后可新建歌单' : '登录后可新建歌单';
+  if (msg === 'KUGOU_PLAYLIST_CREATE_FAILED') return '酷狗歌单创建失败';
+  return msg ? ('创建歌单失败: ' + msg) : '创建歌单失败';
+}
 async function createPlaylistFromCollect() {
   var provider = normalizePlaylistProvider(collectTargetProvider || songProviderKey(collectTargetSong));
   if (collectTargetProvider === 'kugou' || provider === 'kugou') {
@@ -17227,7 +17234,7 @@ async function createPlaylistFromCollect() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name })
     } : undefined);
-    if (r && r.error) throw new Error(r.error);
+    if (!(r && r.success)) throw new Error(createPlaylistResultMessage(r, provider));
     if (input) input.value = '';
     showToast('歌单已创建');
     await refreshUserPlaylists(true);
@@ -17236,7 +17243,7 @@ async function createPlaylistFromCollect() {
     var pid = created && (created.id || created.listid);
     if (pid && collectTargetSong) addCollectTargetToPlaylist(pid);
   } catch (err) {
-    showToast('创建歌单失败');
+    showToast(err && err.message ? err.message : '创建歌单失败');
   }
 }
 function collectResultMessage(r) {
