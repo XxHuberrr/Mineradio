@@ -2714,6 +2714,7 @@ var userPlaylists = [], qqPlaylists = [], myPodcastCollections = [], myPodcastIt
 var CUSTOM_COVER_STORE_KEY = 'mineradio-custom-covers';
 var CUSTOM_LYRIC_STORE_KEY = 'mineradio-custom-lyrics-v1';
 var CUSTOM_LYRIC_PREF_STORE_KEY = 'mineradio-custom-lyric-prefs-v1';
+var IMPORTED_PLAYLISTS_STORE_KEY = 'mineradio.importedPlaylists.v1';
 var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
 var PLAYBACK_QUALITY_STORE_KEY = 'mineradio-playback-quality-v1';
@@ -13020,10 +13021,10 @@ function makeShelfManager() {
     if (hasAnyPlatformLogin() && (userPlaylists.length || myPodcastCollections.length)) {
       var source = activePlaylists();
       var items = source.map(function(pl){
-        var provider = pl.provider === 'qq' ? 'qq' : 'netease';
-        var sourceLabel = provider === 'qq' ? 'QQ' : 'NE';
+        var provider = isImportedPlaylistProvider(pl.provider) ? importedPlaylistProviderKey(pl.provider) : (pl.provider === 'qq' ? 'qq' : 'netease');
+        var sourceLabel = isImportedPlaylistProvider(provider) ? importedProviderLabel(provider) : (provider === 'qq' ? 'QQ' : 'NE');
         return { type:'playlist', title: pl.name, sub:sourceLabel + ' · ' + (pl.trackCount||0)+' 首 · 播放 '+compactCount(pl.playCount||0),
-          cover: pl.cover || '', tag: pl.subscribed ? '收藏歌单' : '我的歌单', playlistId: (provider === 'qq' ? 'qq:' : '') + pl.id, provider: provider };
+          cover: pl.cover || '', tag: pl.subscribed ? '收藏歌单' : '我的歌单', playlistId: playlistPanelProviderId(provider, pl.id), provider: provider };
       });
       if (shelfShowsPodcasts() && (shelfPane === 'mine' || shelfMergesCollections()) && myPodcastCollections.length) {
         myPodcastCollections.forEach(function(pc){
@@ -17263,6 +17264,116 @@ function runSearchHistory(q) {
   doSearch(q);
   $input.focus();
 }
+var NETEASE_PLAYLIST_SHARE_RE = /(?:https?:\/\/(?:music\.163\.com|163cn\.tv)\/[^\s"'<>]*(?:playlist|id=\d{5,})[^\s"'<>]*|(?:^|[^a-z0-9])netease:\d{5,}(?:\D|$))/i;
+var QQ_PLAYLIST_SHARE_RE = /(?:https?:\/\/(?:y\.qq\.com|i\d*\.y\.qq\.com|c\d*\.y\.qq\.com)\/[^\s"'<>]*(?:playlist|playsquare|base\/fcgi-bin\/u|disstid=|tid=|id=\d{5,}|__=)[^\s"'<>]*|(?:^|[^a-z0-9])qq:\d{5,}(?:\D|$))/i;
+var KUGOU_PLAYLIST_SHARE_RE = /(?:https?:\/\/(?:t\d*|m|m3ws|www)\.kugou\.com\/[^\s"'<>]*(?:songlist|plist|special|collection|gcid_[a-z0-9]+|src_cid=[a-z0-9]+|global_(?:collection|special)id=)[^\s"'<>]*|gcid_[a-z0-9]+|(?:^|[^a-z0-9])kugou:[a-z0-9_:-]+(?:\D|$))/i;
+var APPLE_MUSIC_PLAYLIST_SHARE_RE = /(?:https?:\/\/(?:music|itunes)\.apple\.com\/[^\s"'<>]*\/playlist\/[^\s"'<>]*pl\.[a-z0-9]+[^\s"'<>]*|\bpl\.[a-z0-9]+\b)/i;
+var QISHUI_PLAYLIST_SHARE_RE = /https?:\/\/(?:qishui\.douyin\.com\/s\/|music\.douyin\.com\/qishui\/share\/playlist\?)[^\s"'<>]+/i;
+function importedPlaylistProviderKey(provider) {
+  provider = String(provider || '').toLowerCase();
+  if (provider === 'netease' || provider === 'netease-import') return 'netease-import';
+  if (provider === 'qq' || provider === 'qq-import') return 'qq-import';
+  if (provider === 'kugou' || provider === 'kugou-import') return 'kugou-import';
+  if (provider === 'apple-music' || provider === 'apple-music-import') return 'apple-music-import';
+  if (provider === 'qishui' || provider === 'qishui-import') return 'qishui-import';
+  return provider || 'shared-import';
+}
+function isImportedPlaylistProvider(provider) {
+  return /-import$/.test(importedPlaylistProviderKey(provider));
+}
+function importedProviderLabel(provider) {
+  provider = importedPlaylistProviderKey(provider);
+  if (provider === 'netease-import') return 'NE';
+  if (provider === 'qq-import') return 'QQ';
+  if (provider === 'kugou-import') return 'KG';
+  if (provider === 'apple-music-import') return 'AM';
+  if (provider === 'qishui-import') return 'QS';
+  return 'IM';
+}
+function importedProviderName(provider) {
+  provider = importedPlaylistProviderKey(provider);
+  if (provider === 'netease-import') return '网易云歌单';
+  if (provider === 'qq-import') return 'QQ 音乐歌单';
+  if (provider === 'kugou-import') return '酷狗歌单';
+  if (provider === 'apple-music-import') return 'Apple Music 歌单';
+  if (provider === 'qishui-import') return '汽水音乐歌单';
+  return '导入歌单';
+}
+function detectSharedPlaylistInput(q) {
+  q = String(q || '').trim();
+  if (!q) return null;
+  if (APPLE_MUSIC_PLAYLIST_SHARE_RE.test(q)) return { provider: 'apple-music-import', text: q };
+  if (QISHUI_PLAYLIST_SHARE_RE.test(q)) return { provider: 'qishui-import', text: q };
+  if (QQ_PLAYLIST_SHARE_RE.test(q)) return { provider: 'qq-import', text: q };
+  if (KUGOU_PLAYLIST_SHARE_RE.test(q)) return { provider: 'kugou-import', text: q };
+  if (NETEASE_PLAYLIST_SHARE_RE.test(q)) return { provider: 'netease-import', text: q };
+  return null;
+}
+function importedPlaylistKey(pl) {
+  return importedPlaylistProviderKey(pl && pl.provider) + ':' + String(pl && pl.id || '');
+}
+function readImportedPlaylists() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(IMPORTED_PLAYLISTS_STORE_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter(function(item){ return item && item.playlist && item.playlist.id; }) : [];
+  } catch (e) {
+    return [];
+  }
+}
+function writeImportedPlaylists(items) {
+  try { localStorage.setItem(IMPORTED_PLAYLISTS_STORE_KEY, JSON.stringify((items || []).slice(0, 80))); } catch (e) {}
+}
+function importedPlaylistRecordsToList() {
+  return readImportedPlaylists().map(function(record){
+    var pl = Object.assign({}, record.playlist || {});
+    pl.provider = importedPlaylistProviderKey(pl.provider || record.provider);
+    pl.source = pl.provider;
+    pl.importUrl = pl.importUrl || pl.sourceUrl || record.importUrl || '';
+    pl.sourceUrl = pl.sourceUrl || pl.importUrl;
+    pl.tracks = (record.tracks || []).map(cloneSong);
+    pl.importedAt = record.importedAt || 0;
+    return pl;
+  });
+}
+function rememberImportedPlaylist(result) {
+  result = result || {};
+  var pl = Object.assign({}, result.playlist || {});
+  if (!pl.id) return null;
+  pl.provider = importedPlaylistProviderKey(pl.provider || result.provider);
+  pl.source = pl.provider;
+  pl.importUrl = pl.importUrl || pl.sourceUrl || '';
+  pl.sourceUrl = pl.sourceUrl || pl.importUrl;
+  pl.trackCount = Number(pl.trackCount || (result.tracks && result.tracks.length) || 0) || 0;
+  pl.loadedCount = Number(pl.loadedCount || (result.tracks && result.tracks.length) || 0) || 0;
+  var record = {
+    provider: pl.provider,
+    key: importedPlaylistKey(pl),
+    playlist: pl,
+    tracks: (result.tracks || []).map(cloneSong),
+    importedAt: Date.now(),
+    importUrl: pl.importUrl || pl.sourceUrl || ''
+  };
+  var existing = readImportedPlaylists().filter(function(item){ return item && item.key !== record.key; });
+  existing.unshift(record);
+  writeImportedPlaylists(existing);
+  return record;
+}
+function findImportedPlaylist(provider, id) {
+  var key = importedPlaylistProviderKey(provider) + ':' + String(id || '');
+  return readImportedPlaylists().find(function(item){ return item && item.key === key; }) || null;
+}
+function deleteImportedPlaylist(provider, id) {
+  var key = importedPlaylistProviderKey(provider) + ':' + String(id || '');
+  var next = readImportedPlaylists().filter(function(item){ return item && item.key !== key; });
+  writeImportedPlaylists(next);
+  if (playlistPanelDetailState && playlistPanelDetailState.key === key) {
+    playlistPanelDetailState = { key: '', loading: false, playlist: null, tracks: [], token: playlistPanelDetailState.token + 1, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER };
+  }
+  userPlaylists = userPlaylists.filter(function(pl){ return importedPlaylistKey(pl) !== key; });
+  renderUserPlaylistsList({ animate: true, reset: true });
+  scheduleShelfRebuild('delete-imported-playlist', true);
+  showToast('已删除导入歌单');
+}
 function updateSearchModeTabs() {
   var songBtn = document.getElementById('search-mode-song');
   var neteaseBtn = document.getElementById('search-mode-netease');
@@ -17507,11 +17618,12 @@ updateSearchModeTabs();
 
 function songProviderKey(song) {
   if (song && (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq')) return 'qq';
+  if (song && isImportedPlaylistProvider(song.provider || song.source || song.type)) return importedPlaylistProviderKey(song.provider || song.source || song.type);
   return 'netease';
 }
 function songSourceTagHtml(song) {
   var key = songProviderKey(song);
-  var label = key === 'qq' ? 'QQ' : 'NE';
+  var label = isImportedPlaylistProvider(key) ? importedProviderLabel(key) : (key === 'qq' ? 'QQ' : 'NE');
   return '<span class="tag-source ' + key + '">' + label + '</span>';
 }
 function searchResultMetaText(song) {
@@ -17691,6 +17803,53 @@ function renderSongSearchResults(songs) {
   if (window.gsap) animateListItems($results, '.search-result', { x: 0, y: 6, stagger: 0.012, duration: 0.18, limit: 18 });
 }
 
+async function importSharedPlaylistFromSearch(q, share, requestSeq) {
+  var title = importedProviderName(share && share.provider);
+  $results.innerHTML = '<div class="search-empty">正在导入' + escHtml(title) + '...</div>';
+  $results.classList.add('show');
+  showLoading();
+  try {
+    var result = await apiJson('/api/shared-playlist/import', {
+      method: 'POST',
+      timeoutMs: 30000,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: q, url: q })
+    });
+    if (requestSeq !== searchRequestSeq || $input.value.trim() !== q) return;
+    if (result.error) throw new Error(result.error);
+    var tracks = (result.tracks || []).map(cloneSong);
+    if (!tracks.length && !(result.playlist && result.playlist.partial)) throw new Error('分享页没有公开可读取的歌曲');
+    result.tracks = tracks;
+    var record = rememberImportedPlaylist(result);
+    userPlaylists = userPlaylists.filter(function(pl){ return !isImportedPlaylistProvider(pl.provider); }).concat(importedPlaylistRecordsToList());
+    renderUserPlaylistsList({ animate: isPlaylistPanelVisibleForRender(), reset: true });
+    playlist = tracks;
+    searchLastResultQuery = 'import|' + (record && record.key || q);
+    rememberSearchQuery(q);
+    if (tracks.length) {
+      renderSongSearchResults(tracks);
+      showToast('已导入 ' + (result.loadedCount || tracks.length) + ' 首歌曲');
+    } else {
+      $results.innerHTML = '<div class="search-empty">已导入歌单信息，但分享页没有公开歌曲列表。</div>';
+      $results.classList.add('show');
+      showToast('已导入歌单信息');
+    }
+    if (result.partial) showSourceFallbackNotice('部分导入', result.partialReason || '分享页没有公开全部歌曲。');
+    scheduleShelfRebuild('shared-playlist-import', true);
+  } catch (err) {
+    console.warn('[SharedPlaylistImport]', err);
+    if (requestSeq === searchRequestSeq) {
+      playlist = [];
+      searchLastResultQuery = '';
+      $results.innerHTML = '<div class="search-empty">歌单导入失败：' + escHtml(err && err.message || err) + '</div>';
+      $results.classList.add('show');
+      showToast('歌单导入失败');
+    }
+  } finally {
+    hideLoading();
+  }
+}
+
 async function doSearch(q, opts) {
   opts = opts || {};
   q = String(q || '').trim();
@@ -17704,6 +17863,11 @@ async function doSearch(q, opts) {
     return;
   }
   var requestSeq = ++searchRequestSeq;
+  var share = detectSharedPlaylistInput(q);
+  if (share) {
+    importSharedPlaylistFromSearch(q, share, requestSeq);
+    return;
+  }
   try {
     var mode = searchMode;
     var songs = await fetchMusicSearchResults(q, mode);
@@ -18229,6 +18393,7 @@ function isSameTitleArtist(source, candidate) {
   return a.some(function(name){ return b.indexOf(name) >= 0; });
 }
 function alternatePlaybackProvider(song) {
+  if (song && song.playbackFallbackOnly) return 'netease';
   return songProviderKey(song) === 'qq' ? 'netease' : 'qq';
 }
 async function searchAlternatePlatformSong(song) {
@@ -18305,6 +18470,29 @@ async function tryAutoPlaybackFallback(song, data, idx, token, opts) {
   } catch (e) {
     if (token !== trackSwitchToken) return true;
     skipFailedQueueItem(idx, token, '自动换源搜索失败，正在播放下一首。');
+    return true;
+  }
+}
+async function resolveImportedPlaybackSource(song, idx, token, opts) {
+  opts = opts || {};
+  showSourceFallbackNotice('正在匹配可播音源', '导入歌曲会先匹配网易云 / QQ 的可播版本。');
+  try {
+    var alternate = await searchAlternatePlatformSong(song);
+    if (token !== trackSwitchToken) return true;
+    if (!alternate) {
+      handlePlaybackUnavailable(song, { reason: 'source_match_failed', restriction: { category: 'source_match_failed' } });
+      return true;
+    }
+    alternate.autoFallbackFrom = songProviderKey(song) || 'imported';
+    playQueue[idx] = hydrateCustomCover(alternate);
+    safeRenderQueuePanel('import-source-match', { scrollCurrent: miniQueueOpen });
+    safeShelfRebuild('import-source-match');
+    await playQueueAt(idx, Object.assign({}, opts, { fallbackDepth: 1 }));
+    return true;
+  } catch (err) {
+    if (token !== trackSwitchToken) return true;
+    console.warn('[ImportPlaybackMatch]', err);
+    handlePlaybackUnavailable(song, { reason: 'source_match_failed', restriction: { category: 'source_match_failed' } });
     return true;
   }
 }
@@ -18462,6 +18650,9 @@ async function playQueueAt(idx, opts) {
   try {
     markPlayPhase('source-url');
     var isQQPlayback = songProviderKey(song) === 'qq';
+    if (song && song.playbackFallbackOnly && opts.fallbackDepth !== 1) {
+      if (await resolveImportedPlaybackSource(song, idx, token, opts)) return;
+    }
     var requestedQuality = normalizePlaybackQuality(opts.qualityOverride || playbackQuality);
     if (!isQQPlayback && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
     if (isQQPlayback && qqPlaybackQualityCeiling && (requestedQuality === 'jymaster' || requestedQuality === 'hires' || requestedQuality === 'lossless')) {
@@ -19419,6 +19610,12 @@ function renderQueuePanel(opts) {
 }
 async function refreshUserPlaylists(force) {
   if (!loginStatus.loggedIn && !qqLoginStatus.loggedIn) {
+    userPlaylists = importedPlaylistRecordsToList();
+    resetPlaylistPanelRenderLimit();
+    renderUserPlaylistsList({ animate: isPlaylistPanelVisibleForRender(), reset: true });
+    var importedPodcastListLoggedOut = document.getElementById('podcast-list');
+    if (importedPodcastListLoggedOut) importedPodcastListLoggedOut.innerHTML = '<div style="text-align:center;padding:14px 0;color:rgba(255,255,255,.28);font-size:11.5px">登录后显示我的播客</div>';
+    return;
     resetPlaylistPanelRenderLimit();
     document.getElementById('pl-list').innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">登录后显示个人歌单</div>';
     var podcastListLoggedOut = document.getElementById('podcast-list');
@@ -19449,7 +19646,7 @@ async function refreshUserPlaylists(force) {
     ]);
     var neteaseLists = (result[0].playlists || []).map(function(pl){ pl.provider = 'netease'; pl.source = 'netease'; return pl; });
     qqPlaylists = (result[2].playlists || []).map(function(pl){ pl.provider = 'qq'; pl.source = 'qq'; return pl; });
-    userPlaylists = neteaseLists.concat(qqPlaylists);
+    userPlaylists = neteaseLists.concat(qqPlaylists).concat(importedPlaylistRecordsToList());
     myPodcastCollections = result[1].collections || [];
     var animatePanel = isPlaylistPanelVisibleForRender();
     renderUserPlaylistsList({ animate: animatePanel, reset: true });
@@ -19460,9 +19657,10 @@ async function refreshUserPlaylists(force) {
 }
 var playlistPanelDetailState = { key: '', loading: false, playlist: null, tracks: [], token: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER };
 function playlistPanelKey(provider, id) {
-  return (provider === 'qq' ? 'qq' : 'netease') + ':' + String(id || '');
+  return (isImportedPlaylistProvider(provider) ? importedPlaylistProviderKey(provider) : (provider === 'qq' ? 'qq' : 'netease')) + ':' + String(id || '');
 }
 function playlistPanelProviderId(provider, id) {
+  if (isImportedPlaylistProvider(provider)) return importedPlaylistProviderKey(provider) + ':' + id;
   return provider === 'qq' ? ('qq:' + id) : id;
 }
 function playlistPanelDetailHtml(pl, provider) {
@@ -19470,7 +19668,7 @@ function playlistPanelDetailHtml(pl, provider) {
   if (playlistPanelDetailState.key !== key) return '';
   var tracks = playlistPanelDetailState.tracks || [];
   var loading = playlistPanelDetailState.loading;
-  var cover = pl && pl.cover ? (provider === 'qq' ? pl.cover : (pl.cover + '?param=96y96')) : '';
+  var cover = pl && pl.cover ? ((provider === 'qq' || isImportedPlaylistProvider(provider)) ? pl.cover : (pl.cover + '?param=96y96')) : '';
   var img = cover ? '<img class="pl-detail-cover" src="' + escHtml(cover) + '" alt="" decoding="async" onerror="this.style.opacity=0.2">' : '<div class="pl-detail-cover"></div>';
   var renderLimit = loading ? 0 : Math.max(PLAYLIST_DETAIL_INITIAL_RENDER, playlistPanelDetailState.renderLimit || PLAYLIST_DETAIL_INITIAL_RENDER);
   renderLimit = Math.min(tracks.length, renderLimit);
@@ -19530,9 +19728,9 @@ function scrollPlaylistPanelDetailIntoView(key) {
 }
 async function openPlaylistPanelDetail(provider, pid, title) {
   if (!pid) return;
-  provider = provider === 'qq' ? 'qq' : 'netease';
+  provider = isImportedPlaylistProvider(provider) ? importedPlaylistProviderKey(provider) : (provider === 'qq' ? 'qq' : 'netease');
   var key = playlistPanelKey(provider, pid);
-  var pl = userPlaylists.find(function(item){ return playlistPanelKey(item.provider === 'qq' ? 'qq' : 'netease', item.id) === key; }) || { id: pid, provider: provider, name: title || '歌单详情' };
+  var pl = userPlaylists.find(function(item){ return playlistPanelKey(item.provider, item.id) === key; }) || { id: pid, provider: provider, name: title || '歌单详情' };
   if (playlistPanelDetailState.key === key && !playlistPanelDetailState.loading && playlistPanelDetailState.tracks.length) {
     playlistPanelDetailState.key = '';
     playlistPanelDetailState.tracks = [];
@@ -19546,9 +19744,15 @@ async function openPlaylistPanelDetail(provider, pid, title) {
   renderPlaylistPanelDetailState();
   scrollPlaylistPanelDetailIntoView(key);
   try {
-    var r = provider === 'qq'
-      ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(pid))
-      : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(pid));
+    var r;
+    if (isImportedPlaylistProvider(provider)) {
+      var importedRecordForDetail = findImportedPlaylist(provider, pid);
+      r = importedRecordForDetail ? { playlist: importedRecordForDetail.playlist, tracks: importedRecordForDetail.tracks || [] } : { tracks: [] };
+    } else {
+      r = provider === 'qq'
+        ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(pid))
+        : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(pid));
+    }
     if (playlistPanelDetailState.token !== token) return;
     playlistPanelDetailState.loading = false;
     playlistPanelDetailState.tracks = (r && r.tracks || []).map(cloneSong);
@@ -19568,7 +19772,7 @@ function playPlaylistPanelDetail() {
   var st = playlistPanelDetailState;
   if (!st || !st.key) return;
   var parts = st.key.split(':');
-  var provider = parts[0] === 'qq' ? 'qq' : 'netease';
+  var provider = isImportedPlaylistProvider(parts[0]) ? parts[0] : (parts[0] === 'qq' ? 'qq' : 'netease');
   var pid = parts.slice(1).join(':');
   loadPlaylistIntoQueueById(playlistPanelProviderId(provider, pid), true, st.playlist && st.playlist.name || '');
 }
@@ -19638,20 +19842,23 @@ function renderUserPlaylistsList(opts) {
     return;
   }
   function playlistCardHtml(pl) {
-    var provider = pl.provider === 'qq' ? 'qq' : 'netease';
-    var providerLabel = provider === 'qq' ? 'QQ' : 'NE';
-    var thumb = pl.cover ? (provider === 'qq' ? pl.cover : (pl.cover + '?param=88y88')) : '';
+    var provider = isImportedPlaylistProvider(pl.provider) ? importedPlaylistProviderKey(pl.provider) : (pl.provider === 'qq' ? 'qq' : 'netease');
+    var providerLabel = isImportedPlaylistProvider(provider) ? importedProviderLabel(provider) : (provider === 'qq' ? 'QQ' : 'NE');
+    var thumb = pl.cover ? ((provider === 'qq' || isImportedPlaylistProvider(provider)) ? pl.cover : (pl.cover + '?param=88y88')) : '';
     var imgTag = thumb ? '<img src="' + thumb + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:44px;height:44px;border-radius:8px;background:rgba(255,255,255,.06);flex-shrink:0"></div>';
     var key = playlistPanelKey(provider, pl.id);
     var expanded = playlistPanelDetailState.key === key ? ' expanded' : '';
+    var deleteBtn = isImportedPlaylistProvider(provider) ? '<button type="button" class="song-action-btn" title="删除导入歌单" data-delete-imported-playlist="1" style="width:28px;height:28px;min-width:28px;padding:0">删</button>' : '';
     return '<div class="pl-card' + expanded + '" data-playlist-provider="' + provider + '" data-playlist-id="' + escHtml(String(pl.id || '')) + '" data-playlist-title="' + escHtml(pl.name || '') + '">' +
       imgTag +
       '<div style="flex:1;min-width:0"><div class="pl-name">' + escHtml(pl.name) + '<span class="tag-source ' + provider + '" style="margin-left:6px;vertical-align:1px">' + providerLabel + '</span></div><div class="pl-sub">' + pl.trackCount + ' 首 · ' + escHtml(pl.creator || '') + '</div></div>' +
+      deleteBtn +
     '</div>' + playlistPanelDetailHtml(pl, provider);
   }
   var groups = [
-    { key:'netease', label:'网易云歌单', items:userPlaylists.filter(function(pl){ return pl.provider !== 'qq'; }) },
-    { key:'qq', label:'QQ 音乐歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'qq'; }) }
+    { key:'netease', label:'网易云歌单', items:userPlaylists.filter(function(pl){ return pl.provider !== 'qq' && !isImportedPlaylistProvider(pl.provider); }) },
+    { key:'qq', label:'QQ 音乐歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'qq'; }) },
+    { key:'imported', label:'导入歌单', items:userPlaylists.filter(function(pl){ return isImportedPlaylistProvider(pl.provider); }) }
   ];
   if (opts.reset) resetPlaylistPanelRenderLimit();
   playlistPanelRenderLimit = Math.max(PLAYLIST_PANEL_BATCH_SIZE, Math.min(userPlaylists.length, playlistPanelRenderLimit || PLAYLIST_PANEL_BATCH_SIZE));
@@ -19723,6 +19930,14 @@ document.getElementById('pl-list').addEventListener('click', function(e){
     e.preventDefault();
     e.stopPropagation();
     playPlaylistPanelDetail();
+    return;
+  }
+  var deleteImported = e.target && e.target.closest ? e.target.closest('[data-delete-imported-playlist]') : null;
+  if (deleteImported) {
+    e.preventDefault();
+    e.stopPropagation();
+    var deleteCard = deleteImported.closest('.pl-card');
+    if (deleteCard) deleteImportedPlaylist(deleteCard.getAttribute('data-playlist-provider') || '', deleteCard.getAttribute('data-playlist-id') || '');
     return;
   }
   var artist = e.target && e.target.closest ? e.target.closest('[data-pl-detail-artist]') : null;
@@ -19842,11 +20057,17 @@ async function loadPlaylistIntoQueueById(id, autoplay, title) {
   updateEmptyHomeVisibility();
   showLoading();
   var qqPlaylistId = String(id || '').indexOf('qq:') === 0 ? String(id).slice(3) : '';
+  var importedPlaylistMatch = String(id || '').match(/^([a-z0-9-]+-import):(.*)$/i);
   var r = null;
   try {
-    r = qqPlaylistId
-      ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(qqPlaylistId))
-      : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(id));
+    if (importedPlaylistMatch) {
+      var importedRecord = findImportedPlaylist(importedPlaylistMatch[1], importedPlaylistMatch[2]);
+      r = importedRecord ? { playlist: importedRecord.playlist, tracks: importedRecord.tracks || [] } : { tracks: [] };
+    } else {
+      r = qqPlaylistId
+        ? await apiJson('/api/qq/playlist/tracks?id=' + encodeURIComponent(qqPlaylistId))
+        : await apiJson('/api/playlist/tracks?id=' + encodeURIComponent(id));
+    }
   } catch (e) {
     console.warn('[PlaylistLoadApi]', id, e);
     showToast('歌单加载失败');
@@ -19857,8 +20078,8 @@ async function loadPlaylistIntoQueueById(id, autoplay, title) {
     if (r.error) { showToast('歌单加载失败: ' + r.error); return; }
     if (!r.tracks || !r.tracks.length) { showToast('歌单为空'); return; }
     playQueue = r.tracks.map(cloneSong);
-    if (!qqPlaylistId && isLikedPlaylistContext(id, title, r.playlist)) markSongsLiked(playQueue, true);
-    if (!qqPlaylistId) syncLikeStatusForSongs(playQueue);
+    if (!qqPlaylistId && !importedPlaylistMatch && isLikedPlaylistContext(id, title, r.playlist)) markSongsLiked(playQueue, true);
+    if (!qqPlaylistId && !importedPlaylistMatch) syncLikeStatusForSongs(playQueue);
     currentIdx = 0;
     safeRenderQueuePanel('playlist-load');
     safeSwitchPlaylistTab('queue', 'playlist-load');
