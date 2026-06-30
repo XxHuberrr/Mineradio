@@ -27,6 +27,7 @@
       "public/**/*",
       "build/**/*",
       "server.js",
+      "kuwo_qmc.js",
       "dj-analyzer.js",
       "package.json",
       "!public/index.*.html",

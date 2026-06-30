@@ -1327,6 +1327,8 @@ async function createWindow() {
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  // 酷我账号票据(至臻凭据)同样放 userData, 否则装在 resources/app 内, NSIS 更新会连同 app 一起被替换而丢失登录
+  process.env.KW_ACCOUNT_FILE = path.join(app.getPath('userData'), '.kw-account');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
@@ -1339,9 +1341,28 @@ async function createWindow() {
   } catch (e) {
     console.warn('QQ cookie migration skipped:', e.message);
   }
+  try {
+    const legacyKwAccount = path.join(__dirname, '..', '.kw-account');
+    if (fs.existsSync(legacyKwAccount)) {
+      if (!fs.existsSync(process.env.KW_ACCOUNT_FILE)) {
+        fs.copyFileSync(legacyKwAccount, process.env.KW_ACCOUNT_FILE);
+      }
+      fs.unlinkSync(legacyKwAccount);
+    }
+  } catch (e) {
+    console.warn('Kuwo account migration skipped:', e.message);
+  }
 
-  localServer = require(path.join(__dirname, '..', 'server.js'));
-  await waitForServer(localServer);
+  try {
+    localServer = require(path.join(__dirname, '..', 'server.js'));
+    await waitForServer(localServer);
+  } catch (e) {
+    // 本地服务起不来(如缺文件/端口异常)时, 干净退出并释放单实例锁, 避免留下无窗口僵尸进程占锁
+    console.error('本地服务初始化失败:', e);
+    try { dialog.showErrorBox('Mineradio 启动失败', '本地服务初始化失败:\n' + ((e && e.stack) || (e && e.message) || String(e))); } catch (_) {}
+    app.quit();
+    return;
+  }
 
   const initialBounds = getWindowedBounds();
 
@@ -1447,6 +1468,11 @@ if (!gotSingleInstanceLock) {
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
+  }).catch((e) => {
+    // 启动链任意环节失败都干净退出, 释放单实例锁(否则下次启动会被僵尸进程挡住)
+    console.error('启动失败:', e);
+    try { dialog.showErrorBox('Mineradio 启动失败', String((e && e.stack) || (e && e.message) || e)); } catch (_) {}
+    app.quit();
   });
 
   app.on('activate', () => {
