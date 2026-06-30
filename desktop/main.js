@@ -3,6 +3,11 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const {
+  getAppIconPath,
+  getChromiumPerformanceSwitches,
+  getUpdateOpenStrategy,
+} = require('../platform-utils');
 
 let mainWindow = null;
 let localServer = null;
@@ -31,25 +36,15 @@ const MIN_WINDOWED_WIDTH = 960;
 const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
+const BUILD_DIR = path.join(__dirname, '..', 'build');
+const APP_ICON_PATH = getAppIconPath(BUILD_DIR, process.platform);
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
-const CHROMIUM_PERFORMANCE_SWITCHES = [
-  ['autoplay-policy', 'no-user-gesture-required'],
-  ['ignore-gpu-blocklist'],
-  ['enable-gpu-rasterization'],
-  ['enable-oop-rasterization'],
-  ['enable-zero-copy'],
-  ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
-];
+const CHROMIUM_PERFORMANCE_SWITCHES = getChromiumPerformanceSwitches(process.platform);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -272,6 +267,17 @@ function getUpdateDownloadDir() {
   return path.join(app.getPath('userData'), 'updates');
 }
 
+async function openDownloadedUpdate(target) {
+  if (getUpdateOpenStrategy(target, process.platform) === 'relaunch') {
+    fs.chmodSync(target, 0o755);
+    app.relaunch({ execPath: target });
+    app.quit();
+    return '';
+  }
+
+  return shell.openPath(target);
+}
+
 function shouldEnsureDesktopShortcut() {
   if (process.platform !== 'win32') return false;
   if (process.env.MINERADIO_NO_DESKTOP_SHORTCUT === '1') return false;
@@ -417,7 +423,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON_PATH,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
@@ -519,7 +525,7 @@ async function openQQMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON_PATH,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
@@ -1184,7 +1190,7 @@ ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
       return { ok: false, error: 'INVALID_UPDATE_PATH' };
     }
     if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
-    const error = await shell.openPath(target);
+    const error = await openDownloadedUpdate(target);
     return error ? { ok: false, error } : { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };
@@ -1357,7 +1363,7 @@ async function createWindow() {
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

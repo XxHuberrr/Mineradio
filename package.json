@@ -4,10 +4,14 @@
   "version": "1.1.1",
   "description": "沉浸式音乐播放器，融合天气电台、歌词舞台、粒子视觉和 3D 歌单架。",
   "author": "Mineradio",
+  "desktopName": "Mineradio.desktop",
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "build:linux": "electron-builder --linux AppImage",
+    "build:linux:dir": "electron-builder --linux dir",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
@@ -28,6 +32,7 @@
       "build/**/*",
       "server.js",
       "dj-analyzer.js",
+      "platform-utils.js",
       "package.json",
       "!public/index.*.html",
       "public/index.html"
@@ -40,6 +45,21 @@
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "executableName": "Mineradio",
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "artifactName": "Mineradio-${version}.${ext}",
+      "syncDesktopName": true,
+      "target": [
+        {
+          "target": "AppImage",
           "arch": [
             "x64"
           ]
