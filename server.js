@@ -59,6 +59,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
+const KUGOU_COOKIE_FILE = process.env.KUGOU_COOKIE_FILE || path.join(__dirname, '.kugou-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
@@ -184,6 +185,14 @@ catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+}
+
+let kugouCookie = '';
+try { if (fs.existsSync(KUGOU_COOKIE_FILE)) kugouCookie = fs.readFileSync(KUGOU_COOKIE_FILE, 'utf8').trim(); }
+catch (e) { kugouCookie = ''; }
+function saveKugouCookie(c) {
+  kugouCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  try { fs.writeFileSync(KUGOU_COOKIE_FILE, kugouCookie); } catch (e) {}
 }
 
 // ---------- 工具 ----------
@@ -1421,6 +1430,118 @@ function serializeCookieObject(obj) {
 function qqCookieObject() {
   return parseCookieString(qqCookie);
 }
+function kugouCookieObject() {
+  return parseCookieString(kugouCookie);
+}
+function kugouCookieUserId(obj) {
+  obj = obj || kugouCookieObject();
+  return String(obj.userid || obj.userId || obj.user_id || obj.KG_UID || obj.kugou_userid || '').trim();
+}
+function kugouCookieToken(obj) {
+  obj = obj || kugouCookieObject();
+  return String(obj.token || obj.Token || obj.kugou_token || obj.KG_TOKEN || obj.musicToken || '').trim();
+}
+function kugouDeviceId(obj) {
+  obj = obj || kugouCookieObject();
+  return String(
+    obj.dfid || obj.DFID || obj.KUGOU_API_MID || obj.KUGOU_API_GUID || obj.KUGOU_API_DEV ||
+    obj.mid || obj.MID || obj.uuid || obj.guid || ''
+  ).trim();
+}
+function decodeKugouCookieValue(value) {
+  try { return decodeURIComponent(String(value || '').replace(/\+/g, '%20')).trim(); }
+  catch (e) { return String(value || '').trim(); }
+}
+function kugouCookieNickname(obj, userId) {
+  obj = obj || kugouCookieObject();
+  const keys = ['nickname', 'nickName', 'nick', 'username', 'userName', 'kugou_nickname', 'm_name', 'name'];
+  for (const key of keys) {
+    if (obj[key]) {
+      const value = decodeKugouCookieValue(obj[key]);
+      if (value) return value;
+    }
+  }
+  return userId ? ('酷狗 ' + userId) : '';
+}
+function kugouCookieAvatar(obj) {
+  obj = obj || kugouCookieObject();
+  const keys = ['avatar', 'avatarUrl', 'avatar_url', 'headimg', 'headImg', 'userpic', 'pic'];
+  for (const key of keys) {
+    if (obj[key]) {
+      const value = decodeKugouCookieValue(obj[key]);
+      if (value) return value;
+    }
+  }
+  return '';
+}
+function normalizeKugouCookieInput(cookieText) {
+  const obj = parseCookieString(cookieText);
+  if (!obj.userid && (obj.userId || obj.user_id || obj.KG_UID || obj.kugou_userid)) {
+    obj.userid = obj.userId || obj.user_id || obj.KG_UID || obj.kugou_userid;
+  }
+  if (!obj.token && (obj.Token || obj.kugou_token || obj.KG_TOKEN || obj.musicToken)) {
+    obj.token = obj.Token || obj.kugou_token || obj.KG_TOKEN || obj.musicToken;
+  }
+  return serializeCookieObject(obj);
+}
+function getKugouLoginInfo() {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const deviceId = kugouDeviceId(cookieObj);
+  const nickname = kugouCookieNickname(cookieObj, userId);
+  const avatar = kugouCookieAvatar(cookieObj);
+  const vipType = Number(cookieObj.vipType || cookieObj.vip_type || cookieObj.vip || 0) || 0;
+  return {
+    provider: 'kugou',
+    platform: 'lite',
+    loggedIn: !!(userId && token),
+    userId,
+    nickname: nickname || '酷狗概念版',
+    avatar,
+    vipType,
+    hasCookie: !!kugouCookie,
+    tokenReady: !!token,
+    deviceReady: !!deviceId,
+    profileSource: nickname || avatar ? 'cookie' : 'fallback',
+  };
+}
+function createKugouGuid() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const n = crypto.randomBytes(1)[0] & 15;
+    return (c === 'x' ? n : ((n & 3) | 8)).toString(16);
+  });
+}
+function calculateKugouMid(value) {
+  return BigInt('0x' + md5Hex(value || createKugouGuid())).toString(10);
+}
+function ensureKugouDeviceCookie() {
+  const obj = kugouCookieObject();
+  let changed = false;
+  if (!obj.KUGOU_API_PLATFORM) {
+    obj.KUGOU_API_PLATFORM = 'lite';
+    changed = true;
+  }
+  if (!obj.KUGOU_API_GUID) {
+    obj.KUGOU_API_GUID = process.env.KUGOU_API_GUID || obj.guid || createKugouGuid();
+    changed = true;
+  }
+  if (!obj.KUGOU_API_MID) {
+    obj.KUGOU_API_MID = calculateKugouMid(obj.KUGOU_API_GUID);
+    changed = true;
+  }
+  if (!obj.KUGOU_API_DEV) {
+    obj.KUGOU_API_DEV = (process.env.KUGOU_API_DEV || crypto.randomBytes(5).toString('hex')).toUpperCase();
+    changed = true;
+  }
+  if (!obj.KUGOU_API_MAC) {
+    obj.KUGOU_API_MAC = (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase();
+    changed = true;
+  }
+  if (changed) saveKugouCookie(serializeCookieObject(obj));
+  return obj;
+}
 function normalizeQQUin(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
   return digits.replace(/^0+/, '') || digits;
@@ -1737,6 +1858,13 @@ const QQ_HEADERS = {
   Referer: 'https://y.qq.com/',
   'User-Agent': UA,
 };
+const KUGOU_LOGIN_BASE_URL = 'https://login-user.kugou.com';
+const KUGOU_QR_PAGE_URL = 'https://h5.kugou.com/apps/loginQRCode/html/index.html';
+const KUGOU_SOURCE_APPID = 2919;
+const KUGOU_QR_APPID = 1001;
+const KUGOU_WEB_QR_APPID = 1014;
+const KUGOU_LITE_APPID = 3116;
+const KUGOU_LITE_CLIENTVER = 11440;
 
 function requestText(targetUrl, opts, body) {
   opts = opts || {};
@@ -1777,6 +1905,161 @@ async function requestJson(targetUrl, opts, body) {
     err.cause = e;
     throw err;
   }
+}
+
+function md5Hex(input) {
+  return crypto.createHash('md5').update(String(input)).digest('hex');
+}
+
+function kugouWebSignature(params) {
+  const salt = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
+  const paramsString = Object.keys(params || {})
+    .map(key => `${key}=${params[key]}`)
+    .sort()
+    .join('');
+  return md5Hex(`${salt}${paramsString}${salt}`);
+}
+
+function buildKugouLoginUrl(pathname, params) {
+  const signed = { ...(params || {}) };
+  if (!signed.signature) signed.signature = kugouWebSignature(signed);
+  const u = new URL(pathname, KUGOU_LOGIN_BASE_URL);
+  Object.keys(signed).forEach(key => {
+    if (signed[key] !== undefined && signed[key] !== null) u.searchParams.set(key, String(signed[key]));
+  });
+  return u.toString();
+}
+
+function kugouDefaultParams(params) {
+  const cookieObj = ensureKugouDeviceCookie();
+  const token = kugouCookieToken(cookieObj);
+  const userid = kugouCookieUserId(cookieObj);
+  const out = {
+    dfid: cookieObj.dfid || cookieObj.DFID || '-',
+    mid: cookieObj.KUGOU_API_MID || cookieObj.mid || cookieObj.MID,
+    uuid: cookieObj.uuid || '-',
+    appid: KUGOU_LITE_APPID,
+    clientver: KUGOU_LITE_CLIENTVER,
+    clienttime: Math.floor(Date.now() / 1000),
+  };
+  if (token) out.token = token;
+  if (userid) out.userid = userid;
+  return { ...out, ...(params || {}) };
+}
+
+async function kugouLoginRequest(pathname, params) {
+  const requestParams = kugouDefaultParams(params);
+  const text = await requestText(buildKugouLoginUrl(pathname, requestParams), {
+    headers: {
+      dfid: requestParams.dfid,
+      clienttime: requestParams.clienttime,
+      mid: requestParams.mid,
+      'kg-rc': '1',
+      'kg-thash': '5d816a0',
+      'kg-rec': '1',
+      'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+      Referer: KUGOU_QR_PAGE_URL,
+      'User-Agent': UA,
+    },
+  });
+  return parseJSONText(text);
+}
+
+function kugouQrLoginUrl(key) {
+  return `${KUGOU_QR_PAGE_URL}?qrcode=${encodeURIComponent(key || '')}`;
+}
+
+function pickKugouQrKey(body) {
+  const data = (body && body.data) || {};
+  return String(
+    data.qrcode || data.key || data.qrCode || data.qrcode_key || data.qrcodeKey ||
+    body.qrcode || body.key || ''
+  ).trim();
+}
+
+async function handleKugouQrKey(type) {
+  const body = await kugouLoginRequest('/v2/qrcode', {
+    appid: type === 'web' ? KUGOU_WEB_QR_APPID : KUGOU_QR_APPID,
+    type: 1,
+    plat: 4,
+    qrcode_txt: `${KUGOU_QR_PAGE_URL}?appid=${KUGOU_LITE_APPID}&`,
+    srcappid: KUGOU_SOURCE_APPID,
+  });
+  const key = pickKugouQrKey(body);
+  const sourceData = (body && body.data) || {};
+  if (!key) throw new Error('KUGOU_QR_KEY_EMPTY');
+  return {
+    provider: 'kugou',
+    platform: 'lite',
+    status: 1,
+    code: Number(body && (body.code || body.status)) || 200,
+    data: {
+      key,
+      qrcode: key,
+      qrcode_img: sourceData.qrcode_img || '',
+      qrcode_url: kugouQrLoginUrl(key),
+    },
+  };
+}
+
+function handleKugouQrCreate(key) {
+  key = String(key || '').trim();
+  if (!key) throw new Error('MISSING_KUGOU_QR_KEY');
+  const qrcodeUrl = kugouQrLoginUrl(key);
+  return {
+    provider: 'kugou',
+    platform: 'lite',
+    status: 1,
+    data: {
+      key,
+      qrcode: key,
+      url: qrcodeUrl,
+      qrcode_url: qrcodeUrl,
+    },
+  };
+}
+
+async function handleKugouQrCheck(key) {
+  key = String(key || '').trim();
+  if (!key) throw new Error('MISSING_KUGOU_QR_KEY');
+  const body = await kugouLoginRequest('/v2/get_userinfo_qrcode', {
+    plat: 4,
+    appid: KUGOU_LITE_APPID,
+    srcappid: KUGOU_SOURCE_APPID,
+    qrcode: key,
+  });
+  const data = (body && body.data) || {};
+  const qrStatus = Number(data.status ?? body.status ?? 0) || 0;
+  let saved = false;
+  if (qrStatus === 4 && data.token && data.userid) {
+    const nextCookie = {
+      ...kugouCookieObject(),
+      token: data.token,
+      userid: data.userid,
+    };
+    if (data.nickname) nextCookie.nickname = data.nickname;
+    if (data.pic || data.avatar) nextCookie.avatar = data.pic || data.avatar;
+    saveKugouCookie(serializeCookieObject(nextCookie));
+    saved = true;
+  }
+  const info = getKugouLoginInfo();
+  return {
+    provider: 'kugou',
+    platform: 'lite',
+    status: qrStatus,
+    code: Number(body && (body.code || body.status)) || 200,
+    loggedIn: info.loggedIn,
+    saved,
+    data: {
+      status: qrStatus,
+      loggedIn: info.loggedIn,
+      userId: info.userId,
+      nickname: info.nickname,
+      avatar: info.avatar,
+      tokenReady: info.tokenReady,
+      deviceReady: info.deviceReady,
+    },
+  };
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -3499,6 +3782,77 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/qq/logout') {
     saveQQCookie('');
     sendJSON(res, { provider: 'qq', ok: true, loggedIn: false });
+    return;
+  }
+
+  if (pn === '/api/kugou/login/status') {
+    try {
+      sendJSON(res, getKugouLoginInfo());
+    } catch (err) {
+      console.error('[KugouLoginStatus]', err);
+      sendJSON(res, { provider: 'kugou', platform: 'lite', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/qr/key') {
+    try {
+      sendJSON(res, await handleKugouQrKey(url.searchParams.get('type') || ''));
+    } catch (err) {
+      console.error('[KugouQrKey]', err);
+      sendJSON(res, { provider: 'kugou', platform: 'lite', status: 0, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/qr/create') {
+    try {
+      sendJSON(res, handleKugouQrCreate(url.searchParams.get('key') || url.searchParams.get('qrcode') || ''));
+    } catch (err) {
+      console.error('[KugouQrCreate]', err);
+      sendJSON(res, { provider: 'kugou', platform: 'lite', status: 0, error: err.message }, 400);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/qr/check') {
+    try {
+      sendJSON(res, await handleKugouQrCheck(url.searchParams.get('key') || url.searchParams.get('qrcode') || ''));
+    } catch (err) {
+      console.error('[KugouQrCheck]', err);
+      sendJSON(res, { provider: 'kugou', platform: 'lite', status: 0, loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/cookie') {
+    try {
+      const body = await readRequestBody(req);
+      const raw = body.cookie || body.data || body.text || body;
+      const normalized = normalizeKugouCookieInput(normalizeCookieHeader(raw) || rawCookieFallback(raw));
+      const obj = parseCookieString(normalized);
+      if (!kugouCookieUserId(obj) || !kugouCookieToken(obj)) {
+        sendJSON(res, {
+          provider: 'kugou',
+          platform: 'lite',
+          loggedIn: false,
+          error: 'INVALID_KUGOU_COOKIE',
+          message: '酷狗概念版 cookie 缺少 userid 或 token',
+        }, 400);
+        return;
+      }
+      saveKugouCookie(normalized);
+      sendJSON(res, { ...getKugouLoginInfo(), saved: true });
+    } catch (err) {
+      console.error('[KugouLoginCookie]', err);
+      sendJSON(res, { provider: 'kugou', platform: 'lite', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/logout') {
+    saveKugouCookie('');
+    sendJSON(res, { provider: 'kugou', platform: 'lite', ok: true, loggedIn: false });
     return;
   }
 
