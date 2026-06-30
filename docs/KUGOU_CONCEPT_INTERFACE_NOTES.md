@@ -13,6 +13,13 @@ Implemented in `server.js`:
 - `POST /api/kugou/login/cookie`
 - `GET /api/kugou/logout`
 
+Implemented in `public/index.html`:
+
+- Login modal tab for KuGou Concept.
+- QR image loading through `/api/kugou/login/qr/key`.
+- QR status polling through `/api/kugou/login/qr/check`.
+- Account modal display and logout for KuGou Concept.
+
 The QR check route saves `userid` and `token` into the local KuGou cookie file after status `4`, but does not return the token to the frontend response.
 
 ## Reference Sources
