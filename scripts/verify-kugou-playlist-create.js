@@ -19,4 +19,13 @@ if (missing.length) {
   process.exit(1);
 }
 
+const createSection = serverSource.slice(
+  serverSource.indexOf('async function handleKugouPlaylistCreate'),
+  serverSource.indexOf('async function handleKugouPlaylistAddSong')
+);
+if (createSection.includes("headers: { 'x-router': 'cloudlist.service.kugou.com' }")) {
+  console.error('KuGou playlist create should call add_list without x-router header.');
+  process.exit(1);
+}
+
 console.log('KuGou playlist create markers are present.');

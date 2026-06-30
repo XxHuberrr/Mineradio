@@ -23,4 +23,13 @@ if (missing.length) {
   process.exit(1);
 }
 
+const addSongSection = serverSource.slice(
+  serverSource.indexOf('async function handleKugouPlaylistAddSong'),
+  serverSource.indexOf('function kugouPlaylistDeleteSucceeded')
+);
+if (addSongSection.includes("headers: { 'x-router': 'cloudlist.service.kugou.com' }")) {
+  console.error('KuGou playlist add-song should call add_song without x-router header.');
+  process.exit(1);
+}
+
 console.log('KuGou collect/lyric markers are present.');
