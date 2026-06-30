@@ -1989,6 +1989,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 <!-- 顶部右侧 (只保留用户) -->
 <div id="top-right">
   <button id="user-capsule-hide-btn" class="user-capsule-hide-btn" type="button" onclick="toggleUserCapsuleAutoHide(event)" title="自动隐藏账号胶囊">‹</button>
+  <button id="lan-sync-top-btn" class="icon-btn" onclick="toggleLanSyncModal()" title="局域网同步" aria-label="局域网同步"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 2L5 6l4 4"/><path d="M5 6h14a2 2 0 0 1 2 2v1"/><path d="M15 22l4-4-4-4"/><path d="M19 18H5a2 2 0 0 1-2-2v-1"/></svg></button>
   <button id="home-btn" class="icon-btn" onclick="goHome()" title="回到 Home" aria-label="回到 Home">
     <svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8"/><path d="M5 10v10h14V10"/><path d="M9.5 20v-5h5v5"/></svg>
   </button>
@@ -2449,8 +2450,50 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     <button id="controls-hide-btn" class="ctrl-btn active" onclick="toggleControlsAutoHide()" title="控制条自动隐藏"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 8h14"/><path d="M8 12h8"/><path d="M10 16h4"/></svg></button>
     <button id="immersive-btn" class="ctrl-btn" onclick="toggleImmersiveMode()" title="全沉浸式" aria-label="全沉浸式" aria-pressed="false"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M15 4h4a1 1 0 0 1 1 1v4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><path d="M9 20H5a1 1 0 0 1-1-1v-4"/><circle cx="12" cy="12" r="2.2"/></svg></button>
     <button class="ctrl-btn fullscreen-toggle-btn" onclick="toggleFullscreen()" title="全屏 (F)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7V3h4"/><path d="M21 7V3h-4"/><path d="M3 17v4h4"/><path d="M21 17v4h-4"/></svg></button>
+    <button id="lan-sync-btn" class="ctrl-btn" onclick="toggleLanSyncModal()" title="局域网同步"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 2L5 6l4 4"/><path d="M5 6h14a2 2 0 0 1 2 2v1"/><path d="M15 22l4-4-4-4"/><path d="M19 18H5a2 2 0 0 1-2-2v-1"/></svg></button>
     <div id="time-display">0:00 / 0:00</div>
     </div>
+  </div>
+</div>
+
+<!-- 局域网同步面板 -->
+<div id="lan-sync-modal" class="modal-mask" onclick="if(event.target===this)closeLanSyncModal()">
+  <div class="modal lan-sync-modal-inner">
+    <h2>局域网同步</h2>
+    <div class="lan-sync-desc">多端实时同步播放 · 桌面客户端 &amp; 浏览器均可</div>
+    <div id="lan-sync-status" class="lan-sync-status-bar">未连接</div>
+    <div id="lan-sync-disconnected">
+      <button class="modal-btn primary lan-sync-create-btn" onclick="lanSyncCreateRoom()">创建房间（作为主控）</button>
+      <div class="lan-sync-discover-wrap">
+        <div class="lan-sync-discover-header">
+          <span>局域网房间</span>
+          <span id="lan-sync-scan-status" class="lan-sync-scan-tag">扫描中...</span>
+        </div>
+        <div id="lan-sync-room-list" class="lan-sync-room-list">
+          <div class="lan-sync-room-empty">扫描中...</div>
+        </div>
+      </div>
+      <div class="lan-sync-divider"><span>手动加入</span></div>
+      <div class="lan-sync-join-form">
+        <input id="lan-sync-host-input" type="text" placeholder="IP:端口  192.168.1.5:3000" class="lan-sync-input" spellcheck="false">
+        <div class="lan-sync-join-row">
+          <input id="lan-sync-room-input" type="text" placeholder="房间号" maxlength="4" class="lan-sync-input lan-sync-room-code" spellcheck="false">
+          <button class="modal-btn primary" onclick="lanSyncJoinRoom()">加入</button>
+        </div>
+      </div>
+    </div>
+    <div id="lan-sync-connected" style="display:none">
+      <div class="lan-sync-room-card">
+        <div class="lan-sync-room-card-top">
+          <span id="lan-sync-role-badge" class="lan-sync-badge"></span>
+          <span class="lan-sync-room-title">房间 <span id="lan-sync-room-id-display"></span></span>
+        </div>
+        <div id="lan-sync-peer-count" class="lan-sync-peers">1 台设备</div>
+        <div id="lan-sync-ip-display" class="lan-sync-ip"></div>
+      </div>
+      <div class="btn-row"><button class="modal-btn lan-sync-disconnect-btn" onclick="lanSyncDisconnect()">断开连接</button></div>
+    </div>
+    <div class="btn-row"><button class="modal-btn" onclick="closeLanSyncModal()">关闭</button></div>
   </div>
 </div>
 
@@ -2692,6 +2735,19 @@ var lastStrongDrop = 0;           // 用于 burst 预设的强 drop 时刻
 var lyricsLines = [], lyricsVisible = false, lyricsHasNativeKaraoke = false, lyricsTimingSource = 'none';
 var playlist = [], playQueue = [], currentIdx = -1, playing = false, playToggleBusy = false;
 var searchMode = 'song', podcastResults = [], podcastPrograms = [], podcastCurrentRadio = null;
+var lanSync = {
+  ws: null, role: null, roomId: null, peerCount: 0, active: false, suppressEvents: false,
+  heartbeatTimer: null, hostOrigin: '',
+  // NTP-style clock sync
+  clockOffset: 0,       // host_time - local_time (ms)
+  clockSamples: [],     // recent RTT/offset samples
+  clockSyncTimer: null,
+  pingId: 0,
+  pendingPings: {},     // id -> { sentAt }
+  // playbackRate smooth sync
+  rateAdjustTimer: null,
+  rateTarget: 1.0
+};
 var loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
 var qqLoginStatus = { provider: 'qq', loggedIn: false, preview: false, nickname: 'QQ 音乐', userId: '', avatar: '', vipType: 0 };
 var qqLoginAutoRefreshTimer = null;
@@ -18508,7 +18564,7 @@ async function playQueueAt(idx, opts) {
     bindPlaybackProgressEvents(audio);
     applyVolumeToAudio();
     var proxyAudioUrl = '/api/audio?url=' + encodeURIComponent(data.url);
-    audio.src = proxyAudioUrl;
+    audio.src = lanSyncRewriteAudioUrl(proxyAudioUrl);
     updatePlaybackProgressUi();
     audio.onended = function(){
       if (token !== trackSwitchToken) return;
@@ -18607,6 +18663,7 @@ async function playQueueAt(idx, opts) {
     safeRenderQueuePanel('play-queue-at');
     scheduleShelfRebuild('play-queue-at', true);
     safePlaybackStep('shelf-preview-suppress-end', suppressShelfPreviewForPlaybackSwitch);
+    lanSyncBroadcast('sync-track', { currentIdx: idx, currentTime: 0, queue: lanSyncGetCurrentState().queue, songId: song && song.id, ts: Date.now() });
   } catch (err) {
     console.error('Play failed:', { phase: playPhase, error: err }, err);
     hideLoading();
@@ -18676,6 +18733,7 @@ async function togglePlay() {
     if (!audio) return;
     if (audio.paused || audio.ended) {
       await attemptAudioPlay({ manual: true });
+      lanSyncBroadcast('sync-play', { currentTime: audio ? audio.currentTime : 0, ts: Date.now() });
     } else {
       await fadeOutAndPauseAudio();
       playing = false;
@@ -18685,6 +18743,7 @@ async function togglePlay() {
       forcePlaybackControlsInteractive();
       safePlaybackStep('sync-pause-state', function(){ syncPlaybackStateFromAudioEvent('manual-pause'); });
       safePlaybackStep('pause-controls-hide', function(){ scheduleControlsHide(520); });
+      lanSyncBroadcast('sync-pause', { currentTime: audio ? audio.currentTime : 0, ts: Date.now() });
     }
   } catch (err) {
     console.warn('[TogglePlay]', err);
@@ -19953,6 +20012,7 @@ function seekFromProgressPointer(e, emitParticles) {
   setProgressVisual(ratio * 100);
   syncBeatMapPlaybackCursor(audio.currentTime);
   if (emitParticles) emitProgressDragParticles(e.clientX, rect.top + rect.height / 2);
+  lanSyncBroadcast('sync-seek', { currentTime: audio.currentTime, ts: Date.now() });
 }
 var progressBar = document.getElementById('progress-bar');
 progressBar.addEventListener('pointerdown', function(e){
@@ -26874,6 +26934,566 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// ====================================================================
+//  局域网多端同步
+// ====================================================================
+function lanSyncSend(msg) {
+  if (!lanSync.ws || lanSync.ws.readyState !== 1) return;
+  lanSync.ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+}
+
+function lanSyncBroadcast(type, data) {
+  if (!lanSync.active || lanSync.role !== 'host' || lanSync.suppressEvents) return;
+  lanSyncSend({ type: type, data: data });
+}
+
+function lanSyncGetCurrentState() {
+  var song = (playQueue && playQueue[currentIdx]) || null;
+  return {
+    currentIdx: currentIdx,
+    playing: playing,
+    currentTime: (audio && isFinite(audio.currentTime)) ? audio.currentTime : 0,
+    duration: (audio && isFinite(audio.duration)) ? audio.duration : 0,
+    playMode: playMode,
+    song: song ? { id: song.id, name: song.name, artist: song.artist, cover: song.cover, duration: song.duration, provider: song.provider, type: song.type } : null,
+    queue: playQueue.map(function(s) { return { id: s.id, name: s.name, artist: s.artist, cover: s.cover, duration: s.duration, provider: s.provider, type: s.type, localUrl: s.localUrl }; }),
+    hostOrigin: location.origin
+  };
+}
+
+function lanSyncBroadcastFullState() {
+  if (lanSync.role !== 'host') return;
+  var state = lanSyncGetCurrentState();
+  state.ts = Date.now();
+  lanSyncSend({ type: 'sync-state-update', data: state });
+  lanSyncSend({ type: 'sync-full-state', data: state });
+}
+
+function lanSyncStartHeartbeat() {
+  lanSyncStopHeartbeat();
+  lanSync.heartbeatTimer = setInterval(function() {
+    if (!lanSync.active || lanSync.role !== 'host') { lanSyncStopHeartbeat(); return; }
+    lanSyncSend({ type: 'sync-heartbeat', data: {
+      currentTime: (audio && isFinite(audio.currentTime)) ? audio.currentTime : 0,
+      playing: playing,
+      currentIdx: currentIdx,
+      songId: (playQueue[currentIdx] && playQueue[currentIdx].id) || null,
+      ts: Date.now()
+    }});
+  }, 200);
+}
+
+function lanSyncStopHeartbeat() {
+  if (lanSync.heartbeatTimer) { clearInterval(lanSync.heartbeatTimer); lanSync.heartbeatTimer = null; }
+}
+
+// === NTP-style clock synchronization ===
+function lanSyncStartClockSync() {
+  lanSyncStopClockSync();
+  lanSync.clockSamples = [];
+  lanSync.clockOffset = 0;
+  lanSync.pingId = 0;
+  lanSync.pendingPings = {};
+  lanSyncSendPing();
+  lanSync.clockSyncTimer = setInterval(lanSyncSendPing, 2000);
+}
+
+function lanSyncStopClockSync() {
+  if (lanSync.clockSyncTimer) { clearInterval(lanSync.clockSyncTimer); lanSync.clockSyncTimer = null; }
+  lanSync.pendingPings = {};
+}
+
+function lanSyncSendPing() {
+  if (!lanSync.active || lanSync.role !== 'client') return;
+  var id = ++lanSync.pingId;
+  lanSync.pendingPings[id] = { sentAt: Date.now() };
+  lanSyncSend({ type: 'sync-ping', data: { id: id, t1: Date.now() } });
+  // clean up old pings (>5s)
+  var now = Date.now();
+  for (var k in lanSync.pendingPings) {
+    if (now - lanSync.pendingPings[k].sentAt > 5000) delete lanSync.pendingPings[k];
+  }
+}
+
+function lanSyncHandlePong(data) {
+  if (!data || !data.id) return;
+  var ping = lanSync.pendingPings[data.id];
+  if (!ping) return;
+  delete lanSync.pendingPings[data.id];
+  var t1 = ping.sentAt;       // client send time
+  var t2 = data.t2;           // host receive time
+  var t3 = data.t3;           // host send time
+  var t4 = Date.now();        // client receive time
+  var rtt = (t4 - t1) - (t3 - t2);
+  var offset = ((t2 - t1) + (t3 - t4)) / 2;  // host_clock - client_clock
+  if (rtt < 0 || rtt > 2000) return; // discard bad samples
+  lanSync.clockSamples.push({ rtt: rtt, offset: offset });
+  if (lanSync.clockSamples.length > 8) lanSync.clockSamples.shift();
+  // use median offset from lowest-RTT samples for best accuracy
+  var sorted = lanSync.clockSamples.slice().sort(function(a, b) { return a.rtt - b.rtt; });
+  var best = sorted.slice(0, Math.max(3, Math.ceil(sorted.length / 2)));
+  var sum = 0;
+  for (var i = 0; i < best.length; i++) sum += best[i].offset;
+  lanSync.clockOffset = sum / best.length;
+}
+
+// Host handles incoming ping and replies with pong
+function lanSyncHandlePing(data) {
+  if (!data || !data.id) return;
+  lanSyncSend({ type: 'sync-pong', data: { id: data.id, t2: Date.now(), t3: Date.now() } });
+}
+
+// Convert host timestamp to local time using clock offset
+function lanSyncHostTimeToLocal(hostTs) {
+  return hostTs - lanSync.clockOffset;
+}
+
+// === PlaybackRate smooth sync ===
+function lanSyncStartRateAdjust() {
+  lanSyncStopRateAdjust();
+  lanSync.rateTarget = 1.0;
+  lanSync.rateAdjustTimer = setInterval(function() {
+    if (!audio || !lanSync.active || lanSync.role !== 'client') {
+      lanSyncStopRateAdjust();
+      return;
+    }
+    if (Math.abs(audio.playbackRate - lanSync.rateTarget) > 0.001) {
+      audio.playbackRate = lanSync.rateTarget;
+    }
+  }, 100);
+}
+
+function lanSyncStopRateAdjust() {
+  if (lanSync.rateAdjustTimer) { clearInterval(lanSync.rateAdjustTimer); lanSync.rateAdjustTimer = null; }
+  if (audio && audio.playbackRate !== 1.0) audio.playbackRate = 1.0;
+  lanSync.rateTarget = 1.0;
+}
+
+function lanSyncUpdateUi() {
+  var btn = document.getElementById('lan-sync-btn');
+  var topBtn = document.getElementById('lan-sync-top-btn');
+  var statusEl = document.getElementById('lan-sync-status');
+  var disconnectedEl = document.getElementById('lan-sync-disconnected');
+  var connectedEl = document.getElementById('lan-sync-connected');
+
+  [btn, topBtn].forEach(function(b) {
+    if (!b) return;
+    b.classList.toggle('lan-sync-host', lanSync.role === 'host');
+    b.classList.toggle('lan-sync-client', lanSync.role === 'client');
+    b.classList.toggle('lan-sync-active', lanSync.active);
+  });
+  if (!statusEl) return;
+
+  if (lanSync.active) {
+    disconnectedEl.style.display = 'none';
+    connectedEl.style.display = '';
+    var roleBadge = document.getElementById('lan-sync-role-badge');
+    if (lanSync.role === 'host') {
+      roleBadge.textContent = '主控';
+      roleBadge.style.background = 'rgba(244,210,138,.14)';
+      roleBadge.style.color = '#f4d28a';
+      statusEl.innerHTML = '<span style="color:#f4d28a">&#9679;</span> 已创建房间 · 等待其他设备加入';
+    } else {
+      roleBadge.textContent = '从控';
+      roleBadge.style.background = 'rgba(244,210,138,.08)';
+      roleBadge.style.color = 'rgba(244,210,138,.7)';
+      statusEl.innerHTML = '<span style="color:#f4d28a">&#9679;</span> 已连接 · 同步播放中';
+    }
+    document.getElementById('lan-sync-room-id-display').textContent = lanSync.roomId || '—';
+    document.getElementById('lan-sync-peer-count').textContent = (lanSync.peerCount || 1) + ' 台设备';
+  } else {
+    disconnectedEl.style.display = '';
+    connectedEl.style.display = 'none';
+    statusEl.textContent = '未连接';
+  }
+}
+
+function toggleLanSyncModal() {
+  var mask = document.getElementById('lan-sync-modal');
+  if (mask.classList.contains('show')) closeLanSyncModal();
+  else openLanSyncModal();
+}
+
+function openLanSyncModal() {
+  lanSyncUpdateUi();
+  if (!lanSync.active) {
+    fetch('/api/sync/info').then(function(r){ return r.json(); }).then(function(info){
+      if (info.ok && info.ips && info.ips.length) {
+        var hostInput = document.getElementById('lan-sync-host-input');
+        if (hostInput && !hostInput.value) hostInput.placeholder = info.ips[0] + ':' + info.port;
+      }
+    }).catch(function(){});
+    lanSyncStartDiscovery();
+  }
+  openGsapModal(document.getElementById('lan-sync-modal'));
+}
+
+function closeLanSyncModal() {
+  lanSyncStopDiscovery();
+  closeGsapModal(document.getElementById('lan-sync-modal'));
+}
+
+var _lanSyncDiscoverTimer = null;
+function lanSyncStartDiscovery() {
+  lanSyncStopDiscovery();
+  lanSyncDoDiscover();
+  _lanSyncDiscoverTimer = setInterval(lanSyncDoDiscover, 3000);
+}
+function lanSyncStopDiscovery() {
+  if (_lanSyncDiscoverTimer) { clearInterval(_lanSyncDiscoverTimer); _lanSyncDiscoverTimer = null; }
+}
+function lanSyncDoDiscover() {
+  fetch('/api/sync/discover').then(function(r){ return r.json(); }).then(function(data){
+    if (!data.ok) return;
+    var listEl = document.getElementById('lan-sync-room-list');
+    var statusEl = document.getElementById('lan-sync-scan-status');
+    if (!listEl) return;
+    var rooms = data.rooms || [];
+    if (rooms.length === 0) {
+      listEl.innerHTML = '<div class="lan-sync-room-empty">未发现房间 · 持续扫描中</div>';
+      if (statusEl) statusEl.textContent = '扫描中...';
+      return;
+    }
+    if (statusEl) statusEl.textContent = '发现 ' + rooms.length + ' 个';
+    var html = '';
+    rooms.forEach(function(room) {
+      var addr = room.host + ':' + room.port;
+      var label = room.local ? '本机' : addr;
+      html += '<div onclick="lanSyncJoinDiscovered(\'' + addr + '\',\'' + room.roomId + '\')" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s" onmouseenter="this.style.background=\'rgba(244,210,138,.06)\'" onmouseleave="this.style.background=\'transparent\'">'
+        + '<div>'
+        + '<div style="font-size:13px;color:rgba(255,255,255,.85);font-weight:600">房间 <span style="font-family:var(--font-mono);color:#f4d28a">' + room.roomId + '</span></div>'
+        + '<div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:2px">' + label + ' · ' + room.peers + ' 台设备</div>'
+        + '</div>'
+        + '<span style="font-size:12px;color:#f4d28a;font-weight:600">加入 →</span>'
+        + '</div>';
+    });
+    listEl.innerHTML = html;
+  }).catch(function(){
+    var statusEl = document.getElementById('lan-sync-scan-status');
+    if (statusEl) statusEl.textContent = '扫描失败';
+  });
+}
+function lanSyncJoinDiscovered(addr, roomId) {
+  var hostInput = document.getElementById('lan-sync-host-input');
+  var roomInput = document.getElementById('lan-sync-room-input');
+  if (hostInput) hostInput.value = addr;
+  if (roomInput) roomInput.value = roomId;
+  lanSyncJoinRoom();
+}
+
+function lanSyncCreateRoom() {
+  if (lanSync.active) return;
+  var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var wsUrl = protocol + '//' + location.host + '/sync?action=create';
+  var ws = new WebSocket(wsUrl);
+  ws.onopen = function() {
+    lanSync.ws = ws;
+    lanSync.role = 'host';
+    lanSync.active = true;
+  };
+  ws.onmessage = function(ev) {
+    var msg;
+    try { msg = JSON.parse(ev.data); } catch(_) { return; }
+    if (msg.type === 'room-created') {
+      lanSync.roomId = msg.data.roomId;
+      lanSync.peerCount = 1;
+      var ips = msg.data.ips || [];
+      var ipDisplay = document.getElementById('lan-sync-ip-display');
+      if (ipDisplay && ips.length) {
+        var connInfo = ips.map(function(ip){ return ip + ':' + msg.data.port; }).join(' 或 ');
+        ipDisplay.innerHTML = '连接地址: <b style="color:var(--champagne);user-select:all">' + connInfo + '</b><br>房间号: <b style="color:var(--champagne);user-select:all">' + msg.data.roomId + '</b>';
+      }
+      lanSyncUpdateUi();
+      showToast('房间已创建: ' + msg.data.roomId);
+      lanSyncStartHeartbeat();
+      setTimeout(lanSyncBroadcastFullState, 500);
+    } else if (msg.type === 'peer-count') {
+      lanSync.peerCount = msg.data.count || 1;
+      lanSyncUpdateUi();
+    } else if (msg.type === 'request-full-state') {
+      lanSyncBroadcastFullState();
+    } else if (msg.type === 'sync-ping') {
+      lanSyncHandlePing(msg.data);
+    }
+  };
+  ws.onclose = function() {
+    if (lanSync.active && lanSync.role === 'host') {
+      lanSync.active = false; lanSync.role = null; lanSync.roomId = null; lanSync.peerCount = 0;
+      lanSyncStopHeartbeat();
+      lanSyncUpdateUi();
+      showToast('同步房间已关闭');
+    }
+  };
+  ws.onerror = function() { showToast('同步连接失败'); };
+}
+
+function lanSyncJoinRoom() {
+  if (lanSync.active) return;
+  var hostInput = document.getElementById('lan-sync-host-input').value.trim();
+  var roomInput = document.getElementById('lan-sync-room-input').value.trim();
+  if (!roomInput || !/^\d{4}$/.test(roomInput)) { showToast('请输入4位房间号'); return; }
+
+  if (!hostInput) {
+    if (window.desktopWindow) { showToast('桌面端加入需输入主控设备的IP地址'); return; }
+    hostInput = location.host;
+  }
+  var wsHost = hostInput;
+  if (!/:\d+/.test(wsHost)) wsHost += ':' + (location.port || '3000');
+  var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var wsUrl = protocol + '//' + wsHost + '/sync?action=join&room=' + roomInput;
+  lanSync.hostOrigin = 'http://' + wsHost;
+
+  var ws = new WebSocket(wsUrl);
+  ws.onopen = function() {
+    lanSync.ws = ws;
+    lanSync.role = 'client';
+    lanSync.active = true;
+    lanSync.roomId = roomInput;
+    lanSyncStartClockSync();
+    lanSyncStartRateAdjust();
+  };
+  ws.onmessage = function(ev) {
+    var msg;
+    try { msg = JSON.parse(ev.data); } catch(_) { return; }
+    lanSyncHandleClientMessage(msg);
+  };
+  ws.onclose = function() {
+    if (lanSync.active) {
+      lanSync.active = false; lanSync.role = null; lanSync.roomId = null; lanSync.peerCount = 0;
+      lanSync.hostOrigin = '';
+      lanSyncStopClockSync();
+      lanSyncStopRateAdjust();
+      lanSyncUpdateUi();
+      showToast('同步连接已断开');
+    }
+  };
+  ws.onerror = function() { showToast('无法连接到主控设备，请检查IP和端口'); };
+}
+
+function lanSyncDisconnect() {
+  lanSyncStopHeartbeat();
+  lanSyncStopClockSync();
+  lanSyncStopRateAdjust();
+  if (lanSync.ws) { try { lanSync.ws.close(); } catch(_){} }
+  lanSync.ws = null; lanSync.active = false; lanSync.role = null; lanSync.roomId = null; lanSync.peerCount = 0;
+  lanSync.hostOrigin = '';
+  lanSyncUpdateUi();
+  showToast('已断开同步');
+}
+
+function lanSyncHandleClientMessage(msg) {
+  if (msg.type === 'room-joined') {
+    lanSyncUpdateUi();
+    showToast('已加入房间 ' + (msg.data && msg.data.roomId || ''));
+    if (msg.data && msg.data.state) lanSyncApplyFullState(msg.data.state);
+  } else if (msg.type === 'room-closed') {
+    lanSync.active = false; lanSync.role = null; lanSync.roomId = null; lanSync.peerCount = 0;
+    lanSync.hostOrigin = '';
+    lanSyncUpdateUi();
+    showToast('主控已关闭房间');
+  } else if (msg.type === 'room-error') {
+    showToast(msg.data && msg.data.message || '同步错误');
+  } else if (msg.type === 'peer-count') {
+    lanSync.peerCount = msg.data.count || 1;
+    lanSyncUpdateUi();
+  } else if (msg.type === 'sync-full-state') {
+    lanSyncApplyFullState(msg.data);
+  } else if (msg.type === 'sync-track') {
+    lanSyncApplyTrack(msg.data);
+  } else if (msg.type === 'sync-play') {
+    lanSyncApplyPlay();
+  } else if (msg.type === 'sync-pause') {
+    lanSyncApplyPause();
+  } else if (msg.type === 'sync-seek') {
+    lanSyncApplySeek(msg.data);
+  } else if (msg.type === 'sync-heartbeat') {
+    lanSyncApplyHeartbeat(msg.data);
+  } else if (msg.type === 'sync-pong') {
+    lanSyncHandlePong(msg.data);
+  }
+}
+
+function lanSyncRewriteAudioUrl(url) {
+  if (!lanSync.hostOrigin || !url) return url;
+  if (/^\/api\//.test(url)) return lanSync.hostOrigin + url;
+  return url;
+}
+
+function lanSyncApplyFullState(state) {
+  if (!state) return;
+  var resumeTime = state.currentTime || 0;
+  if (state.ts && state.playing) {
+    var hostNow = Date.now() + lanSync.clockOffset;
+    var comp = (hostNow - state.ts) / 1000;
+    if (comp > 0 && comp < 10) resumeTime += comp;
+  }
+  lanSync.suppressEvents = true;
+  try {
+    if (state.queue && state.queue.length) {
+      playQueue = state.queue.map(function(s) {
+        s.fromSync = true;
+        return s;
+      });
+      currentIdx = state.currentIdx >= 0 ? state.currentIdx : 0;
+      safeRenderQueuePanel('lan-sync-full');
+      safeShelfRebuild('lan-sync-full');
+    }
+    if (state.song && state.currentIdx >= 0) {
+      var song = playQueue[state.currentIdx];
+      if (song) {
+        var joinTs = Date.now();
+        playQueueAt(state.currentIdx, { resumeAt: resumeTime, manual: true }).then(function() {
+          var loadDelay = (Date.now() - joinTs) / 1000;
+          if (state.playing && audio && loadDelay > 0.2) {
+            audio.currentTime = resumeTime + loadDelay;
+          }
+          lanSync.suppressEvents = false;
+          if (!state.playing && audio && !audio.paused) {
+            audio.pause(); playing = false; setPlayIcon(false);
+          }
+        }).catch(function() { lanSync.suppressEvents = false; });
+        return;
+      }
+    }
+  } catch(e) { console.warn('[LanSync] apply full state error:', e); }
+  lanSync.suppressEvents = false;
+}
+
+function lanSyncApplyTrack(data) {
+  if (!data) return;
+  lanSync.suppressEvents = true;
+  var idx = data.currentIdx;
+  if (idx >= 0 && idx < playQueue.length) {
+    playQueueAt(idx, { resumeAt: data.currentTime || 0, manual: true }).then(function() {
+      lanSync.suppressEvents = false;
+    }).catch(function() { lanSync.suppressEvents = false; });
+  } else if (data.queue && data.queue.length) {
+    playQueue = data.queue;
+    currentIdx = data.currentIdx || 0;
+    safeRenderQueuePanel('lan-sync-track');
+    safeShelfRebuild('lan-sync-track');
+    playQueueAt(currentIdx, { resumeAt: data.currentTime || 0, manual: true }).then(function() {
+      lanSync.suppressEvents = false;
+    }).catch(function() { lanSync.suppressEvents = false; });
+  } else {
+    lanSync.suppressEvents = false;
+  }
+}
+
+function lanSyncApplyPlay() {
+  lanSync.suppressEvents = true;
+  if (audio && audio.paused) {
+    audio.play().then(function(){ playing = true; setPlayIcon(true); lanSync.suppressEvents = false; }).catch(function(){ lanSync.suppressEvents = false; });
+  } else { lanSync.suppressEvents = false; }
+}
+
+function lanSyncApplyPause() {
+  lanSync.suppressEvents = true;
+  if (audio && !audio.paused) { audio.pause(); playing = false; setPlayIcon(false); }
+  lanSync.suppressEvents = false;
+}
+
+function lanSyncApplySeek(data) {
+  if (!data || !audio) return;
+  var t = data.currentTime || 0;
+  if (data.ts) { var hostNow = Date.now() + lanSync.clockOffset; var comp = (hostNow - data.ts) / 1000; if (comp > 0 && comp < 5) t += comp; }
+  lanSync.suppressEvents = true;
+  audio.currentTime = t;
+  syncBeatMapPlaybackCursor(t);
+  lanSync.suppressEvents = false;
+}
+
+function lanSyncApplyHeartbeat(data) {
+  if (!data || !audio || lanSync.role !== 'client') return;
+  if (data.songId && playQueue[currentIdx] && playQueue[currentIdx].id !== data.songId) return;
+  var localTime = isFinite(audio.currentTime) ? audio.currentTime : 0;
+  var remoteTime = data.currentTime || 0;
+  // use NTP clock offset for precise compensation
+  if (data.ts && data.playing) {
+    var hostNow = Date.now() + lanSync.clockOffset; // what host clock reads now
+    var elapsed = (hostNow - data.ts) / 1000;       // time since host sent this
+    if (elapsed > 0 && elapsed < 5) remoteTime += elapsed;
+  }
+  var drift = remoteTime - localTime; // positive = client behind, negative = client ahead
+  var absDrift = Math.abs(drift);
+
+  if (data.playing && !audio.paused) {
+    if (absDrift > 0.5) {
+      // large drift: hard seek (emergency correction)
+      lanSync.suppressEvents = true;
+      audio.currentTime = remoteTime;
+      lanSync.suppressEvents = false;
+      lanSync.rateTarget = 1.0;
+    } else if (absDrift > 0.03) {
+      // small drift: adjust playbackRate to smoothly converge
+      // stronger adjustment for bigger drift
+      var adjust = Math.min(absDrift * 0.15, 0.05); // max 5% speed change
+      lanSync.rateTarget = drift > 0 ? (1.0 + adjust) : (1.0 - adjust);
+    } else {
+      // in sync: reset to normal speed
+      lanSync.rateTarget = 1.0;
+    }
+  }
+
+  if (data.playing && audio.paused) { lanSyncApplyPlay(); }
+  else if (!data.playing && !audio.paused) { lanSyncApplyPause(); }
+}
+
+// CSS for sync UI
+(function(){
+  var style = document.createElement('style');
+  style.textContent = [
+    '#lan-sync-btn.lan-sync-active,#lan-sync-top-btn.lan-sync-active{color:var(--champagne,#f4d28a)}',
+    '#lan-sync-btn.lan-sync-host,#lan-sync-top-btn.lan-sync-host{animation:lan-sync-pulse 2s ease-in-out infinite}',
+    '#lan-sync-btn.lan-sync-client,#lan-sync-top-btn.lan-sync-client{color:rgba(244,210,138,.7)}',
+    '@keyframes lan-sync-pulse{0%,100%{opacity:1}50%{opacity:.55}}',
+    '.lan-sync-modal-inner{max-width:400px;width:92vw;text-align:left}',
+    '.lan-sync-modal-inner h2{text-align:center;margin-bottom:6px}',
+    '.lan-sync-desc{text-align:center;font-size:11.5px;color:rgba(255,255,255,.4);margin-bottom:18px;letter-spacing:.3px}',
+    '.lan-sync-status-bar{margin-bottom:16px;padding:9px 14px;border-radius:10px;background:rgba(255,255,255,.035);font-size:12.5px;color:rgba(255,255,255,.45);text-align:center;letter-spacing:.3px}',
+    '.lan-sync-create-btn{display:block;width:100%;padding:11px 0;font-size:13.5px;margin-bottom:18px}',
+    '.lan-sync-discover-wrap{margin-bottom:16px}',
+    '.lan-sync-discover-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px;color:rgba(255,255,255,.4)}',
+    '.lan-sync-scan-tag{font-size:10.5px;padding:2px 8px;border-radius:99px;background:rgba(244,210,138,.08);color:var(--champagne,#f4d28a)}',
+    '.lan-sync-room-list{min-height:40px;max-height:150px;overflow-y:auto;border-radius:10px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)}',
+    '.lan-sync-room-empty{padding:14px;text-align:center;font-size:12px;color:rgba(255,255,255,.3)}',
+    '.lan-sync-divider{position:relative;text-align:center;color:rgba(255,255,255,.3);font-size:11px;margin:16px 0 14px}',
+    '.lan-sync-divider span{position:relative;z-index:1;padding:0 12px;background:rgba(18,17,20,.96)}',
+    '.lan-sync-divider::before{content:"";position:absolute;top:50%;left:0;right:0;border-top:1px solid rgba(255,255,255,.08)}',
+    '.lan-sync-join-form{display:flex;flex-direction:column;gap:8px}',
+    '.lan-sync-input{padding:9px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:rgba(255,255,255,.9);font-size:12.5px;font-family:var(--font-mono);outline:none;transition:border-color .2s}',
+    '.lan-sync-input:focus{border-color:rgba(244,210,138,.4)}',
+    '.lan-sync-input::placeholder{color:rgba(255,255,255,.25)}',
+    '.lan-sync-room-code{width:100px;text-align:center;letter-spacing:2px;font-size:14px;font-weight:600}',
+    '.lan-sync-join-row{display:flex;gap:8px}',
+    '.lan-sync-join-row .modal-btn{flex:1;padding:9px 0}',
+    '.lan-sync-room-card{padding:16px;border-radius:12px;background:rgba(244,210,138,.05);border:1px solid rgba(244,210,138,.14);margin-bottom:14px}',
+    '.lan-sync-room-card-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}',
+    '.lan-sync-badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10.5px;font-weight:700;letter-spacing:.5px}',
+    '.lan-sync-room-title{font-size:14px;font-weight:600;color:rgba(255,255,255,.9)}',
+    '.lan-sync-room-title span{font-family:var(--font-mono);color:var(--champagne,#f4d28a)}',
+    '.lan-sync-peers{font-size:12px;color:rgba(255,255,255,.45)}',
+    '.lan-sync-ip{font-size:11px;color:rgba(255,255,255,.35);margin-top:6px;font-family:var(--font-mono);word-break:break-all}',
+    '.lan-sync-disconnect-btn{color:#ff6b7a;border-color:rgba(255,107,122,.25)}',
+    '.lan-sync-disconnect-btn:hover{background:rgba(255,107,122,.1);border-color:rgba(255,107,122,.4)}',
+    '.lan-sync-modal-inner .btn-row{margin-top:14px}',
+  ].join('');
+  document.head.appendChild(style);
+})();
+
+// Hide sync buttons if not running on local server (e.g. remote hosted version)
+(function(){
+  fetch('/api/sync/info').then(function(r){ return r.json(); }).then(function(d){
+    if (!d || !d.ok) throw 0;
+  }).catch(function(){
+    var btn = document.getElementById('lan-sync-btn');
+    var topBtn = document.getElementById('lan-sync-top-btn');
+    if (btn) btn.style.display = 'none';
+    if (topBtn) topBtn.style.display = 'none';
+  });
+})();
+
 </script>
 </body>
 </html>

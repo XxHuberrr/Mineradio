@@ -4182,6 +4182,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- 局域网同步 API ----------
+  if (pn === '/api/sync/info') {
+    const lanIps = getLanIpAddresses();
+    sendJSON(res, { ok: true, port: Number(PORT), ips: lanIps, host: lanIps[0] || '127.0.0.1' });
+    return;
+  }
+
+  if (pn === '/api/sync/discover') {
+    const results = [];
+    for (const [ip, entry] of discoveredRooms) {
+      if (Date.now() - entry.ts < 15000) results.push(entry);
+    }
+    syncRooms.forEach((room, roomId) => {
+      results.push({ host: getLanIpAddresses()[0] || '127.0.0.1', port: Number(PORT), roomId, peers: 1 + room.clients.size, local: true });
+    });
+    sendJSON(res, { ok: true, rooms: results });
+    return;
+  }
+
   // ---------- 静态资源 ----------
   if (pn === '/favicon.ico') {
     serveStatic(res, path.join(__dirname, 'build', 'icon.ico'));
@@ -4193,11 +4212,212 @@ const server = http.createServer(async (req, res) => {
   serveStatic(res, filePath);
 });
 
+// ====================================================================
+//  局域网多端同步 — WebSocket 房间服务器
+// ====================================================================
+const { WebSocketServer } = require('ws');
+const os = require('os');
+
+function getLanIpAddresses() {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) ips.push(iface.address);
+    }
+  }
+  return ips;
+}
+
+const syncRooms = new Map();
+
+function generateRoomId() {
+  for (let i = 0; i < 100; i++) {
+    const id = String(1000 + Math.floor(Math.random() * 9000));
+    if (!syncRooms.has(id)) return id;
+  }
+  return null;
+}
+
+function broadcastToRoom(roomId, message, excludeWs) {
+  const room = syncRooms.get(roomId);
+  if (!room) return;
+  const raw = typeof message === 'string' ? message : JSON.stringify(message);
+  room.clients.forEach(ws => {
+    if (ws !== excludeWs && ws.readyState === 1) ws.send(raw);
+  });
+  if (room.host !== excludeWs && room.host.readyState === 1) room.host.send(raw);
+}
+
+function broadcastPeerCount(roomId) {
+  const room = syncRooms.get(roomId);
+  if (!room) return;
+  const count = 1 + room.clients.size;
+  broadcastToRoom(roomId, { type: 'peer-count', data: { count, roomId } });
+}
+
+function destroyRoom(roomId, reason) {
+  const room = syncRooms.get(roomId);
+  if (!room) return;
+  const msg = JSON.stringify({ type: 'room-closed', data: { roomId, reason: reason || 'host-disconnected' } });
+  room.clients.forEach(ws => {
+    if (ws.readyState === 1) ws.send(msg);
+    try { ws.close(1000, reason || 'room-closed'); } catch (_) {}
+  });
+  syncRooms.delete(roomId);
+}
+
+const wss = new WebSocketServer({ noServer: true });
+
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://localhost');
+  const action = url.searchParams.get('action');
+  const roomId = url.searchParams.get('room');
+
+  if (action === 'create') {
+    const newRoomId = generateRoomId();
+    if (!newRoomId) {
+      ws.send(JSON.stringify({ type: 'room-error', data: { message: '房间数量已满' } }));
+      ws.close(1013, 'no-room-available');
+      return;
+    }
+    syncRooms.set(newRoomId, { host: ws, clients: new Set(), state: null, createdAt: Date.now() });
+    ws._syncRole = 'host';
+    ws._syncRoomId = newRoomId;
+    ws.send(JSON.stringify({ type: 'room-created', data: { roomId: newRoomId, ips: getLanIpAddresses(), port: Number(PORT) } }));
+
+    ws.on('message', raw => {
+      let msg;
+      try { msg = JSON.parse(String(raw)); } catch (_) { return; }
+      const room = syncRooms.get(newRoomId);
+      if (!room || room.host !== ws) return;
+      if (msg.type === 'sync-state-update') room.state = msg.data;
+      const forward = JSON.stringify(msg);
+      room.clients.forEach(client => {
+        if (client.readyState === 1) client.send(forward);
+      });
+    });
+
+    ws.on('close', () => destroyRoom(newRoomId, 'host-disconnected'));
+    ws.on('error', () => destroyRoom(newRoomId, 'host-error'));
+    return;
+  }
+
+  if (action === 'join') {
+    const room = syncRooms.get(roomId);
+    if (!room) {
+      ws.send(JSON.stringify({ type: 'room-error', data: { message: '房间不存在或已关闭', roomId } }));
+      ws.close(1008, 'room-not-found');
+      return;
+    }
+    room.clients.add(ws);
+    ws._syncRole = 'client';
+    ws._syncRoomId = roomId;
+    ws.send(JSON.stringify({ type: 'room-joined', data: { roomId, state: room.state } }));
+    broadcastPeerCount(roomId);
+
+    if (room.host.readyState === 1) {
+      room.host.send(JSON.stringify({ type: 'request-full-state', data: { roomId } }));
+    }
+
+    ws.on('message', raw => {
+      let msg;
+      try { msg = JSON.parse(String(raw)); } catch (_) { return; }
+      const r = syncRooms.get(roomId);
+      if (!r) return;
+      if (r.host.readyState === 1) r.host.send(JSON.stringify(msg));
+    });
+
+    ws.on('close', () => {
+      const r = syncRooms.get(roomId);
+      if (r) { r.clients.delete(ws); broadcastPeerCount(roomId); }
+    });
+    ws.on('error', () => {
+      const r = syncRooms.get(roomId);
+      if (r) { r.clients.delete(ws); broadcastPeerCount(roomId); }
+    });
+    return;
+  }
+
+  ws.send(JSON.stringify({ type: 'room-error', data: { message: '无效的同步操作' } }));
+  ws.close(1008, 'invalid-action');
+});
+
+server.on('upgrade', (req, socket, head) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/sync') {
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+  } else {
+    socket.destroy();
+  }
+});
+
 server.listen(PORT, HOST, () => {
+  const lanIps = getLanIpAddresses();
   console.log('======================================================');
   console.log(' 粒子音乐可视化 v2  →  http://localhost:' + PORT);
+  console.log(' 局域网同步: ws://' + (lanIps[0] || 'localhost') + ':' + PORT + '/sync');
   console.log(' 登录态: ' + (userCookie ? '已登录(cookie已加载)' : '未登录'));
   console.log('======================================================');
 });
+
+// ====================================================================
+//  局域网自动发现 — UDP 广播
+// ====================================================================
+const dgram = require('dgram');
+const DISCOVER_PORT = 41234;
+const DISCOVER_MAGIC = 'MINERADIO_SYNC_V1';
+const discoveredRooms = new Map();
+
+let udpSocket = null;
+try {
+  udpSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+
+  udpSocket.on('message', (msg, rinfo) => {
+    try {
+      const str = msg.toString();
+      if (!str.startsWith(DISCOVER_MAGIC + '|')) return;
+      const parts = str.split('|');
+      const senderPort = Number(parts[1]);
+      const roomId = parts[2];
+      const peers = Number(parts[3]) || 1;
+      const myIps = getLanIpAddresses();
+      if (myIps.includes(rinfo.address) && senderPort === Number(PORT)) return;
+      const key = rinfo.address + ':' + senderPort + ':' + roomId;
+      discoveredRooms.set(key, { host: rinfo.address, port: senderPort, roomId, peers, ts: Date.now() });
+    } catch (_) {}
+  });
+
+  udpSocket.on('error', (err) => {
+    console.log('[Discover] UDP error:', err.message);
+    try { udpSocket.close(); } catch (_) {}
+  });
+
+  udpSocket.bind(DISCOVER_PORT, () => {
+    try { udpSocket.setBroadcast(true); } catch (_) {}
+    console.log('[Discover] UDP 发现服务已启动，端口', DISCOVER_PORT);
+  });
+} catch (e) {
+  console.log('[Discover] UDP 初始化失败:', e.message);
+}
+
+setInterval(() => {
+  if (!udpSocket || syncRooms.size === 0) return;
+  const myIps = getLanIpAddresses();
+  syncRooms.forEach((room, roomId) => {
+    const peers = 1 + room.clients.size;
+    const payload = Buffer.from(DISCOVER_MAGIC + '|' + PORT + '|' + roomId + '|' + peers);
+    myIps.forEach(ip => {
+      const parts = ip.split('.');
+      parts[3] = '255';
+      const broadcast = parts.join('.');
+      try { udpSocket.send(payload, 0, payload.length, DISCOVER_PORT, broadcast); } catch (_) {}
+    });
+    try { udpSocket.send(payload, 0, payload.length, DISCOVER_PORT, '255.255.255.255'); } catch (_) {}
+  });
+  for (const [key, entry] of discoveredRooms) {
+    if (Date.now() - entry.ts > 15000) discoveredRooms.delete(key);
+  }
+}, 3000);
 
 module.exports = server;
