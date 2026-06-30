@@ -3498,7 +3498,7 @@ async function kwPostLogin(pathSeg, plain) {
     headers: { 'User-Agent': 'okhttp/3.10.0' },
   });
   const raw = String(text || '').trim();
-  const dec = kwDecrypt(kwB64decode(raw), KW_LOGIN_SX).toString('utf8').replace(/ +$/, '').replace(/ +$/, '');
+  const dec = kwDecrypt(kwB64decode(raw), KW_LOGIN_SX).toString('utf8').replace(/ +$/, '').replace(/\x00+$/, '');
   try { return JSON.parse(dec); }
   catch (e) {
     const m = {};
