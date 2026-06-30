@@ -1323,7 +1323,7 @@ async function createWindow() {
   const port = await findOpenPort(3000);
   mainServerPort = port;
 
-  process.env.HOST = '127.0.0.1';
+  process.env.HOST = '0.0.0.0';
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
