@@ -7,7 +7,7 @@
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
+    "start": "node desktop/start.js",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
