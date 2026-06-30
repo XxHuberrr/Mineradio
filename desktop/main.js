@@ -23,6 +23,7 @@ let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
 const registeredGlobalHotkeys = new Map();
+const registeredMediaPlaybackShortcuts = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
 const WINDOWED_SCALE = 3 / 4;
@@ -36,6 +37,20 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const MEDIA_PLAYBACK_SHORTCUTS = [
+  { accelerator: 'MediaPreviousTrack', action: 'prevTrack' },
+  { accelerator: 'MediaPlayPause', action: 'togglePlay' },
+  { accelerator: 'MediaNextTrack', action: 'nextTrack' },
+];
+const MEDIA_PLAYBACK_INPUT_ACTIONS = {
+  MediaPreviousTrack: 'prevTrack',
+  MediaTrackPrevious: 'prevTrack',
+  MediaPlayPause: 'togglePlay',
+  MediaPlay: 'togglePlay',
+  MediaPause: 'togglePlay',
+  MediaNextTrack: 'nextTrack',
+  MediaTrackNext: 'nextTrack',
+};
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -140,6 +155,30 @@ function unregisterMineradioGlobalHotkeys() {
   registeredGlobalHotkeys.clear();
 }
 
+function unregisterMineradioMediaPlaybackShortcuts() {
+  for (const accelerator of registeredMediaPlaybackShortcuts.keys()) {
+    try { globalShortcut.unregister(accelerator); } catch (e) {}
+  }
+  registeredMediaPlaybackShortcuts.clear();
+}
+
+function registerMineradioMediaPlaybackShortcuts() {
+  unregisterMineradioMediaPlaybackShortcuts();
+  for (const item of MEDIA_PLAYBACK_SHORTCUTS) {
+    let registered = false;
+    try {
+      registered = globalShortcut.register(item.accelerator, () => sendGlobalHotkeyAction(item.action));
+    } catch (error) {
+      registered = false;
+    }
+    if (registered) {
+      registeredMediaPlaybackShortcuts.set(item.accelerator, item.action);
+    } else {
+      console.warn(`Media playback shortcut unavailable: ${item.accelerator}`);
+    }
+  }
+}
+
 function configureMineradioGlobalHotkeys(bindings = []) {
   unregisterMineradioGlobalHotkeys();
   const results = [];
@@ -172,6 +211,19 @@ function configureMineradioGlobalHotkeys(bindings = []) {
     }
   }
   return { ok: true, results };
+}
+
+function mediaPlaybackActionFromInput(input) {
+  if (!input || input.type !== 'keyDown') return '';
+  return MEDIA_PLAYBACK_INPUT_ACTIONS[input.key] || MEDIA_PLAYBACK_INPUT_ACTIONS[input.code] || '';
+}
+
+function handleMediaPlaybackInput(event, input) {
+  const action = mediaPlaybackActionFromInput(input);
+  if (!action) return false;
+  event.preventDefault();
+  sendGlobalHotkeyAction(action);
+  return true;
 }
 
 function scheduleWindowStateSend(win, delay = 80) {
@@ -1377,6 +1429,7 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (handleMediaPlaybackInput(event, input)) return;
     if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && mainWindow.isFullScreen()) {
       event.preventDefault();
       exitFullscreenToWindow(mainWindow);
@@ -1447,6 +1500,7 @@ if (!gotSingleInstanceLock) {
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
+    registerMineradioMediaPlaybackShortcuts();
   });
 
   app.on('activate', () => {
@@ -1460,6 +1514,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     unregisterMineradioGlobalHotkeys();
+    unregisterMineradioMediaPlaybackShortcuts();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
   });
