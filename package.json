@@ -7,7 +7,14 @@
   "main": "desktop/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
+    "start": "node desktop/start.js",
+    "verify:ios": "node scripts/verify-ios-project.mjs",
+    "test:ios-compat": "node scripts/test-ios-compat.mjs",
+    "doctor:ios-signing": "node scripts/ios-signing-doctor.mjs",
+    "build:ios:sim": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project ios/MineradioIOS/MineradioIOS.xcodeproj -scheme MineradioIOS -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .codex-tmp/DerivedData CODE_SIGNING_ALLOWED=NO build",
+    "build:ios:device": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project ios/MineradioIOS/MineradioIOS.xcodeproj -scheme MineradioIOS -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath .codex-tmp/DerivedData-iPhoneOS CODE_SIGNING_ALLOWED=NO build",
+    "build:ios:phone": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project ios/MineradioIOS/MineradioIOS.xcodeproj -scheme MineradioIOS -configuration Debug -destination 'platform=iOS,id=C8CF6284-8E54-518D-963B-12A58C2604FE' -derivedDataPath .codex-tmp/DerivedData-iPhone -allowProvisioningUpdates DEVELOPMENT_TEAM=F92M2WMRFB build",
+    "install:ios:phone": "node scripts/install-ios-phone.mjs",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },

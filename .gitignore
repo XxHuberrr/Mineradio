@@ -27,12 +27,16 @@ backups/
 .env.*
 
 # Local development noise
+.codex-tmp/
+.idea/
 .DS_Store
 Thumbs.db
 desktop.ini
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+xcuserdata/
+*.xcuserstate
 
 # Historical local experiment files
 public/index.*.html

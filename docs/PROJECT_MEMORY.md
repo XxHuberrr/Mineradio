@@ -15,7 +15,9 @@
 - 可运行程序：`E:\桌面\播放器软件\Mineradio\Mineradio.exe`
 - 运行版主目录：`E:\桌面\播放器软件\Mineradio`
 - 真实代码/Git 仓库：`E:\桌面\播放器软件\Mineradio\resources\app`
-- GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
+- 原 Windows 版 GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
+- Apple 兼容维护仓库：`https://github.com/tao666618/Mineradio_apple.git`
+- 后续用户要求提交/推送时，默认提交到 `tao666618/Mineradio_apple.git`，不要误推到原 Windows 版仓库。
 - 统一备份目录：`E:\桌面\播放器软件\工作区备份`
 - 当前源码检查点：`v1.1.0`
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
@@ -175,6 +177,13 @@
 ```
 
 ## Memory Entries
+
+### 2026-06-30 - Apple 兼容仓库默认提交目标
+
+- 用户认可/要求保留：后续当用户要求提交/推送当前 Apple/iPhone 兼容代码时，默认目标仓库是 `https://github.com/tao666618/Mineradio_apple.git`。
+- 涉及文件：`AGENTS.md`、`docs/PROJECT_MEMORY.md`、`README.md`、本地 Git remote `apple`。
+- 关键参数/实现：本地远程名使用 `apple`；阶段性提交、发布或说明更新时同步维护 `README.md`，确保平台范围、运行方式、下载/发布入口和当前限制与代码一致。
+- 禁止回退或改坏的点：不要默认推送到原 `https://github.com/XxHuberrr/Mineradio.git`；不要只改代码不维护 README。
 
 ### 2026-06-25 - 安装器路径与卸载防误删 P0 规则
 

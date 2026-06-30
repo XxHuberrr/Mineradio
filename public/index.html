@@ -23541,7 +23541,7 @@ async function openNeteaseWebLogin() {
   if (neteaseWebLoginBusy) return;
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
-  if (!api || !api.isDesktop || typeof api.openNeteaseMusicLogin !== 'function') {
+  if (!api || (!api.isDesktop && !api.isIOS) || typeof api.openNeteaseMusicLogin !== 'function') {
     if (statusEl) { statusEl.textContent = '当前环境不支持官方网页登录，正在尝试旧二维码…'; statusEl.className = 'fail'; }
     return refreshQr();
   }
@@ -23586,7 +23586,7 @@ async function openQQWebLogin() {
   if (qqWebLoginBusy) return;
   var statusEl = document.getElementById('qr-status');
   var api = window.desktopWindow;
-  if (!api || !api.isDesktop || typeof api.openQQMusicLogin !== 'function') {
+  if (!api || (!api.isDesktop && !api.isIOS) || typeof api.openQQMusicLogin !== 'function') {
     qqManualCookieOpen = true;
     updateLoginProviderUi();
     if (statusEl) { statusEl.textContent = '当前环境不支持自动网页登录，可先使用手动导入。'; statusEl.className = 'fail'; }

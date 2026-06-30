@@ -48,8 +48,10 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') {
+  CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
+}
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -242,12 +244,15 @@ function getWindowState(win) {
     hasDisplayOnRight: false,
     displayBounds: null,
   };
+  const nativeFullScreen = win.isFullScreen();
+  const kioskFullScreen = typeof win.isKiosk === 'function' && win.isKiosk();
   return {
     isMaximized: win.isMaximized(),
-    isNativeFullScreen: win.isFullScreen(),
+    isNativeFullScreen: nativeFullScreen,
+    isKioskFullScreen: kioskFullScreen,
     isHtmlFullScreen: htmlFullscreenActive,
     isWindowFullScreen: windowFullscreenActive,
-    isFullScreen: win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive,
+    isFullScreen: nativeFullScreen || kioskFullScreen || htmlFullscreenActive || windowFullscreenActive,
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
@@ -671,6 +676,12 @@ function exitFullscreenToWindow(win) {
   if (!win || win.isDestroyed()) return;
   windowFullscreenActive = false;
 
+  if (typeof win.isKiosk === 'function' && win.isKiosk()) {
+    win.setKiosk(false);
+    applyWindowedBounds(win);
+    return;
+  }
+
   if (!win.isFullScreen()) {
     applyWindowedBounds(win);
     return;
@@ -690,11 +701,21 @@ function exitFullscreenToWindow(win) {
 
 function toggleFullscreen(win) {
   if (!win || win.isDestroyed()) return;
-  if (win.isFullScreen() || windowFullscreenActive) {
+  const kioskFullScreen = typeof win.isKiosk === 'function' && win.isKiosk();
+  if (win.isFullScreen() || kioskFullScreen || windowFullscreenActive) {
     exitFullscreenToWindow(win);
     return;
   }
   windowFullscreenActive = true;
+  if (process.platform === 'darwin' && typeof win.setKiosk === 'function') {
+    const display = screen.getDisplayMatching(win.getBounds()) || screen.getPrimaryDisplay();
+    const bounds = display.bounds || display.workArea;
+    win.setMinimumSize(1, 1);
+    win.setBounds(bounds, false);
+    win.setKiosk(true);
+    sendWindowState(win);
+    return;
+  }
   win.setFullScreen(true);
   sendWindowState(win);
 }
@@ -1328,6 +1349,7 @@ async function createWindow() {
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  process.env.MINERADIO_BEAT_CACHE_DIR = path.join(app.getPath('userData'), 'beatmaps');
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -1377,7 +1399,8 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && mainWindow.isFullScreen()) {
+    const kioskFullScreen = typeof mainWindow.isKiosk === 'function' && mainWindow.isKiosk();
+    if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && (mainWindow.isFullScreen() || kioskFullScreen || windowFullscreenActive)) {
       event.preventDefault();
       exitFullscreenToWindow(mainWindow);
     }
