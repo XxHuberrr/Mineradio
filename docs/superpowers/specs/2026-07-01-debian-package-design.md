@@ -6,9 +6,10 @@
 
 ## Selected Approach
 
-- 保留 `npm run build:linux`，作为 AppImage 构建的兼容别名。
-- 新增 `npm run build:linux:appimage`，明确构建 AppImage。
-- 新增 `npm run build:linux:deb`，明确构建 Debian 包。
+- 保留 `npm run build:linux`，作为 x64 AppImage 构建的兼容命令。
+- 新增 `npm run build:linux:appimage`，明确构建 x64 AppImage。
+- 新增 `npm run build:linux:deb`，明确构建 x64 Debian 包。
+- 三个命令都显式传入 `--x64`，不依赖构建机的 CPU 架构。
 - `build.linux.target` 继续只声明 AppImage，避免默认命令同时生成两种格式。
 - 在 Linux 构建配置中提供 Debian 必需的维护者姓名与电子邮箱。
 
