@@ -51,6 +51,7 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
+  ['disk-cache-size', String(150 * 1024 * 1024)],
 ];
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
