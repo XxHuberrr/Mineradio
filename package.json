@@ -50,7 +50,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "shortcutName": "Mineradio",
       "installerIcon": "build/icon.ico",

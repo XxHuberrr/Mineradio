@@ -18,6 +18,7 @@ win-unpacked/
 # User data and private state
 .cookie
 .qq-cookie
+.kugou-cookie
 updates/
 backups/
 *.log
@@ -27,6 +28,7 @@ backups/
 .env.*
 
 # Local development noise
+agent_memory/
 .DS_Store
 Thumbs.db
 desktop.ini
