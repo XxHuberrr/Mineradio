@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, nativeImage } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -7,6 +7,8 @@ const { execFile, spawn } = require('child_process');
 let mainWindow = null;
 let localServer = null;
 let mainServerPort = 0;
+let tray = null;
+let isQuitting = false;
 let desktopLyricsWindow = null;
 let desktopLyricsState = {};
 let desktopLyricsUserBounds = null;
@@ -49,6 +51,7 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
+  ['disk-cache-size', String(150 * 1024 * 1024)],
 ];
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
@@ -267,6 +270,57 @@ function focusMainWindow() {
   sendWindowState(mainWindow);
   return true;
 }
+
+function showMainWindowFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  sendWindowState(mainWindow);
+}
+
+function ensureTray() {
+  if (tray && !tray.isDestroyed()) return tray;
+  let trayImage = null;
+  try {
+    if (fs.existsSync(APP_ICON_ICO)) trayImage = nativeImage.createFromPath(APP_ICON_ICO);
+  } catch (e) {
+    trayImage = null;
+  }
+  if (!trayImage || trayImage.isEmpty()) trayImage = nativeImage.createEmpty();
+  tray = new Tray(trayImage);
+  tray.setToolTip(APP_NAME);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: '显示 Mineradio', click: () => showMainWindowFromTray() },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+  tray.on('click', () => showMainWindowFromTray());
+  tray.on('double-click', () => showMainWindowFromTray());
+  return tray;
+}
+
+function destroyTray() {
+  if (tray && !tray.isDestroyed()) {
+    try { tray.destroy(); } catch (e) {}
+  }
+  tray = null;
+}
+
+function hideMainWindowToTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  ensureTray();
+  mainWindow.hide();
+  sendWindowState(mainWindow);
+}
+
 
 function getUpdateDownloadDir() {
   return path.join(app.getPath('userData'), 'updates');
@@ -1101,6 +1155,10 @@ ipcMain.handle('desktop-window-minimize', (event) => {
   getSenderWindow(event)?.minimize();
 });
 
+ipcMain.handle('desktop-window-hide-to-tray', () => {
+  hideMainWindowToTray();
+});
+
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
   toggleFullscreen(getSenderWindow(event));
 });
@@ -1459,8 +1517,10 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    isQuitting = true;
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
+    destroyTray();
     if (localServer && localServer.close) localServer.close();
   });
 }
