@@ -7,7 +7,7 @@
 - 酷狗登录采用 **appid=1005 客户端二维码登录**（`login-user.kugou.com` 的 `/v2/qrcode` + `/v2/get_userinfo_qrcode` 轮询）：登录弹窗显示二维码，用酷狗 App 扫码确认后自动登录。此方式拿到的 token 才能调用酷狗 gateway 歌单接口（网页登录的 token 属不同 appid 体系、调歌单接口会被拒）。
 - `server.js` 新增酷狗 web/android 签名、本地设备 id 生成、二维码接口，以及 `/api/kugou/qr/key`、`/api/kugou/qr/check`、`/api/kugou/user/playlists`（`gateway.kugou.com/v7/get_all_list`）、`/api/kugou/playlist/tracks`（`/pubsongs/v2/get_other_list_file_nofilt`）；`.kugou-cookie` 存 `userid/token/mid/nickname/pic`。
 - 前端：酷狗登录改为显示二维码 + 轮询登录；登录后左侧「我的歌单」显示酷狗歌单（含「我喜欢」），点击展开歌单内歌曲；歌单分组新增「酷狗歌单」。
-- 说明：本次接入酷狗登录、歌单与「我喜欢」的浏览；酷狗歌曲的**播放音源**（song url）尚未接入，点播会走换源/失败，后续单独实现。
+- 酷狗歌曲**播放已接入**：点播酷狗歌走酷狗官方音源（`gateway.kugou.com/v5/url`，服务端 `/api/kugou/song/url`），音频经本地 `/api/audio` 代理播放。非会员可播放大量免费歌曲（128k mp3），VIP/付费歌返回受限提示并可自动换源。实测非会员账号「我喜欢」6 首中 5 首可正常播放。
 
 ## v1.1.1
 
