@@ -8,6 +8,10 @@
 - `server.js` 新增酷狗 web/android 签名、本地设备 id 生成、二维码接口，以及 `/api/kugou/qr/key`、`/api/kugou/qr/check`、`/api/kugou/user/playlists`（`gateway.kugou.com/v7/get_all_list`）、`/api/kugou/playlist/tracks`（`/pubsongs/v2/get_other_list_file_nofilt`）；`.kugou-cookie` 存 `userid/token/mid/nickname/pic`。
 - 前端：酷狗登录改为显示二维码 + 轮询登录；登录后左侧「我的歌单」显示酷狗歌单（含「我喜欢」），点击展开歌单内歌曲；歌单分组新增「酷狗歌单」。
 - 酷狗歌曲**播放已接入**：点播酷狗歌走酷狗官方音源（`gateway.kugou.com/v5/url`，服务端 `/api/kugou/song/url`），音频经本地 `/api/audio` 代理播放。非会员可播放大量免费歌曲（128k mp3），VIP/付费歌返回受限提示并可自动换源。实测非会员账号「我喜欢」6 首中 5 首可正常播放。
+- 酷狗**歌词**接入：点播酷狗歌自动拉取歌词（`lyrics.kugou.com` 搜索候选 → 下载 LRC），复用现有歌词舞台，与网易云/QQ 一致。
+- 酷狗**音质选择**接入现有音质档位（标准 128 / 极高 320 / 无损 flac / 高清·母带 → high）；非会员选到拿不到的高音质时服务端自动回落到 128，保证能播不中断。
+- 新增**记忆功能**：重开软件自动恢复上次的播放队列 + 当前歌 + 音质（定时 + 退出 + 切后台保存到本地），点歌/点播放即从该歌开头继续，不用再重新找歌。（暂不恢复到上次的精确秒数。）
+- 登录未登录时的引导文案由「网易云 / QQ 歌单」改为「网易云 / QQ / 酷狗歌单」。
 
 ## v1.1.1
 
