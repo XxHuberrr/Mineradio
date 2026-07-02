@@ -2539,6 +2539,30 @@ async function kugouGetPlaylistTracks(mid, userId, token, gcid, page) {
   return parseJSONText(text);
 }
 
+async function kugouSongUrl(hash, albumId, quality) {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const mid = kugouCookieMid(cookieObj) || kugouNewMid();
+  const clienttime = Math.floor(Date.now() / 1000);
+  const h = String(hash || '').toLowerCase();
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    album_id: Number(albumId || 0), area_code: 1, hash: h, ssa_flag: 'is_fromtrack',
+    version: 11430, page_id: 151369488, quality: quality || 128, album_audio_id: 0,
+    behavior: 'play', pid: 2, cmd: 26, pidversion: 3001, IsFreePart: 0,
+    ppage_id: '463467626,350369493,788954147', cdnBackup: 1, module: '',
+  };
+  if (token && userId) { params.token = token; params.userid = Number(userId); }
+  // /v5/url 额外要求 key 参数：md5(hash + 盐 + appid + mid + userid)
+  params.key = kugouMd5(h + '57ae12eb6890223e355ccfcb74edf70d' + KUGOU_APPID + mid + (userId || ''));
+  params.signature = kugouSignAndroid(params, '');
+  const text = await requestText('https://gateway.kugou.com/v5/url?' + kugouQs(params), {
+    headers: { ...kugouGatewayHeaders(mid, clienttime), 'x-router': 'trackercdn.kugou.com' },
+  });
+  return parseJSONText(text);
+}
+
 function kugouPicUrl(raw) {
   let p = decodeQQCookieValue(raw || '');
   if (!p) return '';
@@ -2570,7 +2594,9 @@ function mapKugouTrack(it) {
     hash: it.hash || '',
     audio_id: it.audio_id || '',
     mixsongid: it.mixsongid || '',
+    album_id: it.album_id || '',
     album_audio_id: it.album_audio_id || '',
+    privilege: it.privilege,
     name: songname,
     artist,
     artists: artist ? [{ name: artist }] : [],
@@ -2626,6 +2652,7 @@ function audioProxyHeadersFor(audioUrl, range) {
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
+    else if (host.includes('kugou.com') || host.includes('kgimg.com')) headers.Referer = 'https://www.kugou.com/';
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
@@ -3889,6 +3916,35 @@ const server = http.createServer(async (req, res) => {
   if (pn === '/api/kugou/logout') {
     saveKugouCookie('');
     sendJSON(res, { provider: 'kugou', ok: true, loggedIn: false });
+    return;
+  }
+
+  if (pn === '/api/kugou/song/url') {
+    try {
+      const hash = url.searchParams.get('hash') || '';
+      const albumId = url.searchParams.get('album_id') || url.searchParams.get('albumId') || '';
+      const quality = url.searchParams.get('quality') || '128';
+      if (!hash) { sendJSON(res, { provider: 'kugou', url: '', playable: false, error: 'MISSING_HASH' }, 400); return; }
+      const j = await kugouSongUrl(hash, albumId, quality);
+      const urlArr = j && j.url;
+      const backupArr = j && j.backupUrl;
+      const playUrl = (Array.isArray(urlArr) ? urlArr[0] : urlArr) || (Array.isArray(backupArr) ? backupArr[0] : backupArr) || '';
+      const playable = Number(j && j.status) === 1 && !!playUrl;
+      sendJSON(res, {
+        provider: 'kugou',
+        url: playUrl,
+        playable,
+        status: j && j.status,
+        br: j && j.bitRate,
+        ext: j && j.extName,
+        restriction: playable ? null : (Number(j && j.status) === 2
+          ? playbackRestriction('kugou', 'paid_required', '酷狗该歌曲需要会员或购买后才能完整播放', 'switch_source', {})
+          : playbackRestriction('kugou', 'url_unavailable', '酷狗没有返回可播放地址，可能是版权或地区限制', 'switch_source', {})),
+      });
+    } catch (err) {
+      console.error('[KugouSongUrl]', err);
+      sendJSON(res, { provider: 'kugou', url: '', playable: false, error: err.message }, 500);
+    }
     return;
   }
 
