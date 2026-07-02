@@ -19678,13 +19678,17 @@ function renderUserPlaylistsList(opts) {
     { key:'qq', label:'QQ 音乐歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'qq'; }) },
     { key:'kugou', label:'酷狗歌单', items:userPlaylists.filter(function(pl){ return pl.provider === 'kugou'; }) }
   ];
+  // 当前活跃平台（刚登录/正在看的）的组排最前，避免被分批上限截断到看不见
+  groups.sort(function(a, b){ return (b.key === activeAccountProvider ? 1 : 0) - (a.key === activeAccountProvider ? 1 : 0); });
   if (opts.reset) resetPlaylistPanelRenderLimit();
   playlistPanelRenderLimit = Math.max(PLAYLIST_PANEL_BATCH_SIZE, Math.min(userPlaylists.length, playlistPanelRenderLimit || PLAYLIST_PANEL_BATCH_SIZE));
   var renderedCount = 0;
+  var GROUP_FLOOR = 8;   // 每个非空平台组的保底渲染数，避免排在后面的平台组被全局上限完全饿死
   function visibleGroupItems(items) {
+    if (!items.length) return [];
     var room = playlistPanelRenderLimit - renderedCount;
-    if (room <= 0) return [];
-    var visible = items.slice(0, room);
+    var take = Math.min(items.length, Math.max(room, GROUP_FLOOR));
+    var visible = items.slice(0, take);
     renderedCount += visible.length;
     return visible;
   }
