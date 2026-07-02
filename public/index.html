@@ -19056,6 +19056,11 @@ async function fetchLyric(songOrId, token) {
       var mid = song.mid || song.songmid || song.id || '';
       var qqId = song.qqId || (/^\d+$/.test(String(song.id || '')) ? song.id : '');
       endpoint = '/api/qq/lyric?mid=' + encodeURIComponent(mid) + '&id=' + encodeURIComponent(qqId);
+    } else if (provider === 'kugou') {
+      var kgHash = (song && (song.hash || song.id)) || '';
+      var kgDur = Math.round(((song && song.duration) || 0) * 1000);
+      var kgKw = ((song && song.artist) ? song.artist + ' - ' : '') + ((song && song.name) || '');
+      endpoint = '/api/kugou/lyric?hash=' + encodeURIComponent(kgHash) + '&duration=' + encodeURIComponent(kgDur) + '&keyword=' + encodeURIComponent(kgKw);
     } else {
       var songId = song ? song.id : songOrId;
       endpoint = '/api/lyric?id=' + encodeURIComponent(songId);

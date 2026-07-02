@@ -3959,6 +3959,33 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/kugou/lyric') {
+    try {
+      const hash = (url.searchParams.get('hash') || '').toLowerCase();
+      const durationMs = url.searchParams.get('duration') || '0';
+      const keyword = url.searchParams.get('keyword') || '';
+      if (!hash) { sendJSON(res, { provider: 'kugou', lyric: '' }); return; }
+      const searchUrl = 'https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&fmt=lrc&keyword=' +
+        encodeURIComponent(keyword) + '&duration=' + encodeURIComponent(durationMs) +
+        '&hash=' + encodeURIComponent(hash) + '&album_audio_id=';
+      const sText = await requestText(searchUrl, { headers: { 'User-Agent': UA } });
+      const sJson = parseJSONText(sText);
+      const cand = sJson && sJson.candidates && sJson.candidates[0];
+      if (!cand) { sendJSON(res, { provider: 'kugou', lyric: '' }); return; }
+      const dlUrl = 'https://lyrics.kugou.com/download?ver=1&client=pc&fmt=lrc&charset=utf8&id=' +
+        encodeURIComponent(cand.id) + '&accesskey=' + encodeURIComponent(cand.accesskey);
+      const dText = await requestText(dlUrl, { headers: { 'User-Agent': UA } });
+      const dJson = parseJSONText(dText);
+      let lyric = '';
+      if (dJson && dJson.content) { try { lyric = Buffer.from(dJson.content, 'base64').toString('utf8'); } catch (e) {} }
+      sendJSON(res, { provider: 'kugou', lyric });
+    } catch (err) {
+      console.error('[KugouLyric]', err);
+      sendJSON(res, { provider: 'kugou', lyric: '', error: err.message }, 500);
+    }
+    return;
+  }
+
   if (pn === '/api/kugou/user/playlists') {
     try {
       const data = await handleKugouUserPlaylists();
