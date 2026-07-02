@@ -10334,7 +10334,7 @@ async function fetchBeatPrefetchAudioUrl(song) {
   var data = isQQ
     ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
     : isKugou
-      ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&album_id=' + encodeURIComponent(song.album_id || ''))
+      ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&album_id=' + encodeURIComponent(song.album_id || '') + '&quality=' + kugouQualityParam(requestedQuality))
       : await apiJson('/api/song/url?id=' + encodeURIComponent(song.id) + qualityParam);
   if (!data || !data.url || data.trial) return null;
   return '/api/audio?url=' + encodeURIComponent(data.url);
@@ -15127,6 +15127,13 @@ function normalizePlaybackQuality(value) {
   if (value === 'standard' || value === 'normal' || value === 'std') return 'standard';
   return 'hires';
 }
+function kugouQualityParam(q) {
+  q = normalizePlaybackQuality(q);
+  if (q === 'standard') return '128';
+  if (q === 'exhigh') return '320';
+  if (q === 'lossless') return 'flac';
+  return 'high';
+}
 function playbackQualityLabel(value) {
   value = normalizePlaybackQuality(value);
   if (value === 'jymaster') return '超清母带';
@@ -18495,7 +18502,7 @@ async function playQueueAt(idx, opts) {
     var data = isQQPlayback
       ? await apiJson('/api/qq/song/url?mid=' + encodeURIComponent(song.mid || song.songmid || song.id || '') + '&mediaMid=' + encodeURIComponent(song.mediaMid || song.media_mid || '') + qualityParam)
       : isKugouPlayback
-        ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&album_id=' + encodeURIComponent(song.album_id || ''))
+        ? await apiJson('/api/kugou/song/url?hash=' + encodeURIComponent(song.hash || song.id || '') + '&album_id=' + encodeURIComponent(song.album_id || '') + '&quality=' + kugouQualityParam(requestedQuality))
         : await apiJson('/api/song/url?id=' + song.id + qualityParam);
     if (token !== trackSwitchToken) return;
     if (!data.url) {

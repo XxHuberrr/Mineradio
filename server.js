@@ -3925,15 +3925,26 @@ const server = http.createServer(async (req, res) => {
       const albumId = url.searchParams.get('album_id') || url.searchParams.get('albumId') || '';
       const quality = url.searchParams.get('quality') || '128';
       if (!hash) { sendJSON(res, { provider: 'kugou', url: '', playable: false, error: 'MISSING_HASH' }, 400); return; }
-      const j = await kugouSongUrl(hash, albumId, quality);
-      const urlArr = j && j.url;
-      const backupArr = j && j.backupUrl;
-      const playUrl = (Array.isArray(urlArr) ? urlArr[0] : urlArr) || (Array.isArray(backupArr) ? backupArr[0] : backupArr) || '';
-      const playable = Number(j && j.status) === 1 && !!playUrl;
+      const pickUrl = (r) => {
+        const u = r && r.url, b = r && r.backupUrl;
+        return (Array.isArray(u) ? u[0] : u) || (Array.isArray(b) ? b[0] : b) || '';
+      };
+      let usedQuality = quality;
+      let j = await kugouSongUrl(hash, albumId, quality);
+      let playUrl = pickUrl(j);
+      let playable = Number(j && j.status) === 1 && !!playUrl;
+      // 非会员选了高音质拿不到时，自动回落到 128 保证能播
+      if (!playable && String(quality) !== '128') {
+        const j2 = await kugouSongUrl(hash, albumId, '128');
+        const u2 = pickUrl(j2);
+        if (Number(j2 && j2.status) === 1 && u2) { j = j2; playUrl = u2; playable = true; usedQuality = '128'; }
+      }
       sendJSON(res, {
         provider: 'kugou',
         url: playUrl,
         playable,
+        quality: usedQuality,
+        downgraded: playable && String(usedQuality) !== String(quality),
         status: j && j.status,
         br: j && j.bitRate,
         ext: j && j.extName,
