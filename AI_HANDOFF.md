@@ -75,6 +75,29 @@
 
 ## 已完成工作日志
 
+### 2026-07-02
+
+- 【路线B 升级 · 酷狗歌单/我喜欢】把酷狗登录从"网页登录窗口抓 cookie"改为**应用内 appid=1005 二维码登录**，并接入歌单与「我喜欢」浏览。根因：实测网页登录 token（1014 体系）调 gateway 歌单接口 `/v7/get_all_list` 返回 `20017`，换 dfid/mid 无效——网页 token 与 appid=1005 私有接口账号体系不匹配；改用 appid=1005 二维码登录（`login-user.kugou.com` `/v2/qrcode` 取 key、`/v2/get_userinfo_qrcode` 轮询 status=4 拿 token/userid）拿到的 token 才能调通（PoC + 真实扫码端到端实测：拉到 5 个歌单、「我喜欢」222 首歌曲，前端渲染 5 张卡片正常）。
+  - `server.js`：新增 `kugouSignWeb`/`kugouSignAndroid`（md5 盐 web=`NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt`、android=`OIlwieks28dk2k092lksi2UIkp`；web=md5(salt+sort(map k=v)+salt)，android=md5(salt+sort(key)→k=v+body+salt)）、`kugouNewMid`（`BigInt('0x'+md5(uuid)).toString()`）、`kugouQrKey`/`kugouQrCheck`、`kugouGetAllList`（`gateway.kugou.com/v7/get_all_list`，POST，`x-router: cloudlist.service.kugou.com`，body 入签）、`kugouGetPlaylistTracks`（`/pubsongs/v2/get_other_list_file_nofilt`，GET，用歌单的 `global_collection_id`）、`mapKugouPlaylist`/`mapKugouTrack`；`.kugou-cookie` 改存 `userid/token/mid/nickname/pic`；路由改为 `/api/kugou/qr/key`、`/api/kugou/qr/check`、`/api/kugou/user/playlists`、`/api/kugou/playlist/tracks`（删了原 `/api/kugou/login/cookie`）。config：appid=1005、clientver=20489、srcappid=2919、dfid 可用 `'-'`、不需 register/dev 设备注册。
+  - `public/index.html`：酷狗登录改为显示二维码 + 轮询（`startKugouQr`/`checkKugouQr`/`stopKugouQr`，复用 `#qr-img`）；`refreshUserPlaylists` 加酷狗（`/api/kugou/user/playlists`）；歌单分组加「酷狗歌单」、`openPlaylistPanelDetail` 加酷狗 tracks 分支；`normalizeProviderKey` 三平台折叠；`kugouPlaylists` 变量；删 `openKugouWebLogin`/`submitKugouCookieLogin`；`doLogout` 的 `userPlaylists = qqPlaylists.slice()` 改为 `concat(kugouPlaylists)`（修了之前"非网易云即 QQ"的遗留假设）。
+  - **`desktop/main.js` 的酷狗网页登录窗口（`openKugouMusicLoginWindow`/`KUGOU_LOGIN_*`/`kugouCookieHasLogin` 等）已成死代码**：前端不再调 `openKugouMusicLogin`，仅登出还调 `clearKugouMusicLogin`（清一个从未使用的分区，无害）。留待后续清理。
+  - 酷狗**播放音源已接入**：`server.js` 新增 `kugouSongUrl`（`GET gateway.kugou.com/v5/url`，header `x-router: trackercdn.kugou.com`，android 签名 + 额外 `key` 参数 `md5(hash小写 + '57ae12eb6890223e355ccfcb74edf70d' + appid + mid + userid)`，quality 默认 128）+ 路由 `/api/kugou/song/url`（返回 `{url, playable, status, restriction}`，status=2 为 VIP/付费）；`mapKugouTrack` 补 `album_id`/`privilege`；`audioProxyHeadersFor` 对 `*.kugou.com` 发 `Referer: https://www.kugou.com/`。前端 `songProviderKey` 增加 `'kugou'`（原来只 qq/netease，导致酷狗歌被当 netease 打错音源——这是"酷狗歌全播不了"的根因），两处播放取源（`fetchBeatPrefetchAudioUrl` 预取 + 主播放 source-url）加 kugou 分支走 `/api/kugou/song/url`，`songSourceTagHtml`/`playbackProviderLabel`/可切音质判断（原 `=== 'netease'`）都加 kugou。实测非会员账号「我喜欢」6 首 5 首可播（128k mp3），`/api/audio` 代理成功取到 2.4MB `audio/mpeg` 流。
+  - 音质：酷狗前端目前固定请求 128k（非会员最稳）；高音质（320/flac/high）非会员多为 status=2 受限，未做档位映射，后续可加 `quality` 映射 + privilege/lite 批量判权。
+  - 路线B 已过 4 维对抗复审（确认 10 条、逐条验证），修了 6 个功能点：(1)「播放歌单」按钮 provider 误判——酷狗 key(`kugou:<gcid>`)被 `parts[0]==='qq'?'qq':'netease'` 折叠成 netease、拿酷狗 id 打网易云接口，已改 `normalizeProviderKey(parts[0])` 且 `loadPlaylistIntoQueueById` 加 `kugou:` 前缀分支调 `/api/kugou/playlist/tracks`；(2) 切登录 tab 不停酷狗二维码轮询（`kugouQrPollTimer` 泄漏 + 切走后扫码可能跨 tab 劫持登录），已在 `refreshQr` 开头加 `stopKugouQr()`；(3) 二维码轮询无上限，已加 60 次(~150s)上限；(4) 歌单曲目只取前 300 首，已改翻页循环（上限 20 页）；(5) `get_all_list` 返回 status!=1(token 失效)时改回 `loggedIn:false`（而非空歌单误导）；(6) `qr/check` 的 mid 加 `/^[0-9]+$/` 校验。未改并记录：desktop 酷狗网页登录死代码（见上条，留待清理）；本地 API 无鉴权 + `Access-Control-Allow-Origin:*`（既有全局架构，非本次引入，QQ/网易云接口同样，Electron 运行时 `main.js` 已把 HOST 绑 `127.0.0.1`、端口随机，风险有限；收紧涉及全局改动，留待评估）。
+
+- 新增酷狗音乐（KuGou）登录，成为网易云、QQ 之外的第三个平台，登录方式照抄 QQ 官方网页登录窗口模式。改动分三层：
+  - `desktop/main.js`：新增 `KUGOU_LOGIN_PARTITION`(`persist:mineradio-kugou-login`)、`KUGOU_LOGIN_URL`(`https://www.kugou.com/`)、`KUGOU_LOGIN_COOKIE_PRIORITY`、`isKugouCookieDomain`、`parseKuGooBlob`、`kugouCookieHasLogin`、`readKugouLoginCookieHeader`、`openKugouMusicLoginWindow`、`clearKugouMusicLoginSession`，注册 `kugou-music-open-login`/`kugou-music-clear-login` 两个 IPC，并注入 `process.env.KUGOU_COOKIE_FILE`。`desktop/preload.js` 暴露 `openKugouMusicLogin`/`clearKugouMusicLogin`。
+  - `server.js`：新增 `KUGOU_COOKIE_FILE`、`kugouCookie` 持久化(`saveKugouCookie`)、`KUGOU_HEADERS`、cookie 解析族(`kugouCookieObject`/`parseKuGooCookieValue`/`kugouCookieUserId`/`kugouCookieToken`/`kugouCookieNickname`/`kugouCookieAvatar`/`normalizeKugouCookieInput`)、`normalizeKugouProfile`、`getKugouLoginInfo`，路由 `/api/kugou/login/status`、`/api/kugou/login/cookie`、`/api/kugou/logout`（插在 QQ 路由块之后、`/api/podcast/search` 之前）。
+  - `public/index.html`：登录弹窗加酷狗 tab + 蓝色主题(`--source-kugou:#4da2ff`、`.kugou-preview` 等)，账号面板加酷狗 tab/补登/退出；新增状态变量、`normalizeKugouLoginStatus`/`refreshKugouLoginStatus`/`startKugouLoginStatusAutoRefresh`/`openKugouWebLogin`/`submitKugouCookieLogin`；把原先写死 netease/qq 双平台的逻辑（`platformMeta`/`platformStatus`/`firstLoggedProvider`/`renderUserBtn` pill 拼接/`updateUserModalUi` tab 遍历/`enableDualAccountView`/`logoutActiveAccount`/四处 `'qq':'netease'` 折叠→`normalizeProviderKey` 白名单）改为三平台通用；启动 `Promise.all` 和账号入口接上酷狗。
+  - `.gitignore` 补 `.kugou-cookie`（原来只忽略 `.cookie`/`.qq-cookie`，会误提交登录 cookie）。
+- 关键约束：`KuGoo` cookie 是 URL 编码的内层 query 串(`KugooID=..&t=..&NickName=..&Pic=..`)，userid=KugooID、token=t/KugooPwd 都藏在内层；desktop 与 server 两侧都必须解析内层 blob 且要求 userId+token 同时存在才算登录，两层判定必须对齐（否则窗口会在未真正登录时关闭，或复用过期 KuGoo 触发登录死循环）。
+- 验证：`node --check` 全过；前端内联脚本 `vm` 编译过；cookie 解析单元测试 15/15；desktop 登录判定对齐测试 4/4；起本地 server 端到端测三路由（未登录→无效cookie 400→有效cookie登录并解析昵称→持久化→登出→回未登录）全过；浏览器预览确认三 tab 渲染、酷狗蓝色主题、切平台清空共用 cookie 框、服务端错误不误报掉登录、控制台无报错。
+- 4 维对抗式复审(正确性/安全/健壮性/一致性)确认 6 条、逐条对抗验证，已修 3 条（desktop 判定过松[已修]、状态接口 500 误报掉登录[已修]、切平台不清 cookie 框[已修]）。
+- 用户确认发布后：版本 `1.1.1` → **`1.2.0`**（新功能 minor），同步改 `package.json`/`package-lock.json`/`CHANGELOG.md`（顶部 `## v1.2.0`）。已执行 `npm run build:win`（exit 0），产物 `dist/Mineradio-1.2.0-Setup.exe`（约 115MB，SHA256 `6a41b82904d18ea8037309d13ef434ff3f0a2e89b2e6672fb9d4a4a928833dc6`）+ `.blockmap`。
+- 按用户选择**延续 v1.1.x 安全发布：不上传 `latest.yml`**（老用户不走软件内更新，需手动下载）；构建生成的 `latest.yml` 已移到 `dist/_archive/not-published/`。
+- 发布环境约束（本轮实际）：工作目录 `C:\Users\pc\Documents\Mineradio` 是 GitHub **浅克隆(depth 50)**；记录里的 E 盘 `resources\app` 权威源码**本轮不可达**、本机**未装 `gh`**。因此代码用 `git push` 推到 `origin/main`；GitHub Release 与安装包 exe 由**用户手动在网页上传**（未用 gh/API）。
+- ⚠️ 两地分叉提醒：本次酷狗登录改动只在 C 盘 clone 里。日后回到 E 盘环境时，需把这批改动（酷狗登录三层 + 1.2.0 版本）合并回 E 盘 `resources\app` 权威源码，否则从 E 盘再发布会丢失酷狗登录。
+
 ### 2026-06-24
 
 - 将 `E:\Download\默认测试.json` 接入为首次启动默认用户存档和默认视觉参数；新增 `public/default-user-fx-archive.json`，并让没有本地用户存档的新用户自动得到「默认测试」槽位。
@@ -169,6 +192,9 @@
 - 3D 歌单架交互仍需继续优化：悬停展开和点击后可用状态之间要更丝滑，避免用户误以为悬停后可直接使用。
 - Home 页面与后方 3D 歌单架的交互穿透问题需要继续关注。
 - 如果之后修改发布资产，记得同步 GitHub Release、`latest.yml`、blockmap，并检查本地 `dist` 根部资产是否一致。
+- 酷狗（KuGou）目前只接了登录与账号态，**尚未接入酷狗搜索、歌单、播放音源**。后续做时注意：调研发现酷狗网页 `KuGoo.t` 走的 appid(1014 网页体系)与 gateway 安卓签名接口(appid 1005)未必通用，token 可能不能直接调播放/歌单接口；开源实现参考 `MakcRe/KuGouMusicApi`（签名盐值、二维码登录流程、`/user/detail` 等上游接口均在其源码里）。若播放需要，建议改走「自建二维码+自己 appid」路线让 token 天然匹配。
+- 酷狗歌单接入时，需修 `public/index.html` `doLogout` 里遗留的 `userPlaylists = qqPlaylists.slice()` 假设（当前"非网易云即 QQ"，三平台后会漏酷狗歌单）；本次登录范围未动、当前无酷狗歌单故无数据丢失。
+- 酷狗/QQ 登录窗口的 `setWindowOpenHandler` 允许任意 https 弹窗在窗内加载（比网易云的域名白名单松）——这是**刻意保留**：酷狗/QQ 登录需要微信/QQ/微博等第三方授权跨域跳转，收紧白名单会把授权弹窗丢到外部浏览器破坏登录。webPreferences 已硬化(contextIsolation/sandbox/无 preload)，危害止于钓鱼面。若将来要收紧，需把所有第三方授权域一并加入白名单。
 
 ## 每次任务完成后的固定动作
 

@@ -59,6 +59,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
+const KUGOU_COOKIE_FILE = process.env.KUGOU_COOKIE_FILE || path.join(__dirname, '.kugou-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
@@ -184,6 +185,14 @@ catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+}
+
+let kugouCookie = '';
+try { if (fs.existsSync(KUGOU_COOKIE_FILE)) kugouCookie = fs.readFileSync(KUGOU_COOKIE_FILE, 'utf8').trim(); }
+catch (e) { kugouCookie = ''; }
+function saveKugouCookie(c) {
+  kugouCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  try { fs.writeFileSync(KUGOU_COOKIE_FILE, kugouCookie); } catch (e) {}
 }
 
 // ---------- 工具 ----------
@@ -1478,6 +1487,63 @@ function normalizeQQCookieInput(cookieText) {
   if (obj.uin) obj.uin = normalizeQQUin(obj.uin);
   return serializeCookieObject(obj);
 }
+function kugouCookieObject() {
+  return parseCookieString(kugouCookie);
+}
+function normalizeKugouUserId(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.replace(/^0+/, '') || digits;
+}
+// KuGoo cookie 内部是 URL 编码的 query 结构：KugooID=...&KugooPwd=...&NickName=...&Pic=...&t=...
+function parseKuGooCookieValue(obj) {
+  obj = obj || kugouCookieObject();
+  const raw = decodeQQCookieValue(obj.KuGoo || '');
+  const out = {};
+  if (!raw) return out;
+  raw.split('&').forEach(part => {
+    const idx = part.indexOf('=');
+    if (idx <= 0) return;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) out[key] = value;
+  });
+  return out;
+}
+function kugouCookieUserId(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  return normalizeKugouUserId(obj.KugooID || obj.userid || inner.KugooID);
+}
+function kugouCookieToken(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  return obj.token || obj.t || inner.t || inner.token || inner.KugooPwd || '';
+}
+function kugouCookieNickname(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  const raw = obj.nickname || inner.NickName || obj.NickName || obj.username || inner.UserName || '';
+  return decodeQQCookieValue(raw);
+}
+function kugouCookieAvatar(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  const raw = decodeQQCookieValue(obj.pic || inner.Pic || obj.Pic || '');
+  if (!raw) return '';
+  return /^https?:\/\//i.test(raw) ? raw.replace(/^http:\/\//i, 'https://') : '';
+}
+function kugouCookieMid(obj) {
+  obj = obj || kugouCookieObject();
+  return obj.mid || '';
+}
+function normalizeKugouCookieInput(cookieText) {
+  const obj = parseCookieString(cookieText);
+  const inner = parseKuGooCookieValue(obj);
+  if (!obj.userid && (obj.KugooID || inner.KugooID)) obj.userid = obj.KugooID || inner.KugooID;
+  if (!obj.token && (obj.t || inner.t || inner.token)) obj.token = obj.t || inner.t || inner.token;
+  if (obj.userid) obj.userid = normalizeKugouUserId(obj.userid);
+  return serializeCookieObject(obj);
+}
 function playbackRestriction(provider, category, message, action, extra) {
   return {
     provider,
@@ -1737,6 +1803,38 @@ const QQ_HEADERS = {
   Referer: 'https://y.qq.com/',
   'User-Agent': UA,
 };
+const KUGOU_HEADERS = {
+  Referer: 'https://www.kugou.com/',
+  'User-Agent': UA,
+};
+// 酷狗客户端体系（appid=1005）：二维码登录拿到的 token 才能调 gateway 私有歌单接口
+const KUGOU_APPID = 1005;
+const KUGOU_CLIENTVER = 20489;
+const KUGOU_SRCAPPID = 2919;
+const KUGOU_SALT_WEB = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
+const KUGOU_SALT_ANDROID = 'OIlwieks28dk2k092lksi2UIkp';
+function kugouMd5(s) { return crypto.createHash('md5').update(String(s == null ? '' : s), 'utf8').digest('hex'); }
+// web 签名：md5(salt + sort(map("k=v")) + salt)
+function kugouSignWeb(params) {
+  return kugouMd5(KUGOU_SALT_WEB + Object.keys(params).map(k => `${k}=${params[k]}`).sort().join('') + KUGOU_SALT_WEB);
+}
+// android 签名：md5(salt + sort(key)→"k=v" + body字符串 + salt)
+function kugouSignAndroid(params, dataStr) {
+  return kugouMd5(KUGOU_SALT_ANDROID + Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('') + (dataStr || '') + KUGOU_SALT_ANDROID);
+}
+function kugouNewMid() {
+  return BigInt('0x' + kugouMd5(crypto.randomUUID())).toString();
+}
+function kugouQs(params) {
+  return Object.keys(params).map(k => `${k}=${encodeURIComponent(params[k])}`).join('&');
+}
+function kugouGatewayHeaders(mid, clienttime) {
+  return {
+    'User-Agent': UA, dfid: '-', mid, clienttime,
+    'kg-rc': '1', 'kg-thash': '5d816a0', 'kg-rec': '1',
+    'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+  };
+}
 
 function requestText(targetUrl, opts, body) {
   opts = opts || {};
@@ -2339,11 +2437,222 @@ async function qqGetJSON(targetUrl, params, opts) {
   return parseJSONText(text);
 }
 
+function normalizeKugouProfile(body, cookieObj) {
+  cookieObj = cookieObj || kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const data = (body && (body.data || body.info || body.result)) || {};
+  const profileNick = data.nickname || data.nick_name || data.nick || data.username || '';
+  const profileAvatar = data.pic || data.avatar || data.avatarUrl || data.img_url || '';
+  const cookieNick = kugouCookieNickname(cookieObj);
+  const nick = decodeQQCookieValue(profileNick) || cookieNick || '';
+  const avatar = (profileAvatar ? decodeQQCookieValue(profileAvatar).replace(/^http:\/\//i, 'https://') : '') || kugouCookieAvatar(cookieObj);
+  let vipType = Number(
+    cookieObj.vip_type || data.vip_type || data.viptype || data.vipType ||
+    data.m_type || data.y_type || 0
+  ) || 0;
+  if (!vipType) {
+    const vipFlag = data.is_vip || data.isVip || data.vip;
+    if (vipFlag === true || Number(vipFlag) > 0 || String(vipFlag || '').toLowerCase() === 'true') vipType = 1;
+  }
+  return {
+    provider: 'kugou',
+    loggedIn: !!(userId && token),
+    preview: false,
+    userId,
+    nickname: nick || (userId ? ('酷狗 ' + userId) : '酷狗音乐'),
+    avatar,
+    vipType,
+    hasCookie: !!kugouCookie,
+    playbackKeyReady: !!(userId && token),
+    profileSource: profileNick || profileAvatar ? 'kugou-profile' : (cookieNick || avatar ? 'cookie' : 'fallback'),
+  };
+}
+
+async function getKugouLoginInfo() {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  if (!userId || !token) return { provider: 'kugou', loggedIn: false, hasCookie: !!kugouCookie };
+  return normalizeKugouProfile(null, cookieObj);
+}
+
+// ---------- 酷狗二维码登录（appid=1005 客户端体系） ----------
+async function kugouQrKey() {
+  const mid = kugouNewMid();
+  const clienttime = Math.floor(Date.now() / 1000);
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    type: 1, plat: 4, qrcode_txt: 'https://h5.kugou.com/apps/loginQRCode/html/index.html?appid=1005&', srcappid: KUGOU_SRCAPPID,
+  };
+  params.signature = kugouSignWeb(params);
+  const text = await requestText('https://login-user.kugou.com/v2/qrcode?' + kugouQs(params), {
+    headers: { ...KUGOU_HEADERS, dfid: '-', mid, clienttime },
+  });
+  const j = parseJSONText(text);
+  const data = j && j.data;
+  if (!data || !data.qrcode) throw new Error('KUGOU_QR_KEY_FAILED');
+  return { mid, qrcode: data.qrcode, qrcodeImg: data.qrcode_img || '' };
+}
+
+async function kugouQrCheck(mid, key) {
+  const clienttime = Math.floor(Date.now() / 1000);
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    plat: 4, qrcode: key, srcappid: KUGOU_SRCAPPID,
+  };
+  params.signature = kugouSignWeb(params);
+  const text = await requestText('https://login-user.kugou.com/v2/get_userinfo_qrcode?' + kugouQs(params), {
+    headers: { ...KUGOU_HEADERS, dfid: '-', mid, clienttime },
+  });
+  return parseJSONText(text);
+}
+
+async function kugouGetAllList(mid, userId, token) {
+  const clienttime = Math.floor(Date.now() / 1000);
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    token, userid: Number(userId), plat: 1,
+  };
+  const body = JSON.stringify({ userid: Number(userId), token, total_ver: 979, type: 2, page: 1, pagesize: 30 });
+  params.signature = kugouSignAndroid(params, body);
+  const text = await requestText('https://gateway.kugou.com/v7/get_all_list?' + kugouQs(params), {
+    method: 'POST',
+    headers: { ...kugouGatewayHeaders(mid, clienttime), 'Content-Type': 'application/json', 'x-router': 'cloudlist.service.kugou.com' },
+  }, body);
+  return parseJSONText(text);
+}
+
+async function kugouGetPlaylistTracks(mid, userId, token, gcid, page) {
+  const clienttime = Math.floor(Date.now() / 1000);
+  const pagesize = 300;
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    area_code: 1, begin_idx: (Math.max(1, Number(page) || 1) - 1) * pagesize, plat: 1, type: 1, mode: 1,
+    personal_switch: 1, extend_fields: 'abtags,hot_cmt,popularization', pagesize, global_collection_id: gcid,
+  };
+  if (token && userId) { params.token = token; params.userid = Number(userId); }
+  params.signature = kugouSignAndroid(params, '');
+  const text = await requestText('https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt?' + kugouQs(params), {
+    headers: kugouGatewayHeaders(mid, clienttime),
+  });
+  return parseJSONText(text);
+}
+
+async function kugouSongUrl(hash, albumId, quality) {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const mid = kugouCookieMid(cookieObj) || kugouNewMid();
+  const clienttime = Math.floor(Date.now() / 1000);
+  const h = String(hash || '').toLowerCase();
+  const params = {
+    dfid: '-', mid, uuid: '-', appid: KUGOU_APPID, clientver: KUGOU_CLIENTVER, clienttime,
+    album_id: Number(albumId || 0), area_code: 1, hash: h, ssa_flag: 'is_fromtrack',
+    version: 11430, page_id: 151369488, quality: quality || 128, album_audio_id: 0,
+    behavior: 'play', pid: 2, cmd: 26, pidversion: 3001, IsFreePart: 0,
+    ppage_id: '463467626,350369493,788954147', cdnBackup: 1, module: '',
+  };
+  if (token && userId) { params.token = token; params.userid = Number(userId); }
+  // /v5/url 额外要求 key 参数：md5(hash + 盐 + appid + mid + userid)
+  params.key = kugouMd5(h + '57ae12eb6890223e355ccfcb74edf70d' + KUGOU_APPID + mid + (userId || ''));
+  params.signature = kugouSignAndroid(params, '');
+  const text = await requestText('https://gateway.kugou.com/v5/url?' + kugouQs(params), {
+    headers: { ...kugouGatewayHeaders(mid, clienttime), 'x-router': 'trackercdn.kugou.com' },
+  });
+  return parseJSONText(text);
+}
+
+function kugouPicUrl(raw) {
+  let p = decodeQQCookieValue(raw || '');
+  if (!p) return '';
+  p = p.replace(/\{size\}/g, '240').replace(/\/240$/, '');
+  return /^https?:\/\//i.test(p) ? p.replace(/^http:\/\//i, 'https://') : '';
+}
+
+function mapKugouPlaylist(it) {
+  it = it || {};
+  return {
+    provider: 'kugou',
+    id: it.global_collection_id || String(it.listid || ''),
+    listid: it.listid,
+    name: decodeQQCookieValue(it.name || ''),
+    cover: kugouPicUrl(it.pic),
+    trackCount: it.count != null ? it.count : (it.total != null ? it.total : (it.songcount || 0)),
+  };
+}
+
+function mapKugouTrack(it) {
+  it = it || {};
+  const nameRaw = decodeQQCookieValue(it.name || it.filename || '');
+  const parts = String(nameRaw).split(' - ');
+  const artist = decodeQQCookieValue(it.singername || it.singer || (parts.length > 1 ? parts[0] : ''));
+  const songname = decodeQQCookieValue(it.songname || it.song_name || (parts.length > 1 ? parts.slice(1).join(' - ') : nameRaw));
+  return {
+    provider: 'kugou', source: 'kugou', type: 'kugou',
+    id: it.hash || it.audio_id || '',
+    hash: it.hash || '',
+    audio_id: it.audio_id || '',
+    mixsongid: it.mixsongid || '',
+    album_id: it.album_id || '',
+    album_audio_id: it.album_audio_id || '',
+    privilege: it.privilege,
+    name: songname,
+    artist,
+    artists: artist ? [{ name: artist }] : [],
+    album: decodeQQCookieValue(it.album_name || ''),
+    cover: kugouPicUrl(it.cover || it.album_img || it.trans_param && it.trans_param.union_cover),
+    duration: it.timelen ? Math.round(it.timelen / 1000) : 0,
+    fee: 0,
+    playable: false,
+  };
+}
+
+async function handleKugouUserPlaylists() {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const mid = kugouCookieMid(cookieObj) || kugouNewMid();
+  if (!userId || !token) return { loggedIn: false, provider: 'kugou', playlists: [] };
+  const j = await kugouGetAllList(mid, userId, token);
+  if (j && Number(j.status) !== 1) {
+    // status!=1（如 token 失效 20017）：明确回未登录，避免前端把它当"空歌单"显示
+    return { loggedIn: false, provider: 'kugou', playlists: [], error: 'KUGOU_SESSION_INVALID', code: j.error_code };
+  }
+  const info = (j && j.data && (j.data.info || j.data.list)) || [];
+  const playlists = (Array.isArray(info) ? info : []).map(mapKugouPlaylist).filter(p => p.id && p.name);
+  return { loggedIn: true, provider: 'kugou', userId, playlists };
+}
+
+async function handleKugouPlaylistTracks(gcid) {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const mid = kugouCookieMid(cookieObj) || kugouNewMid();
+  const id = String(gcid || '').trim();
+  if (!id) return { loggedIn: true, provider: 'kugou', error: 'Missing kugou playlist id', tracks: [] };
+  const all = [];
+  for (let page = 1; page <= 20; page++) {   // 翻页拉全（上限 20 页 = 6000 首，防失控）
+    const j = await kugouGetPlaylistTracks(mid, userId, token, id, page);
+    const songs = (j && j.data && (j.data.songs || j.data.info)) || [];
+    const arr = Array.isArray(songs) ? songs : [];
+    for (const s of arr) all.push(s);
+    if (arr.length < 300) break;   // 不足一页 = 最后一页
+  }
+  const tracks = all.map(mapKugouTrack).filter(s => s.name && s.hash);
+  return {
+    loggedIn: true, provider: 'kugou',
+    playlist: { provider: 'kugou', id, name: '', cover: '', trackCount: tracks.length },
+    tracks,
+  };
+}
+
 function audioProxyHeadersFor(audioUrl, range) {
   const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/' };
   try {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
+    else if (host.includes('kugou.com') || host.includes('kgimg.com')) headers.Referer = 'https://www.kugou.com/';
   } catch (e) {}
   if (range) headers.Range = range;
   return headers;
@@ -3553,6 +3862,149 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[QQSongComments]', err);
       sendJSON(res, { provider: 'qq', error: err.message, comments: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/status') {
+    try {
+      const info = await getKugouLoginInfo();
+      sendJSON(res, info);
+    } catch (err) {
+      console.error('[KugouLoginStatus]', err);
+      sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/qr/key') {
+    try {
+      const r = await kugouQrKey();
+      sendJSON(res, { provider: 'kugou', mid: r.mid, qrcode: r.qrcode, qrcodeImg: r.qrcodeImg });
+    } catch (err) {
+      console.error('[KugouQrKey]', err);
+      sendJSON(res, { provider: 'kugou', error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/qr/check') {
+    try {
+      const key = url.searchParams.get('key') || '';
+      const mid = url.searchParams.get('mid') || '';
+      if (!key || !mid || !/^[0-9]+$/.test(mid) || !/^[0-9a-zA-Z]+$/.test(key)) { sendJSON(res, { provider: 'kugou', code: -1, error: 'INVALID_KEY_OR_MID' }, 400); return; }
+      const r = await kugouQrCheck(mid, key);
+      const d = (r && r.data) || {};
+      const st = Number(d.status);
+      if (st === 4 && d.token && d.userid) {
+        const parts = [`userid=${d.userid}`, `token=${d.token}`, `mid=${mid}`];
+        if (d.nickname) parts.push('nickname=' + encodeURIComponent(d.nickname));
+        if (d.pic) parts.push('pic=' + encodeURIComponent(d.pic));
+        saveKugouCookie(parts.join('; '));
+        const info = await getKugouLoginInfo();
+        sendJSON(res, { ...info, code: 4, loggedIn: true, saved: true });
+      } else {
+        sendJSON(res, { provider: 'kugou', code: st, loggedIn: false });
+      }
+    } catch (err) {
+      console.error('[KugouQrCheck]', err);
+      sendJSON(res, { provider: 'kugou', code: -1, loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/logout') {
+    saveKugouCookie('');
+    sendJSON(res, { provider: 'kugou', ok: true, loggedIn: false });
+    return;
+  }
+
+  if (pn === '/api/kugou/song/url') {
+    try {
+      const hash = url.searchParams.get('hash') || '';
+      const albumId = url.searchParams.get('album_id') || url.searchParams.get('albumId') || '';
+      const quality = url.searchParams.get('quality') || '128';
+      if (!hash) { sendJSON(res, { provider: 'kugou', url: '', playable: false, error: 'MISSING_HASH' }, 400); return; }
+      const pickUrl = (r) => {
+        const u = r && r.url, b = r && r.backupUrl;
+        return (Array.isArray(u) ? u[0] : u) || (Array.isArray(b) ? b[0] : b) || '';
+      };
+      let usedQuality = quality;
+      let j = await kugouSongUrl(hash, albumId, quality);
+      let playUrl = pickUrl(j);
+      let playable = Number(j && j.status) === 1 && !!playUrl;
+      // 非会员选了高音质拿不到时，自动回落到 128 保证能播
+      if (!playable && String(quality) !== '128') {
+        const j2 = await kugouSongUrl(hash, albumId, '128');
+        const u2 = pickUrl(j2);
+        if (Number(j2 && j2.status) === 1 && u2) { j = j2; playUrl = u2; playable = true; usedQuality = '128'; }
+      }
+      sendJSON(res, {
+        provider: 'kugou',
+        url: playUrl,
+        playable,
+        quality: usedQuality,
+        downgraded: playable && String(usedQuality) !== String(quality),
+        status: j && j.status,
+        br: j && j.bitRate,
+        ext: j && j.extName,
+        restriction: playable ? null : (Number(j && j.status) === 2
+          ? playbackRestriction('kugou', 'paid_required', '酷狗该歌曲需要会员或购买后才能完整播放', 'switch_source', {})
+          : playbackRestriction('kugou', 'url_unavailable', '酷狗没有返回可播放地址，可能是版权或地区限制', 'switch_source', {})),
+      });
+    } catch (err) {
+      console.error('[KugouSongUrl]', err);
+      sendJSON(res, { provider: 'kugou', url: '', playable: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/lyric') {
+    try {
+      const hash = (url.searchParams.get('hash') || '').toLowerCase();
+      const durationMs = url.searchParams.get('duration') || '0';
+      const keyword = url.searchParams.get('keyword') || '';
+      if (!hash) { sendJSON(res, { provider: 'kugou', lyric: '' }); return; }
+      const searchUrl = 'https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&fmt=lrc&keyword=' +
+        encodeURIComponent(keyword) + '&duration=' + encodeURIComponent(durationMs) +
+        '&hash=' + encodeURIComponent(hash) + '&album_audio_id=';
+      const sText = await requestText(searchUrl, { headers: { 'User-Agent': UA } });
+      const sJson = parseJSONText(sText);
+      const cand = sJson && sJson.candidates && sJson.candidates[0];
+      if (!cand) { sendJSON(res, { provider: 'kugou', lyric: '' }); return; }
+      const dlUrl = 'https://lyrics.kugou.com/download?ver=1&client=pc&fmt=lrc&charset=utf8&id=' +
+        encodeURIComponent(cand.id) + '&accesskey=' + encodeURIComponent(cand.accesskey);
+      const dText = await requestText(dlUrl, { headers: { 'User-Agent': UA } });
+      const dJson = parseJSONText(dText);
+      let lyric = '';
+      if (dJson && dJson.content) { try { lyric = Buffer.from(dJson.content, 'base64').toString('utf8'); } catch (e) {} }
+      sendJSON(res, { provider: 'kugou', lyric });
+    } catch (err) {
+      console.error('[KugouLyric]', err);
+      sendJSON(res, { provider: 'kugou', lyric: '', error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/user/playlists') {
+    try {
+      const data = await handleKugouUserPlaylists();
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[KugouUserPlaylists]', err);
+      sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message, playlists: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/playlist/tracks') {
+    try {
+      const id = url.searchParams.get('id') || url.searchParams.get('global_collection_id') || '';
+      const data = await handleKugouPlaylistTracks(id);
+      sendJSON(res, data);
+    } catch (err) {
+      console.error('[KugouPlaylistTracks]', err);
+      sendJSON(res, { provider: 'kugou', error: err.message, tracks: [] }, 500);
     }
     return;
   }
