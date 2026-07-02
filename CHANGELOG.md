@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.0
+
+- 新增酷狗音乐（KuGou）登录，作为网易云、QQ 音乐之外的第三个平台，登录方式与 QQ 一致：桌面端打开酷狗官方网页登录窗口，扫码/账号登录成功后自动捕获 `.kugou.com` 域 cookie 并同步到本地会话；非桌面端可手动导入 cookie。
+- 主进程 `desktop/main.js` 新增酷狗登录窗口（独立 `persist:mineradio-kugou-login` 分区、cookie 轮询、`KuGoo` 登录判定），`desktop/preload.js` 暴露 `openKugouMusicLogin`/`clearKugouMusicLogin`。
+- `server.js` 新增 `.kugou-cookie` 持久化与 `/api/kugou/login/status`、`/api/kugou/login/cookie`、`/api/kugou/logout` 路由，能从 `KuGoo` cookie 解析出 userid、token、昵称、头像。
+- 登录弹窗与账号面板从「网易云 + QQ」双平台扩展为三平台：新增酷狗 tab、酷狗蓝色主题、账号切换/补登/退出，并把原先写死双平台的逻辑改为三平台通用。
+- 说明：本次仅接入酷狗登录与账号态；酷狗搜索、歌单、播放音源尚未接入。酷狗网页 token 与安卓侧接口的 appid 未必通用，后续做播放时需再验证。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

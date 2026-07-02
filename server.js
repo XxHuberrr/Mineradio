@@ -59,6 +59,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const COOKIE_FILE = process.env.COOKIE_FILE || path.join(__dirname, '.cookie');
 const QQ_COOKIE_FILE = process.env.QQ_COOKIE_FILE || path.join(__dirname, '.qq-cookie');
+const KUGOU_COOKIE_FILE = process.env.KUGOU_COOKIE_FILE || path.join(__dirname, '.kugou-cookie');
 const UPDATE_WORK_DIR = process.env.MINERADIO_UPDATE_DIR || path.join(__dirname, 'updates');
 const UPDATE_DOWNLOAD_DIR = process.env.MINERADIO_UPDATE_DOWNLOAD_DIR || path.join(UPDATE_WORK_DIR, 'downloads');
 const UPDATE_PATCH_BACKUP_DIR = process.env.MINERADIO_PATCH_BACKUP_DIR || path.join(UPDATE_WORK_DIR, 'backups', 'patches');
@@ -184,6 +185,14 @@ catch (e) { qqCookie = ''; }
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
   try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+}
+
+let kugouCookie = '';
+try { if (fs.existsSync(KUGOU_COOKIE_FILE)) kugouCookie = fs.readFileSync(KUGOU_COOKIE_FILE, 'utf8').trim(); }
+catch (e) { kugouCookie = ''; }
+function saveKugouCookie(c) {
+  kugouCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  try { fs.writeFileSync(KUGOU_COOKIE_FILE, kugouCookie); } catch (e) {}
 }
 
 // ---------- 工具 ----------
@@ -1478,6 +1487,59 @@ function normalizeQQCookieInput(cookieText) {
   if (obj.uin) obj.uin = normalizeQQUin(obj.uin);
   return serializeCookieObject(obj);
 }
+function kugouCookieObject() {
+  return parseCookieString(kugouCookie);
+}
+function normalizeKugouUserId(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.replace(/^0+/, '') || digits;
+}
+// KuGoo cookie 内部是 URL 编码的 query 结构：KugooID=...&KugooPwd=...&NickName=...&Pic=...&t=...
+function parseKuGooCookieValue(obj) {
+  obj = obj || kugouCookieObject();
+  const raw = decodeQQCookieValue(obj.KuGoo || '');
+  const out = {};
+  if (!raw) return out;
+  raw.split('&').forEach(part => {
+    const idx = part.indexOf('=');
+    if (idx <= 0) return;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) out[key] = value;
+  });
+  return out;
+}
+function kugouCookieUserId(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  return normalizeKugouUserId(obj.KugooID || obj.userid || inner.KugooID);
+}
+function kugouCookieToken(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  return obj.token || obj.t || inner.t || inner.token || inner.KugooPwd || '';
+}
+function kugouCookieNickname(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  const raw = inner.NickName || obj.NickName || obj.username || inner.UserName || '';
+  return decodeQQCookieValue(raw);
+}
+function kugouCookieAvatar(obj) {
+  obj = obj || kugouCookieObject();
+  const inner = parseKuGooCookieValue(obj);
+  const raw = decodeQQCookieValue(inner.Pic || obj.Pic || '');
+  if (!raw) return '';
+  return /^https?:\/\//i.test(raw) ? raw.replace(/^http:\/\//i, 'https://') : '';
+}
+function normalizeKugouCookieInput(cookieText) {
+  const obj = parseCookieString(cookieText);
+  const inner = parseKuGooCookieValue(obj);
+  if (!obj.userid && (obj.KugooID || inner.KugooID)) obj.userid = obj.KugooID || inner.KugooID;
+  if (!obj.token && (obj.t || inner.t || inner.token)) obj.token = obj.t || inner.t || inner.token;
+  if (obj.userid) obj.userid = normalizeKugouUserId(obj.userid);
+  return serializeCookieObject(obj);
+}
 function playbackRestriction(provider, category, message, action, extra) {
   return {
     provider,
@@ -1735,6 +1797,10 @@ const QQ_MUSICU_URL = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
 const QQ_SMARTBOX_URL = 'https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg';
 const QQ_HEADERS = {
   Referer: 'https://y.qq.com/',
+  'User-Agent': UA,
+};
+const KUGOU_HEADERS = {
+  Referer: 'https://www.kugou.com/',
   'User-Agent': UA,
 };
 
@@ -2337,6 +2403,46 @@ async function qqGetJSON(targetUrl, params, opts) {
   if (opts.cookie !== false && qqCookie) headers.Cookie = qqCookie;
   const text = await requestText(u.toString(), { headers });
   return parseJSONText(text);
+}
+
+function normalizeKugouProfile(body, cookieObj) {
+  cookieObj = cookieObj || kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  const data = (body && (body.data || body.info || body.result)) || {};
+  const profileNick = data.nickname || data.nick_name || data.nick || data.username || '';
+  const profileAvatar = data.pic || data.avatar || data.avatarUrl || data.img_url || '';
+  const cookieNick = kugouCookieNickname(cookieObj);
+  const nick = decodeQQCookieValue(profileNick) || cookieNick || '';
+  const avatar = (profileAvatar ? decodeQQCookieValue(profileAvatar).replace(/^http:\/\//i, 'https://') : '') || kugouCookieAvatar(cookieObj);
+  let vipType = Number(
+    cookieObj.vip_type || data.vip_type || data.viptype || data.vipType ||
+    data.m_type || data.y_type || 0
+  ) || 0;
+  if (!vipType) {
+    const vipFlag = data.is_vip || data.isVip || data.vip;
+    if (vipFlag === true || Number(vipFlag) > 0 || String(vipFlag || '').toLowerCase() === 'true') vipType = 1;
+  }
+  return {
+    provider: 'kugou',
+    loggedIn: !!(userId && token),
+    preview: false,
+    userId,
+    nickname: nick || (userId ? ('酷狗 ' + userId) : '酷狗音乐'),
+    avatar,
+    vipType,
+    hasCookie: !!kugouCookie,
+    playbackKeyReady: !!(userId && token),
+    profileSource: profileNick || profileAvatar ? 'kugou-profile' : (cookieNick || avatar ? 'cookie' : 'fallback'),
+  };
+}
+
+async function getKugouLoginInfo() {
+  const cookieObj = kugouCookieObject();
+  const userId = kugouCookieUserId(cookieObj);
+  const token = kugouCookieToken(cookieObj);
+  if (!userId || !token) return { provider: 'kugou', loggedIn: false, hasCookie: !!kugouCookie };
+  return normalizeKugouProfile(null, cookieObj);
 }
 
 function audioProxyHeadersFor(audioUrl, range) {
@@ -3554,6 +3660,43 @@ const server = http.createServer(async (req, res) => {
       console.error('[QQSongComments]', err);
       sendJSON(res, { provider: 'qq', error: err.message, comments: [] }, 500);
     }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/status') {
+    try {
+      const info = await getKugouLoginInfo();
+      sendJSON(res, info);
+    } catch (err) {
+      console.error('[KugouLoginStatus]', err);
+      sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/login/cookie') {
+    try {
+      const body = await readRequestBody(req);
+      const raw = body.cookie || body.data || body.text || '';
+      const normalized = normalizeKugouCookieInput(raw);
+      const obj = parseCookieString(normalized);
+      if (!kugouCookieUserId(obj) || !kugouCookieToken(obj)) {
+        sendJSON(res, { provider: 'kugou', loggedIn: false, error: 'INVALID_KUGOU_COOKIE', message: '酷狗 cookie 缺少 userid 或有效登录票据' }, 400);
+        return;
+      }
+      saveKugouCookie(normalized);
+      const info = await getKugouLoginInfo();
+      sendJSON(res, { ...info, saved: true });
+    } catch (err) {
+      console.error('[KugouLoginCookie]', err);
+      sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/kugou/logout') {
+    saveKugouCookie('');
+    sendJSON(res, { provider: 'kugou', ok: true, loggedIn: false });
     return;
   }
 
