@@ -27074,5 +27074,63 @@ function animate() {
 }
 animate();
 </script>
+<script>
+/* 记忆功能：重开软件恢复上次的播放队列 + 当前歌（默认暂停，点歌/点播放即从头继续听，不用重新找）。
+   纯追加、全部 try/catch 保护、复用现有全局 playQueue/currentIdx，不改动播放核心。 */
+(function(){
+  var KEY = 'mineradio-player-state-v1';
+  var FIELDS = ['provider','source','type','id','name','artist','album','cover','duration','mid','songmid','mediaMid','hash','album_id','album_audio_id','fee','playable'];
+  function slim(s){ var o = {}; if (s) FIELDS.forEach(function(k){ if (s[k] != null) o[k] = s[k]; }); return o; }
+  function save(){
+    try {
+      if (typeof playQueue === 'undefined' || !playQueue || !playQueue.length) return;
+      var st = {
+        v: 1,
+        queue: playQueue.slice(0, 500).map(slim),
+        idx: (typeof currentIdx !== 'undefined' && currentIdx >= 0) ? currentIdx : 0,
+        time: (window.audio && audio.currentTime) || 0,
+        quality: (typeof playbackQuality !== 'undefined') ? playbackQuality : '',
+        ts: Date.now()
+      };
+      localStorage.setItem(KEY, JSON.stringify(st));
+    } catch (e) {}
+  }
+  function restore(){
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      var s = JSON.parse(raw);
+      if (!s || !s.queue || !s.queue.length) return;
+      if (typeof playQueue === 'undefined') return;
+      // 启动后若已有队列（用户/应用已操作）则不覆盖上次记忆
+      if (playQueue.length) return;
+      playQueue = s.queue;
+      currentIdx = (s.idx >= 0 && s.idx < s.queue.length) ? s.idx : 0;
+      pendingSeek = s.time || 0;
+      if (s.quality && typeof normalizePlaybackQuality === 'function') { try { playbackQuality = normalizePlaybackQuality(s.quality); if (typeof updatePlaybackQualityUi === 'function') updatePlaybackQualityUi(); } catch (e) {} }
+      var song = playQueue[currentIdx] || {};
+      try {
+        var tt = document.getElementById('thumb-title'), ta = document.getElementById('thumb-artist'),
+            tw = document.getElementById('thumb-wrap'), h = document.getElementById('hint');
+        if (tt) tt.textContent = song.name || '';
+        if (ta) ta.textContent = song.artist || '';
+        if (tw) tw.classList.add('visible');
+        if (h) h.classList.add('hidden');
+        if (typeof updateControlTrackInfo === 'function') updateControlTrackInfo(song);
+      } catch (e) {}
+      try { if (typeof safeRenderQueuePanel === 'function') safeRenderQueuePanel('restore', {}); } catch (e) {}
+    } catch (e) {}
+  }
+  function init(){
+    restore();
+    try { setInterval(save, 5000); } catch (e) {}   // 定时保存，force-quit 也能记住
+    window.addEventListener('beforeunload', save);
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) save(); });
+  }
+  // 延迟到主脚本 startup 完成后再恢复，避免与初始化竞争
+  if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(init, 1500);
+  else window.addEventListener('DOMContentLoaded', function(){ setTimeout(init, 1500); });
+})();
+</script>
 </body>
 </html>
