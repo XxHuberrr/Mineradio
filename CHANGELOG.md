@@ -2,11 +2,12 @@
 
 ## v1.2.0
 
-- 新增酷狗音乐（KuGou）登录，作为网易云、QQ 音乐之外的第三个平台，登录方式与 QQ 一致：桌面端打开酷狗官方网页登录窗口，扫码/账号登录成功后自动捕获 `.kugou.com` 域 cookie 并同步到本地会话；非桌面端可手动导入 cookie。
-- 主进程 `desktop/main.js` 新增酷狗登录窗口（独立 `persist:mineradio-kugou-login` 分区、cookie 轮询、`KuGoo` 登录判定），`desktop/preload.js` 暴露 `openKugouMusicLogin`/`clearKugouMusicLogin`。
-- `server.js` 新增 `.kugou-cookie` 持久化与 `/api/kugou/login/status`、`/api/kugou/login/cookie`、`/api/kugou/logout` 路由，能从 `KuGoo` cookie 解析出 userid、token、昵称、头像。
-- 登录弹窗与账号面板从「网易云 + QQ」双平台扩展为三平台：新增酷狗 tab、酷狗蓝色主题、账号切换/补登/退出，并把原先写死双平台的逻辑改为三平台通用。
-- 说明：本次仅接入酷狗登录与账号态；酷狗搜索、歌单、播放音源尚未接入。酷狗网页 token 与安卓侧接口的 appid 未必通用，后续做播放时需再验证。
+- 新增酷狗音乐（KuGou）作为网易云、QQ 音乐之外的第三个平台：**应用内二维码登录 + 我的歌单 / 我喜欢**。
+- 登录弹窗与账号面板从「网易云 + QQ」双平台扩展为三平台：新增酷狗 tab、酷狗蓝色主题、账号切换/补登/退出，原先写死双平台的逻辑改为三平台通用。
+- 酷狗登录采用 **appid=1005 客户端二维码登录**（`login-user.kugou.com` 的 `/v2/qrcode` + `/v2/get_userinfo_qrcode` 轮询）：登录弹窗显示二维码，用酷狗 App 扫码确认后自动登录。此方式拿到的 token 才能调用酷狗 gateway 歌单接口（网页登录的 token 属不同 appid 体系、调歌单接口会被拒）。
+- `server.js` 新增酷狗 web/android 签名、本地设备 id 生成、二维码接口，以及 `/api/kugou/qr/key`、`/api/kugou/qr/check`、`/api/kugou/user/playlists`（`gateway.kugou.com/v7/get_all_list`）、`/api/kugou/playlist/tracks`（`/pubsongs/v2/get_other_list_file_nofilt`）；`.kugou-cookie` 存 `userid/token/mid/nickname/pic`。
+- 前端：酷狗登录改为显示二维码 + 轮询登录；登录后左侧「我的歌单」显示酷狗歌单（含「我喜欢」），点击展开歌单内歌曲；歌单分组新增「酷狗歌单」。
+- 说明：本次接入酷狗登录、歌单与「我喜欢」的浏览；酷狗歌曲的**播放音源**（song url）尚未接入，点播会走换源/失败，后续单独实现。
 
 ## v1.1.1
 
