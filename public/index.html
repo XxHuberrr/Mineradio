@@ -23968,11 +23968,6 @@ function openProviderLogin(provider) {
 async function logoutActiveAccount() {
   if (activeAccountProvider === 'kugou') {
     try { await apiJson('/api/kugou/logout'); } catch (e) {}
-    try {
-      if (window.desktopWindow && typeof window.desktopWindow.clearKugouMusicLogin === 'function') {
-        await window.desktopWindow.clearKugouMusicLogin();
-      }
-    } catch (e) {}
     kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0 };
     kugouLoginWasLoggedIn = false;
     kugouPlaylists = [];
