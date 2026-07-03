@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.2
+
+- 界面国际化补齐：左侧歌单/队列弹出栏、歌单与播客列表的曲目数量等文案改为随语言切换的字典文案，不再残留硬编码中文。
+- 性能诊断：内置隐藏式帧率仪表盘，默认关闭，可用 `Ctrl+Shift+F` 或控制台 `__toggleFpsHud()` 开关，实时显示 FPS、每帧 CPU 耗时、长帧与跳帧计数，便于定位卡顿来源；不改动既有视觉质感与渲染负载。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

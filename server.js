@@ -4171,6 +4171,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
+        'Cache-Control': 'no-store',
       };
       const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;
       const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;

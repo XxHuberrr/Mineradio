@@ -1,7 +1,7 @@
 {
   "name": "mineradio",
   "productName": "Mineradio",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "沉浸式音乐播放器，融合天气电台、歌词舞台、粒子视觉和 3D 歌单架。",
   "author": "Mineradio",
   "main": "desktop/main.js",
