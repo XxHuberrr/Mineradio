@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "build:linux": "electron-builder --linux dir"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -40,6 +41,18 @@
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "category": "AudioVideo",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dir",
           "arch": [
             "x64"
           ]

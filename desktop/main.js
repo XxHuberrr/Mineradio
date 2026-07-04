@@ -2,23 +2,9 @@ const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dia
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
-const { execFile, spawn } = require('child_process');
 
 let mainWindow = null;
 let localServer = null;
-let mainServerPort = 0;
-let desktopLyricsWindow = null;
-let desktopLyricsState = {};
-let desktopLyricsUserBounds = null;
-let desktopLyricsProgrammaticMove = false;
-let desktopLyricsPointerCapture = false;
-let desktopLyricsMouseIgnored = null;
-let desktopLyricsMousePoller = null;
-let desktopLyricsMousePollerBuffer = '';
-let desktopLyricsHotBounds = null;
-let desktopLyricsLastMiddleAt = 0;
-let wallpaperWindow = null;
-let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
@@ -32,25 +18,31 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_ICON_PNG = path.join(__dirname, '..', 'build', 'icon.png');
+const APP_ICON = process.platform === 'win32' ? APP_ICON_ICO : APP_ICON_PNG;
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
-const CHROMIUM_PERFORMANCE_SWITCHES = [
+const CHROMIUM_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
+  ['disable-background-timer-throttling'],
+  ['disable-renderer-backgrounding'],
+  ['disable-backgrounding-occluded-windows'],
+];
+const WINDOWS_CHROMIUM_SWITCHES = [
   ['ignore-gpu-blocklist'],
   ['enable-gpu-rasterization'],
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
   ['use-angle', 'd3d11'],
 ];
-for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
+for (const [name, value] of process.platform === 'win32'
+  ? CHROMIUM_SWITCHES.concat(WINDOWS_CHROMIUM_SWITCHES)
+  : CHROMIUM_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
@@ -417,7 +409,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
@@ -519,7 +511,7 @@ async function openQQMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
@@ -699,403 +691,6 @@ function toggleFullscreen(win) {
   sendWindowState(win);
 }
 
-function overlayUrl(page) {
-  const port = mainServerPort || process.env.PORT || 3000;
-  return `http://127.0.0.1:${port}/${page}`;
-}
-
-function clampNumber(value, min, max, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
-
-function desktopLyricsDefaultBounds(payload = desktopLyricsState) {
-  const display = desktopLyricsUserBounds
-    ? screen.getDisplayMatching(desktopLyricsUserBounds)
-    : screen.getPrimaryDisplay();
-  const bounds = display.bounds;
-  const yRatio = clampNumber(payload.y, 0.08, 0.92, 0.76);
-  const width = Math.round(Math.min(Math.max(880, bounds.width * 0.72), bounds.width - 96));
-  const height = Math.round(Math.min(Math.max(340, bounds.height * 0.38), 560, bounds.height - 96));
-  return {
-    x: Math.round(bounds.x + (bounds.width - width) / 2),
-    y: Math.round(bounds.y + bounds.height * yRatio - height / 2),
-    width,
-    height,
-  };
-}
-
-function constrainDesktopLyricsBounds(bounds) {
-  const display = screen.getDisplayMatching(bounds);
-  const area = display.bounds;
-  const next = {
-    ...bounds,
-    width: Math.round(Math.min(Math.max(320, bounds.width), area.width)),
-    height: Math.round(Math.min(Math.max(180, bounds.height), area.height)),
-  };
-  const maxX = area.x + Math.max(0, area.width - next.width);
-  const maxY = area.y + Math.max(0, area.height - next.height);
-  next.x = Math.round(clampNumber(next.x, area.x, maxX, area.x));
-  next.y = Math.round(clampNumber(next.y, area.y, maxY, area.y));
-  return next;
-}
-
-function setDesktopLyricsBounds(bounds) {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  const nextBounds = constrainDesktopLyricsBounds(bounds);
-  const currentBounds = desktopLyricsWindow.getBounds();
-  if (
-    currentBounds.x === nextBounds.x
-    && currentBounds.y === nextBounds.y
-    && currentBounds.width === nextBounds.width
-    && currentBounds.height === nextBounds.height
-  ) {
-    return;
-  }
-  desktopLyricsProgrammaticMove = true;
-  desktopLyricsWindow.setBounds(nextBounds, false);
-  setTimeout(() => {
-    desktopLyricsProgrammaticMove = false;
-  }, 120);
-}
-
-function rememberDesktopLyricsBounds() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || desktopLyricsProgrammaticMove) return;
-  desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-}
-
-function applyDesktopLyricsMouseBehavior() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  const locked = desktopLyricsState.clickThrough !== false;
-  const shouldIgnore = locked || !desktopLyricsPointerCapture;
-  if (desktopLyricsMouseIgnored === shouldIgnore) return;
-  desktopLyricsMouseIgnored = shouldIgnore;
-  desktopLyricsWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
-}
-
-function desktopLyricsHotBoundsOnScreen() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return null;
-  const winBounds = desktopLyricsWindow.getBounds();
-  const rel = desktopLyricsHotBounds;
-  if (!rel) return winBounds;
-  return {
-    x: winBounds.x + rel.left,
-    y: winBounds.y + rel.top,
-    width: Math.max(1, rel.right - rel.left),
-    height: Math.max(1, rel.bottom - rel.top),
-  };
-}
-
-function pointInBounds(point, bounds) {
-  if (!point || !bounds) return false;
-  return point.x >= bounds.x
-    && point.x <= bounds.x + bounds.width
-    && point.y >= bounds.y
-    && point.y <= bounds.y + bounds.height;
-}
-
-function handleDesktopLyricsGlobalMiddleClick() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  if (!desktopLyricsState.enabled) return;
-  const now = Date.now();
-  if (now - desktopLyricsLastMiddleAt < 260) return;
-  const point = screen.getCursorScreenPoint();
-  if (!pointInBounds(point, desktopLyricsHotBoundsOnScreen())) return;
-  desktopLyricsLastMiddleAt = now;
-  const nextLocked = desktopLyricsState.clickThrough === false;
-  desktopLyricsState = { ...desktopLyricsState, clickThrough: nextLocked };
-  desktopLyricsPointerCapture = !nextLocked;
-  applyDesktopLyricsMouseBehavior();
-  broadcastDesktopLyricsLockState();
-}
-
-function startDesktopLyricsMousePoller() {
-  if (process.platform !== 'win32' || desktopLyricsMousePoller) return;
-  const script = `
-$ErrorActionPreference = "SilentlyContinue"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class MineradioMousePoll {
-  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
-}
-"@
-$prev = $false
-while ($true) {
-  $down = (([MineradioMousePoll]::GetAsyncKeyState(4) -band 0x8000) -ne 0)
-  if ($down -and -not $prev) {
-    [Console]::Out.WriteLine("MMB")
-    [Console]::Out.Flush()
-  }
-  $prev = $down
-  Start-Sleep -Milliseconds 24
-}
-`;
-  try {
-    desktopLyricsMousePoller = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    desktopLyricsMousePoller.stdout.on('data', (chunk) => {
-      desktopLyricsMousePollerBuffer += chunk.toString('utf8');
-      const lines = desktopLyricsMousePollerBuffer.split(/\r?\n/);
-      desktopLyricsMousePollerBuffer = lines.pop() || '';
-      lines.forEach((line) => {
-        if (line.trim() === 'MMB') handleDesktopLyricsGlobalMiddleClick();
-      });
-    });
-    desktopLyricsMousePoller.on('exit', () => {
-      desktopLyricsMousePoller = null;
-      desktopLyricsMousePollerBuffer = '';
-    });
-    desktopLyricsMousePoller.on('error', () => {
-      desktopLyricsMousePoller = null;
-      desktopLyricsMousePollerBuffer = '';
-    });
-  } catch (e) {
-    desktopLyricsMousePoller = null;
-    desktopLyricsMousePollerBuffer = '';
-  }
-}
-
-function stopDesktopLyricsMousePoller() {
-  if (!desktopLyricsMousePoller) return;
-  try {
-    desktopLyricsMousePoller.kill();
-  } catch (e) {}
-  desktopLyricsMousePoller = null;
-  desktopLyricsMousePollerBuffer = '';
-}
-
-function broadcastDesktopLyricsLockState() {
-  const locked = desktopLyricsState.clickThrough !== false;
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('mineradio-desktop-lyrics-lock-state', { locked });
-  }
-  sendDesktopLyricsState();
-}
-
-function broadcastDesktopLyricsEnabledState(enabled) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('mineradio-desktop-lyrics-enabled-state', { enabled: !!enabled });
-  }
-}
-
-function positionDesktopLyricsWindow(payload = desktopLyricsState, options = {}) {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  const shouldUseManualBounds = desktopLyricsUserBounds && !options.force;
-  setDesktopLyricsBounds(shouldUseManualBounds ? desktopLyricsUserBounds : desktopLyricsDefaultBounds(payload));
-  if (typeof desktopLyricsWindow.setOpacity === 'function') {
-    desktopLyricsWindow.setOpacity(clampNumber(payload.opacity, 0.28, 1, 0.92));
-  }
-}
-
-function sendDesktopLyricsState() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  desktopLyricsWindow.webContents.send('mineradio-desktop-lyrics-state', desktopLyricsState);
-}
-
-function createDesktopLyricsWindow(payload = {}) {
-  const previousY = desktopLyricsState.y;
-  const previousOpacity = desktopLyricsState.opacity;
-  desktopLyricsState = { ...desktopLyricsState, ...payload, enabled: true };
-  const hasY = Object.prototype.hasOwnProperty.call(payload || {}, 'y');
-  const nextY = clampNumber(desktopLyricsState.y, 0.08, 0.92, 0.76);
-  const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
-  const opacityChanged = Object.prototype.hasOwnProperty.call(payload || {}, 'opacity')
-    && Math.abs(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92) - clampNumber(previousOpacity, 0.28, 1, 0.92)) > 0.001;
-  if (yChanged) desktopLyricsUserBounds = null;
-  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    if (yChanged) {
-      positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged });
-    } else if (opacityChanged && typeof desktopLyricsWindow.setOpacity === 'function') {
-      desktopLyricsWindow.setOpacity(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92));
-    }
-    applyDesktopLyricsMouseBehavior();
-    sendDesktopLyricsState();
-    return desktopLyricsWindow;
-  }
-
-  desktopLyricsWindow = new BrowserWindow({
-    width: 920,
-    height: 190,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    hasShadow: false,
-    resizable: false,
-    movable: true,
-    focusable: false,
-    skipTaskbar: true,
-    show: false,
-    title: 'Mineradio Desktop Lyrics',
-    webPreferences: {
-      preload: path.join(__dirname, 'overlay-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
-  });
-  try {
-    desktopLyricsWindow.setAlwaysOnTop(true, 'screen-saver');
-    desktopLyricsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  } catch (e) {
-    console.warn('Desktop lyrics topmost setup skipped:', e.message);
-  }
-  startDesktopLyricsMousePoller();
-  applyDesktopLyricsMouseBehavior();
-  positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
-  desktopLyricsWindow.once('ready-to-show', () => {
-    if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-    desktopLyricsWindow.showInactive();
-    sendDesktopLyricsState();
-  });
-  desktopLyricsWindow.webContents.once('did-finish-load', sendDesktopLyricsState);
-  desktopLyricsWindow.on('closed', () => {
-    desktopLyricsWindow = null;
-    desktopLyricsMouseIgnored = null;
-  });
-  desktopLyricsWindow.on('moved', rememberDesktopLyricsBounds);
-  desktopLyricsWindow.loadURL(overlayUrl('desktop-lyrics.html')).catch((e) => console.warn('Desktop lyrics load failed:', e.message));
-  return desktopLyricsWindow;
-}
-
-function closeDesktopLyricsWindow() {
-  desktopLyricsState = { ...desktopLyricsState, enabled: false };
-  desktopLyricsPointerCapture = false;
-  desktopLyricsMouseIgnored = null;
-  desktopLyricsHotBounds = null;
-  stopDesktopLyricsMousePoller();
-  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    sendDesktopLyricsState();
-    desktopLyricsWindow.close();
-  }
-  desktopLyricsWindow = null;
-  broadcastDesktopLyricsEnabledState(false);
-}
-
-function nativeWindowHandleDecimal(win) {
-  const handle = win.getNativeWindowHandle();
-  if (process.arch === 'x64') return handle.readBigUInt64LE(0).toString();
-  return String(handle.readUInt32LE(0));
-}
-
-function attachWallpaperToWorkerW(win) {
-  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
-  const hwnd = nativeWindowHandleDecimal(win);
-  const script = `
-$ErrorActionPreference = "Stop"
-if (-not ("MineradioNativeWin" -as [type])) {
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class MineradioNativeWin {
-  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
-  [DllImport("user32.dll", SetLastError=true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-}
-"@
-}
-$progman = [MineradioNativeWin]::FindWindow("Progman", $null)
-$result = [IntPtr]::Zero
-[MineradioNativeWin]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$result) | Out-Null
-$script:workerw = [IntPtr]::Zero
-$enum = [MineradioNativeWin+EnumWindowsProc]{
-  param([IntPtr]$top, [IntPtr]$param)
-  $shell = [MineradioNativeWin]::FindWindowEx($top, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
-  if ($shell -ne [IntPtr]::Zero) {
-    $script:workerw = [MineradioNativeWin]::FindWindowEx([IntPtr]::Zero, $top, "WorkerW", $null)
-  }
-  return $true
-}
-[MineradioNativeWin]::EnumWindows($enum, [IntPtr]::Zero) | Out-Null
-if ($script:workerw -eq [IntPtr]::Zero) { $script:workerw = $progman }
-$target = [IntPtr]::new([Int64]${hwnd})
-[MineradioNativeWin]::SetParent($target, $script:workerw) | Out-Null
-[MineradioNativeWin]::SetWindowPos($target, [IntPtr]::Zero, 0, 0, 0, 0, 0x0013) | Out-Null
-`;
-  execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    windowsHide: true,
-    timeout: 5000,
-  }, (error) => {
-    if (error) console.warn('Wallpaper WorkerW attach failed:', error.message);
-  });
-}
-
-function positionWallpaperWindow() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow.setBounds(bounds, false);
-}
-
-function sendWallpaperState() {
-  if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  wallpaperWindow.webContents.send('mineradio-wallpaper-state', wallpaperState);
-}
-
-function createWallpaperWindow(payload = {}) {
-  wallpaperState = { ...wallpaperState, ...payload, enabled: true };
-  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    positionWallpaperWindow();
-    sendWallpaperState();
-    return wallpaperWindow;
-  }
-  const bounds = screen.getPrimaryDisplay().bounds;
-  wallpaperWindow = new BrowserWindow({
-    ...bounds,
-    frame: false,
-    transparent: false,
-    backgroundColor: '#050608',
-    hasShadow: false,
-    resizable: false,
-    movable: false,
-    focusable: false,
-    skipTaskbar: true,
-    show: false,
-    title: 'Mineradio Wallpaper',
-    webPreferences: {
-      preload: path.join(__dirname, 'overlay-preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false,
-    },
-  });
-  wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
-  wallpaperWindow.once('ready-to-show', () => {
-    if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-    positionWallpaperWindow();
-    wallpaperWindow.showInactive();
-    attachWallpaperToWorkerW(wallpaperWindow);
-    sendWallpaperState();
-  });
-  wallpaperWindow.webContents.once('did-finish-load', sendWallpaperState);
-  wallpaperWindow.on('closed', () => {
-    wallpaperWindow = null;
-  });
-  wallpaperWindow.loadURL(overlayUrl('wallpaper.html')).catch((e) => console.warn('Wallpaper load failed:', e.message));
-  return wallpaperWindow;
-}
-
-function closeWallpaperWindow() {
-  wallpaperState = { ...wallpaperState, enabled: false };
-  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    sendWallpaperState();
-    wallpaperWindow.close();
-  }
-  wallpaperWindow = null;
-}
-
-function closeOverlayWindows() {
-  closeDesktopLyricsWindow();
-  closeWallpaperWindow();
-}
 
 ipcMain.handle('desktop-window-minimize', (event) => {
   getSenderWindow(event)?.minimize();
@@ -1201,127 +796,11 @@ ipcMain.handle('mineradio-restart-app', async () => {
   }
 });
 
-ipcMain.handle('mineradio-desktop-lyrics-set-enabled', async (_event, enabled, payload) => {
-  try {
-    if (enabled) {
-      createDesktopLyricsWindow(payload || {});
-      broadcastDesktopLyricsEnabledState(true);
-    } else {
-      closeDesktopLyricsWindow();
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-update', async (_event, payload) => {
-  try {
-    const nextState = { ...desktopLyricsState, ...(payload || {}) };
-    if (nextState.enabled) {
-      createDesktopLyricsWindow(payload || {});
-    } else if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-      desktopLyricsState = nextState;
-      sendDesktopLyricsState();
-    } else {
-      desktopLyricsState = nextState;
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_UPDATE_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-set-dragging', async () => {
-  return { ok: true };
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-set-pointer-capture', async (_event, active) => {
-  try {
-    desktopLyricsPointerCapture = !!active;
-    applyDesktopLyricsMouseBehavior();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_POINTER_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-set-hot-bounds', async (_event, bounds) => {
-  try {
-    const left = clampNumber(bounds && bounds.left, -2000, 4000, 0);
-    const top = clampNumber(bounds && bounds.top, -2000, 4000, 0);
-    const right = clampNumber(bounds && bounds.right, left + 1, 6000, left + 1);
-    const bottom = clampNumber(bounds && bounds.bottom, top + 1, 6000, top + 1);
-    desktopLyricsHotBounds = { left, top, right, bottom };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_HOT_BOUNDS_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-set-lock-state', async (_event, locked) => {
-  try {
-    desktopLyricsState = { ...desktopLyricsState, clickThrough: !!locked };
-    if (desktopLyricsState.clickThrough !== false) desktopLyricsPointerCapture = false;
-    applyDesktopLyricsMouseBehavior();
-    broadcastDesktopLyricsLockState();
-    return { ok: true, locked: desktopLyricsState.clickThrough !== false };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_LOCK_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
-  try {
-    if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return { ok: false, error: 'NO_DESKTOP_LYRICS_WINDOW' };
-    if (desktopLyricsState.clickThrough !== false) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
-    const bounds = desktopLyricsWindow.getBounds();
-    const next = {
-      ...bounds,
-      x: Math.round(bounds.x + clampNumber(dx, -160, 160, 0)),
-      y: Math.round(bounds.y + clampNumber(dy, -160, 160, 0)),
-    };
-    desktopLyricsWindow.setBounds(next, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'DESKTOP_LYRICS_MOVE_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
-  try {
-    if (enabled) createWallpaperWindow(payload || {});
-    else closeWallpaperWindow();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_FAILED' };
-  }
-});
-
-ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
-  try {
-    wallpaperState = { ...wallpaperState, ...(payload || {}) };
-    if (wallpaperState.enabled) {
-      createWallpaperWindow(wallpaperState);
-      if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-        positionWallpaperWindow();
-        sendWallpaperState();
-      }
-    } else if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-      sendWallpaperState();
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message || 'WALLPAPER_UPDATE_FAILED' };
-  }
-});
 
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
   const port = await findOpenPort(3000);
-  mainServerPort = port;
 
   process.env.HOST = '127.0.0.1';
   process.env.PORT = String(port);
@@ -1357,7 +836,7 @@ async function createWindow() {
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1403,7 +882,6 @@ async function createWindow() {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;
     }
-    closeOverlayWindows();
     mainWindow = null;
   });
   mainWindow.on('enter-full-screen', () => {
@@ -1439,11 +917,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    screen.on('display-metrics-changed', () => {
-      positionDesktopLyricsWindow();
-      positionWallpaperWindow();
-      scheduleWindowStateSend(mainWindow);
-    });
+    screen.on('display-metrics-changed', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
@@ -1460,7 +934,6 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     unregisterMineradioGlobalHotkeys();
-    closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
   });
 }
