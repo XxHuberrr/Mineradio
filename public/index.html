@@ -2154,25 +2154,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
-        <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
       </div>
-      <div class="fx-section-label">桌面 / 壁纸</div>
-      <div class="fx-slider"><label>桌面歌词大小</label><input id="fx-desktoplyricssize" type="range" min="0.72" max="1.55" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词透明</label><input id="fx-desktoplyricsopacity" type="range" min="0.28" max="1" step="0.01"><output></output></div>
-      <div class="fx-slider"><label>桌面歌词高度</label><input id="fx-desktoplyricsy" type="range" min="0.08" max="0.92" step="0.01"><output></output></div>
-      <div class="fx-section-label">桌面帧数</div>
-      <div class="fx-seg" id="desktop-lyrics-fps-seg">
-        <button data-desktop-lyrics-fps="24">24</button>
-        <button data-desktop-lyrics-fps="30">30</button>
-        <button data-desktop-lyrics-fps="60">60</button>
-        <button data-desktop-lyrics-fps="120">120</button>
-        <button data-desktop-lyrics-fps="0">无上限</button>
-      </div>
-      <div class="fx-slider dev-locked"><label>壁纸透明度</label><input id="fx-wallpaperopacity" type="range" min="0.35" max="1" step="0.01" disabled><output></output></div>
     </div>
   </div>
 
@@ -2736,7 +2718,6 @@ var HOTKEY_ACTIONS = [
   { key:'volumeUp', label:'音量增加', category:'音量', local:'ArrowUp', global:'Ctrl+Alt+ArrowUp' },
   { key:'volumeDown', label:'音量降低', category:'音量', local:'ArrowDown', global:'Ctrl+Alt+ArrowDown' },
   { key:'toggleFullscreen', label:'全屏', category:'窗口', local:'KeyF', global:'Ctrl+Alt+KeyF' },
-  { key:'toggleDesktopLyrics', label:'桌面歌词', category:'歌词', local:'Alt+KeyL', global:'Ctrl+Alt+KeyL' }
 ];
 var hotkeyCaptureState = null;
 var hotkeyGlobalStatus = {};
@@ -3198,7 +3179,7 @@ var fxDefaults = {
   intensity: 0.85,
   cinemaShake: 0.5,
   depth: 1.0,
-  coverResolution: 1.55,
+  coverResolution: 1.25,
   point: 1.0, speed: 1.0, twist: 0.0, color: 1.10, scatter: 0.0, bgFade: 0.20,
   bloomStrength: 0.62,
   lyricGlowStrength: 0.28,
@@ -3231,16 +3212,6 @@ var fxDefaults = {
   backgroundColorCustom: false,
   backgroundImage: '',
   backgroundMedia: null,
-  desktopLyrics: false,
-  desktopLyricsSize: 1.0,
-  desktopLyricsOpacity: 0.92,
-  desktopLyricsY: 0.76,
-  desktopLyricsClickThrough: false,
-  desktopLyricsCinema: true,
-  desktopLyricsHighlight: false,
-  desktopLyricsFps: 60,
-  wallpaperMode: false,
-  wallpaperOpacity: 1,
   floatLayer: false, cinema: true, edge: false, aiDepth: false, bloom: false, lyricGlow: true,
   lyricGlowBeat: true,
   lyricGlowParticles: false,
@@ -3262,7 +3233,7 @@ var fxDefaults = {
   shelfBgOpacity: 0.90,
   shelfAccentColor: '#ffffff',
   performanceBackground: 'auto',
-  performanceQuality: 'high',
+  performanceQuality: 'balanced',
   liveBackgroundKeep: false,
   cam: 'off',
 };
@@ -3275,7 +3246,7 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   intensity: 0.85,
   cinemaShake: 0.5,
   depth: 1,
-  coverResolution: 1.55,
+  coverResolution: 1.25,
   point: 1,
   speed: 1,
   twist: 0,
@@ -3320,16 +3291,8 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   lyricGlow: true,
   lyricGlowBeat: true,
   lyricGlowParticles: false,
-  desktopLyrics: false,
-  desktopLyricsSize: 1,
-  desktopLyricsOpacity: 0.92,
-  desktopLyricsY: 0.76,
-  desktopLyricsClickThrough: false,
-  desktopLyricsCinema: true,
-  desktopLyricsHighlight: false,
-  desktopLyricsFps: 60,
   performanceBackground: 'auto',
-  performanceQuality: 'high',
+  performanceQuality: 'balanced',
   liveBackgroundKeep: false,
   particleLyrics: true,
   backCover: false,
@@ -3353,18 +3316,13 @@ function clonePackagedDefaultFxSnapshot() {
   return Object.assign({}, PACKAGED_DEFAULT_FX_SNAPSHOT);
 }
 function packagedDefaultLyricLayoutRaw() {
-  return Object.assign({ desktopLyricsSchema: 'desktop-lyrics-v3' }, clonePackagedDefaultFxSnapshot());
+  return clonePackagedDefaultFxSnapshot();
 }
-var DEVELOPMENT_LOCKED_FX = {
-  wallpaperMode: true
-};
+var DEVELOPMENT_LOCKED_FX = {};
 function isDevelopmentLockedFx(key) {
   return !!DEVELOPMENT_LOCKED_FX[key];
 }
-function normalizeDevelopmentLockedFxState() {
-  if (!fx) return;
-  fx.wallpaperMode = false;
-}
+function normalizeDevelopmentLockedFxState() {}
 function readSavedPlaybackVisualPreset() {
   try {
     var raw = JSON.parse(localStorage.getItem(LYRIC_LAYOUT_STORE_KEY) || '{}') || {};
@@ -3683,7 +3641,6 @@ function updateDesktopRuntimeState(state) {
   desktopRuntimeState.fullscreen = !!(state.isFullScreen || state.isNativeFullScreen || state.isHtmlFullScreen || state.isWindowFullScreen);
   updateRenderPowerClasses();
   applyRendererPowerMode();
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) setTimeout(syncDesktopOverlayState, 0);
   if (wasDeep && !isDeepBackgroundMode()) recoverVisualsAfterBackground('desktop-runtime-state');
   if (desktopRuntimeState.fullscreen !== wasFullscreen) scheduleMainRendererViewportRefresh('desktop-runtime-state');
 }
@@ -7542,7 +7499,6 @@ function readSavedLyricLayout() {
     var savedBgCustom = savedBgMode
       ? savedBgMode === 'custom'
       : (raw.backgroundColorCustom === true || (raw.backgroundColorCustom !== false && savedBgColor !== '#000000') || savedBgOpacity < 1);
-    var desktopLyricsSchemaReady = raw.desktopLyricsSchema === 'desktop-lyrics-v3';
     var savedShelfCameraMode = normalizeShelfCameraMode(raw.shelfCameraMode || fxDefaults.shelfCameraMode);
     var savedShelfAngleManual = raw.shelfAngleYManual === true;
     var savedShelfAngle = savedShelfAngleManual
@@ -7597,19 +7553,9 @@ function readSavedLyricLayout() {
       backgroundColorCustom: savedBgCustom,
       backgroundImage: normalizeCustomBackgroundImage(raw.backgroundImage),
       backgroundMedia: normalizeCustomBackgroundMedia(raw.backgroundMedia || raw.backgroundImage),
-      desktopLyrics: raw.desktopLyrics === true,
-      desktopLyricsSize: clampRange(Number(raw.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
-      desktopLyricsOpacity: clampRange(raw.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(raw.desktopLyricsOpacity), 0.28, 1),
-      desktopLyricsY: clampRange(raw.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(raw.desktopLyricsY), 0.08, 0.92),
-      desktopLyricsClickThrough: desktopLyricsSchemaReady ? raw.desktopLyricsClickThrough === true : fxDefaults.desktopLyricsClickThrough,
-      desktopLyricsCinema: desktopLyricsSchemaReady ? raw.desktopLyricsCinema !== false : fxDefaults.desktopLyricsCinema,
-      desktopLyricsHighlight: desktopLyricsSchemaReady ? raw.desktopLyricsHighlight === true : fxDefaults.desktopLyricsHighlight,
-      desktopLyricsFps: desktopLyricsSchemaReady ? normalizeDesktopLyricsFps(raw.desktopLyricsFps) : fxDefaults.desktopLyricsFps,
       performanceBackground: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true),
       performanceQuality: normalizePerformanceQuality(raw.performanceQuality),
       liveBackgroundKeep: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true) === 'keep',
-      wallpaperMode: false,
-      wallpaperOpacity: clampRange(raw.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(raw.wallpaperOpacity), 0.35, 1),
       coverResolution: normalizeCoverResolution(raw.coverResolution),
       shelf: /^(off|side|stage)$/.test(String(raw.shelf || '')) ? raw.shelf : fxDefaults.shelf,
       shelfCameraMode: savedShelfCameraMode,
@@ -7638,7 +7584,6 @@ function saveLyricLayout() {
       : clampRange(Number(fx.preset) || 0, 0, presetMeta.length - 1);
     localStorage.setItem(LYRIC_LAYOUT_STORE_KEY, JSON.stringify({
       visualPresetSchema: VISUAL_PRESET_SCHEMA,
-      desktopLyricsSchema: 'desktop-lyrics-v3',
       preset: presetForSave,
       intensity: clampRange(Number(fx.intensity) || fxDefaults.intensity, 0.2, 1.6),
       cinemaShake: clampRange(Number(fx.cinemaShake) || fxDefaults.cinemaShake, 0, 1.8),
@@ -7687,19 +7632,9 @@ function saveLyricLayout() {
       backgroundColorCustom: fx.backgroundColorMode === 'custom' || !!fx.backgroundColorCustom,
       backgroundImage: normalizeCustomBackgroundImage(fx.backgroundImage),
       backgroundMedia: normalizeCustomBackgroundMedia(fx.backgroundMedia || fx.backgroundImage),
-      desktopLyrics: !!fx.desktopLyrics,
-      desktopLyricsSize: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
-      desktopLyricsOpacity: clampRange(fx.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(fx.desktopLyricsOpacity), 0.28, 1),
-      desktopLyricsY: clampRange(fx.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(fx.desktopLyricsY), 0.08, 0.92),
-      desktopLyricsClickThrough: fx.desktopLyricsClickThrough === true,
-      desktopLyricsCinema: fx.desktopLyricsCinema !== false,
-      desktopLyricsHighlight: fx.desktopLyricsHighlight === true,
-      desktopLyricsFps: normalizeDesktopLyricsFps(fx.desktopLyricsFps),
       performanceBackground: normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true),
       performanceQuality: normalizePerformanceQuality(fx.performanceQuality),
       liveBackgroundKeep: normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true) === 'keep',
-      wallpaperMode: false,
-      wallpaperOpacity: clampRange(fx.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(fx.wallpaperOpacity), 0.35, 1),
       coverResolution: normalizeCoverResolution(fx.coverResolution),
       shelf: /^(off|side|stage)$/.test(String(fx.shelf || '')) ? fx.shelf : fxDefaults.shelf,
       shelfCameraMode: normalizeShelfCameraMode(fx.shelfCameraMode || fxDefaults.shelfCameraMode),
@@ -11939,7 +11874,6 @@ function smoothPodcastDjMapHandoff(songKey, map, token) {
     currentDjBeatMap = map;
     applyPodcastDjProfileFromMap(map);
     syncPodcastDjMapCursor(audio ? audio.currentTime : 0, true);
-    notifyDesktopLyricsBeatMapReady();
     hideBeatChip();
     showToast('DJ 离线锁拍完成: ' + (map.visualBeatCount || 0) + ' 个主拍');
   };
@@ -11955,7 +11889,6 @@ function smoothPodcastDjIntroHandoff(songKey, map, token) {
     currentDjBeatMap = map;
     applyPodcastDjProfileFromMap(map);
     syncPodcastDjMapCursor(audio ? audio.currentTime : 0, true);
-    notifyDesktopLyricsBeatMapReady();
     showBeatChip('DJ 开头已锁拍，全曲继续分析…');
   };
   scheduleVisualApply(apply, 0, 240);
@@ -12164,7 +12097,6 @@ function applyLocalBeatMap(song, mode, map, fromCache) {
     syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, true);
   }
   hideBeatChip();
-  notifyDesktopLyricsBeatMapReady();
   if (fromCache) showToast((mode === 'dj' ? 'DJ' : 'MR') + ' 本地节奏缓存已载入');
   return true;
 }
@@ -12337,7 +12269,6 @@ function smoothBeatMapHandoff(songId, map, token, song) {
     var t = audio ? audio.currentTime : 0;
     syncBeatMapPlaybackCursor(t, true);
     hideBeatChip();
-    notifyDesktopLyricsBeatMapReady();
     showToast('节奏分析完成: ' + (map.visualBeatCount || (map.cameraBeats && map.cameraBeats.length) || 0) + ' 个视觉主拍');
     writeBeatDiskCache(songId, map, song, 'mr');
     scheduleQueueBeatPrefetch(currentIdx, 1000);
@@ -12352,7 +12283,6 @@ function applyBeatMapCacheForCurrent(songId, map, token, message) {
   applyCinemaProfileFromBeatMap(map);
   syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0, true);
   hideBeatChip();
-  notifyDesktopLyricsBeatMapReady();
   if (message) console.log(message, songId, map.visualBeatCount || 0);
   scheduleQueueBeatPrefetch(currentIdx, 1000);
   return true;
@@ -18542,7 +18472,6 @@ async function playQueueAt(idx, opts) {
         applyPodcastDjProfileFromMap(currentDjBeatMap);
         syncPodcastDjMapCursor(audio ? audio.currentTime : 0, true);
         hideBeatChip();
-        notifyDesktopLyricsBeatMapReady();
         console.log('podcast DJ beatmap 缓存命中:', currentDjBeatMap.cameraBeats.length, '个主拍');
       } else {
         showBeatChip('DJ 离线锁拍准备中…');
@@ -18556,7 +18485,6 @@ async function playQueueAt(idx, opts) {
       currentBeatMap = beatMapCache[bmKey];
       applyCinemaProfileFromBeatMap(currentBeatMap);
       syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0);
-      notifyDesktopLyricsBeatMapReady();
       console.log('beatmap 缓存命中:', currentBeatMap.kicks.length, '个鼓点');
       scheduleQueueBeatPrefetch(idx, 2600);
     } else {
@@ -18565,7 +18493,6 @@ async function playQueueAt(idx, opts) {
         currentBeatMap = diskBeatMap;
         applyCinemaProfileFromBeatMap(currentBeatMap);
         syncBeatMapPlaybackCursor(audio ? audio.currentTime : 0);
-        notifyDesktopLyricsBeatMapReady();
         console.log('beatmap D盘缓存命中:', currentBeatMap.kicks.length, '个鼓点');
         scheduleQueueBeatPrefetch(idx, 2600);
       } else {
@@ -20195,14 +20122,6 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricGlow: raw.lyricGlow !== false,
     lyricGlowBeat: raw.lyricGlowBeat !== false,
     lyricGlowParticles: !!raw.lyricGlowParticles,
-    desktopLyrics: !!raw.desktopLyrics,
-    desktopLyricsSize: archiveNumber(raw, 'desktopLyricsSize', fxDefaults.desktopLyricsSize, 0.72, 1.55),
-    desktopLyricsOpacity: archiveNumber(raw, 'desktopLyricsOpacity', fxDefaults.desktopLyricsOpacity, 0.28, 1),
-    desktopLyricsY: archiveNumber(raw, 'desktopLyricsY', fxDefaults.desktopLyricsY, 0.08, 0.92),
-    desktopLyricsClickThrough: raw.desktopLyricsClickThrough === true,
-    desktopLyricsCinema: raw.desktopLyricsCinema !== false,
-    desktopLyricsHighlight: raw.desktopLyricsHighlight === true,
-    desktopLyricsFps: normalizeDesktopLyricsFps(Object.prototype.hasOwnProperty.call(raw, 'desktopLyricsFps') ? raw.desktopLyricsFps : fxDefaults.desktopLyricsFps),
     performanceBackground: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true),
     performanceQuality: normalizePerformanceQuality(raw.performanceQuality),
     liveBackgroundKeep: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true) === 'keep',
@@ -20315,8 +20234,6 @@ function applyFxArchiveSnapshot(snapshot) {
   updateFxInputs();
   applySavedLyricPaletteState();
   refreshCurrentLyricStyle();
-  applyDesktopLyricsState(true);
-  applyWallpaperModeState(true);
   updateRenderPowerClasses();
   applyRendererPowerMode();
   saveLyricLayout();
@@ -21113,7 +21030,6 @@ function setLyricFont(key) {
   updateLyricFontControls();
   refreshCurrentLyricStyle();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   showToast('歌词字体已切换');
 }
 function setLyricGlowLinked(linked, openPicker) {
@@ -21145,7 +21061,6 @@ function setLyricGlowCustom(color, silent) {
   setStageLyricPalette(fx.lyricColorMode === 'custom' ? lyricPaletteFromHex(fx.lyricColor) : (stageLyrics.coverPalette || stageLyrics.palette));
   updateLyricGlowControls();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   if (!silent) showToast('溢光颜色: ' + fx.lyricGlowColor.toUpperCase());
 }
 function setLyricColorAuto() {
@@ -21155,7 +21070,6 @@ function setLyricColorAuto() {
   updateLyricHighlightControls();
   updateLyricGlowControls();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   showToast('歌词颜色: 封面取色');
 }
 function setLyricColorCustom(color, silent) {
@@ -21166,7 +21080,6 @@ function setLyricColorCustom(color, silent) {
   updateLyricHighlightControls();
   updateLyricGlowControls();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   if (!silent) showToast('歌词颜色: ' + fx.lyricColor.toUpperCase());
 }
 function setLyricColorPreset(i) {
@@ -21180,7 +21093,6 @@ function setLyricHighlightAuto() {
   updateLyricHighlightControls();
   updateLyricGlowControls();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   showToast('高亮颜色: 跟随歌词');
 }
 function setLyricHighlightCustom(color, silent) {
@@ -21190,7 +21102,6 @@ function setLyricHighlightCustom(color, silent) {
   updateLyricHighlightControls();
   updateLyricGlowControls();
   saveLyricLayout();
-  pushDesktopLyricsState(true);
   if (!silent) showToast('高亮颜色: ' + fx.lyricHighlightColor.toUpperCase());
 }
 
@@ -21358,47 +21269,8 @@ function setRange(id, value) {
     ? coverParticleCountLabel(value)
     : (id === 'fx-lyricweight' || id === 'fx-glassaberration' || id === 'fx-lyrictiltx' || id === 'fx-lyrictilty' || id === 'fx-shelfangle' ? String(Math.round(Number(value) || 0)) : Number(value).toFixed(id === 'fx-lyricspacing' ? 3 : 2));
 }
-function updateDevelopmentFxControls() {
-  [
-    ['desktopLyrics', 't-desktopLyrics', '全屏幕置顶歌词'],
-    ['desktopLyricsClickThrough', 't-desktopLyricsClickThrough', '锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁'],
-    ['desktopLyricsCinema', 't-desktopLyricsCinema', '桌面歌词绑定鼓点电影震动，基础漂浮始终保留'],
-    ['desktopLyricsHighlight', 't-desktopLyricsHighlight', '桌面歌词按播放进度高亮'],
-    ['wallpaperMode', 't-wallpaperMode', '开发中，暂不可用']
-  ].forEach(function(item){
-    var locked = isDevelopmentLockedFx(item[0]);
-    var el = document.getElementById(item[1]);
-    if (!el) return;
-    el.classList.toggle('dev-locked', locked);
-    if (locked) {
-      el.classList.remove('on');
-      el.setAttribute('aria-disabled', 'true');
-      el.title = '开发中，暂不可用';
-    } else {
-      el.removeAttribute('aria-disabled');
-      el.title = item[2];
-    }
-  });
-  [
-    ['desktopLyrics', 'fx-desktoplyricssize'],
-    ['desktopLyrics', 'fx-desktoplyricsopacity'],
-    ['desktopLyrics', 'fx-desktoplyricsy'],
-    ['wallpaperMode', 'fx-wallpaperopacity']
-  ].forEach(function(item){
-    var locked = isDevelopmentLockedFx(item[0]);
-    var input = document.getElementById(item[1]);
-    if (!input) return;
-    input.disabled = locked;
-    var row = input.closest && input.closest('.fx-slider');
-    if (row) row.classList.toggle('dev-locked', locked);
-  });
-}
-function updateDesktopLyricsFpsControls() {
-  var fps = normalizeDesktopLyricsFps(fx.desktopLyricsFps);
-  document.querySelectorAll('#desktop-lyrics-fps-seg [data-desktop-lyrics-fps]').forEach(function(btn){
-    btn.classList.toggle('active', normalizeDesktopLyricsFps(btn.getAttribute('data-desktop-lyrics-fps')) === fps);
-  });
-}
+function updateDevelopmentFxControls() {}
+
 function updatePerformanceControls() {
   fx.performanceBackground = normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true);
   fx.liveBackgroundKeep = fx.performanceBackground === 'keep';
@@ -21447,10 +21319,6 @@ function updateFxInputs() {
   setRange('fx-lyricglow', fx.lyricGlowStrength);
   setRange('fx-bgopacity', fx.backgroundOpacity == null ? 1 : fx.backgroundOpacity);
   setRange('fx-glassaberration', fx.controlGlassChromaticOffset);
-  setRange('fx-desktoplyricssize', fx.desktopLyricsSize);
-  setRange('fx-desktoplyricsopacity', fx.desktopLyricsOpacity);
-  setRange('fx-desktoplyricsy', fx.desktopLyricsY);
-  setRange('fx-wallpaperopacity', fx.wallpaperOpacity);
   setRange('fx-shelfsize', fx.shelfSize);
   setRange('fx-shelfx', fx.shelfOffsetX);
   setRange('fx-shelfy', fx.shelfOffsetY);
@@ -21490,17 +21358,6 @@ function updateFxInputs() {
   if (lyricCameraLockToggle) lyricCameraLockToggle.classList.toggle('on', fx.lyricCameraLock);
   document.getElementById('t-bloom').classList.toggle('on', fx.bloom);
   document.getElementById('t-edge').classList.toggle('on', fx.edge);
-  var desktopLyricsToggle = document.getElementById('t-desktopLyrics');
-  if (desktopLyricsToggle) desktopLyricsToggle.classList.toggle('on', fx.desktopLyrics);
-  var desktopLyricsClickToggle = document.getElementById('t-desktopLyricsClickThrough');
-  if (desktopLyricsClickToggle) desktopLyricsClickToggle.classList.toggle('on', fx.desktopLyricsClickThrough !== false);
-  var desktopLyricsCinemaToggle = document.getElementById('t-desktopLyricsCinema');
-  if (desktopLyricsCinemaToggle) desktopLyricsCinemaToggle.classList.toggle('on', fx.desktopLyricsCinema !== false);
-  var desktopLyricsHighlightToggle = document.getElementById('t-desktopLyricsHighlight');
-  if (desktopLyricsHighlightToggle) desktopLyricsHighlightToggle.classList.toggle('on', fx.desktopLyricsHighlight === true);
-  updateDesktopLyricsFpsControls();
-  var wallpaperModeToggle = document.getElementById('t-wallpaperMode');
-  if (wallpaperModeToggle) wallpaperModeToggle.classList.toggle('on', fx.wallpaperMode);
   var shelfPodcastsToggle = document.getElementById('t-shelfShowPodcasts');
   if (shelfPodcastsToggle) shelfPodcastsToggle.classList.toggle('on', fx.shelfShowPodcasts !== false);
   var shelfMergeToggle = document.getElementById('t-shelfMergeCollections');
@@ -21715,10 +21572,6 @@ function ensureLyricPrimaryControls() {
     body.insertBefore(label, grid);
   }
   [
-    't-desktopLyrics',
-    't-desktopLyricsClickThrough',
-    't-desktopLyricsCinema',
-    't-desktopLyricsHighlight',
     't-lyricCameraLock',
     't-lyricGlow',
     't-lyricGlowBeat',
@@ -21758,8 +21611,6 @@ function relabelFxPanelControls() {
   setFxSectionBefore('lyric-source-seg', '歌词来源');
   setFxSectionBefore('lyric-font-grid', '字体与字距');
   setFxSectionBefore('fx-lyricscale', '位置与角度');
-  setFxSectionBefore('fx-desktoplyricssize', '桌面歌词');
-  setFxSectionBefore('desktop-lyrics-fps-seg', '桌面歌词帧率');
   setFxSectionBefore('shelf-seg', '3D 歌单架');
   setFxSectionBefore('shelf-camera-seg', '歌单架镜头');
   setFxSectionBefore('shelf-presence-seg', '歌单架显示');
@@ -21783,10 +21634,6 @@ function relabelFxPanelControls() {
   setFxSliderLabel('fx-lyricz', '前后景深');
   setFxSliderLabel('fx-lyrictiltx', '上下旋转');
   setFxSliderLabel('fx-lyrictilty', '左右旋转');
-  setFxSliderLabel('fx-desktoplyricssize', '桌面歌词大小');
-  setFxSliderLabel('fx-desktoplyricsopacity', '桌面歌词透明度');
-  setFxSliderLabel('fx-desktoplyricsy', '桌面歌词高度');
-  setFxSliderLabel('fx-wallpaperopacity', '壁纸透明度');
   setFxSliderLabel('fx-shelfsize', '歌单架大小');
   setFxSliderLabel('fx-shelfx', '左右位置');
   setFxSliderLabel('fx-shelfy', '上下位置');
@@ -21902,7 +21749,6 @@ function executeHotkeyAction(actionKey, source) {
   if (actionKey === 'volumeUp') return adjustVolumeByKeyboard(0.05);
   if (actionKey === 'volumeDown') return adjustVolumeByKeyboard(-0.05);
   if (actionKey === 'toggleFullscreen') return toggleFullscreen();
-  if (actionKey === 'toggleDesktopLyrics') return toggleFx('desktopLyrics');
 }
 function handleConfiguredLocalHotkey(e) {
   if (!hotkeySettings || !hotkeySettings.local || isTypingTarget(e.target)) return false;
@@ -22147,7 +21993,6 @@ function bindFxPanel() {
   buildLyricColorControls();
   var ids = [
     ['fx-intensity','intensity'],['fx-depth','depth'],['fx-coverres','coverResolution'],['fx-cineshake','cinemaShake'],['fx-lyricglow','lyricGlowStrength'],['fx-bgopacity','backgroundOpacity'],['fx-glassaberration','controlGlassChromaticOffset'],
-    ['fx-desktoplyricssize','desktopLyricsSize'],['fx-desktoplyricsopacity','desktopLyricsOpacity'],['fx-desktoplyricsy','desktopLyricsY'],['fx-wallpaperopacity','wallpaperOpacity'],
     ['fx-shelfsize','shelfSize'],['fx-shelfx','shelfOffsetX'],['fx-shelfy','shelfOffsetY'],['fx-shelfz','shelfOffsetZ'],['fx-shelfangle','shelfAngleY'],['fx-shelfopacity','shelfOpacity'],['fx-shelfbgalpha','shelfBgOpacity'],
     ['fx-lyricspacing','lyricLetterSpacing'],['fx-lyriclineheight','lyricLineHeight'],['fx-lyricweight','lyricWeight'],
     ['fx-lyricscale','lyricScale'],['fx-lyricx','lyricOffsetX'],['fx-lyricy','lyricOffsetY'],['fx-lyricz','lyricOffsetZ'],['fx-lyrictiltx','lyricTiltX'],['fx-lyrictilty','lyricTiltY'],
@@ -22176,10 +22021,6 @@ function bindFxPanel() {
         fx.controlGlassChromaticOffset = normalizeControlGlassChromaticOffset(fx.controlGlassChromaticOffset);
         applyControlGlassChromaticOffset();
       }
-      if (pair[1] === 'desktopLyricsSize') fx.desktopLyricsSize = clampRange(fx.desktopLyricsSize, 0.72, 1.55);
-      if (pair[1] === 'desktopLyricsOpacity') fx.desktopLyricsOpacity = clampRange(fx.desktopLyricsOpacity, 0.28, 1);
-      if (pair[1] === 'desktopLyricsY') fx.desktopLyricsY = clampRange(fx.desktopLyricsY, 0.08, 0.92);
-      if (pair[1] === 'wallpaperOpacity') fx.wallpaperOpacity = clampRange(fx.wallpaperOpacity, 0.35, 1);
       if (pair[1] === 'shelfSize') fx.shelfSize = clampRange(fx.shelfSize, 0.65, 1.45);
       if (pair[1] === 'shelfOffsetX') fx.shelfOffsetX = clampRange(fx.shelfOffsetX, -1.2, 1.2);
       if (pair[1] === 'shelfOffsetY') fx.shelfOffsetY = clampRange(fx.shelfOffsetY, -0.9, 0.9);
@@ -22197,9 +22038,6 @@ function bindFxPanel() {
       syncFxUniforms();
       if (/^shelf(Size|OffsetX|OffsetY|OffsetZ|AngleY|Opacity|BgOpacity)$/.test(pair[1]) && shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
       if (pair[1] === 'lyricLetterSpacing' || pair[1] === 'lyricLineHeight' || pair[1] === 'lyricWeight') refreshCurrentLyricStyle();
-      if (pair[1] === 'lyricLetterSpacing' || pair[1] === 'lyricLineHeight' || pair[1] === 'lyricWeight' || pair[1] === 'lyricScale' || pair[1] === 'lyricGlowStrength') pushDesktopLyricsState(true);
-      if (/^(desktopLyricsSize|desktopLyricsOpacity|desktopLyricsY)$/.test(pair[1])) pushDesktopLyricsState(true);
-      if (pair[1] === 'wallpaperOpacity') pushWallpaperState(true);
       saveLyricLayout();
     });
   });
@@ -22336,15 +22174,6 @@ function bindFxPanel() {
   document.querySelectorAll('#cam-seg button').forEach(function(b){
     b.addEventListener('click', function(){ setCamMode(b.dataset.cam); });
   });
-  document.querySelectorAll('#desktop-lyrics-fps-seg [data-desktop-lyrics-fps]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      fx.desktopLyricsFps = normalizeDesktopLyricsFps(btn.getAttribute('data-desktop-lyrics-fps'));
-      updateDesktopLyricsFpsControls();
-      saveLyricLayout();
-      pushDesktopLyricsState(true);
-      showToast(fx.desktopLyricsFps ? ('桌面歌词帧数 ' + fx.desktopLyricsFps) : '桌面歌词帧数无上限');
-    });
-  });
   document.querySelectorAll('#performance-background-seg [data-performance-background]').forEach(function(btn){
     btn.addEventListener('click', function(){
       setPerformanceBackgroundMode(btn.getAttribute('data-performance-background'));
@@ -22358,26 +22187,13 @@ function bindFxPanel() {
   updateFxInputs();
 }
 function toggleFx(key) {
-  if (isDevelopmentLockedFx(key)) {
-    normalizeDevelopmentLockedFxState();
-    saveLyricLayout();
-    updateFxInputs();
-    applyDesktopLyricsState(true);
-    applyWallpaperModeState(true);
-    showToast('开发中，暂不可用');
-    return;
-  }
   fx[key] = !fx[key];
   var toggleId = 't-' + (key === 'floatLayer' ? 'float' : key === 'aiDepth' ? 'aidepth' : key);
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
   syncFxUniforms();
-  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
+  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
   if (key === 'floatLayer') { if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer(); }
-  if (key === 'desktopLyrics') applyDesktopLyricsState(true);
-  if (key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight') pushDesktopLyricsState(true);
-  if (key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles') pushDesktopLyricsState(true);
-  if (key === 'wallpaperMode') applyWallpaperModeState(true);
   if (key === 'shelfShowPodcasts' || key === 'shelfMergeCollections') {
     if (shelfManager && shelfManager.rebuild) shelfManager.rebuild(true);
     if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
@@ -22397,11 +22213,6 @@ function toggleFx(key) {
   if (key === 'lyricGlow') showToast(fx.lyricGlow ? '歌词溢光已开启' : '歌词溢光已关闭');
   if (key === 'lyricGlowBeat') showToast(fx.lyricGlowBeat ? '歌词溢光跟随鼓点' : '歌词溢光已脱离鼓点');
   if (key === 'lyricGlowParticles') showToast(fx.lyricGlowParticles ? '歌词光粒已开启' : '歌词光粒已关闭');
-  if (key === 'desktopLyrics') showToast(fx.desktopLyrics ? '桌面歌词已开启' : '桌面歌词已关闭');
-  if (key === 'desktopLyricsClickThrough') showToast(fx.desktopLyricsClickThrough !== false ? '桌面歌词已锁定' : '桌面歌词可移动');
-  if (key === 'desktopLyricsCinema') showToast(fx.desktopLyricsCinema !== false ? '桌面歌词电影震动已开启' : '桌面歌词电影震动已关闭，基础漂浮保留');
-  if (key === 'desktopLyricsHighlight') showToast(fx.desktopLyricsHighlight === true ? '桌面歌词高亮跟随已开启' : '桌面歌词高亮跟随已关闭');
-  if (key === 'wallpaperMode') showToast(fx.wallpaperMode ? '壁纸模式已开启' : '壁纸模式已关闭');
   if (key === 'shelfShowPodcasts') showToast(fx.shelfShowPodcasts !== false ? '3D歌单架已显示播客歌单' : '3D歌单架已隐藏播客歌单');
   if (key === 'shelfMergeCollections') showToast(fx.shelfMergeCollections === true ? '我的歌单与收藏歌单已合并滚动' : '收藏歌单恢复滚到底切页');
   if (key === 'liveBackgroundKeep') showToast(fx.liveBackgroundKeep ? '直播后台保持已开启' : '直播后台保持已关闭');
@@ -22453,8 +22264,6 @@ function resetFx() {
   });
   applyCoverParticleResolution(fx.coverResolution, { reload: true });
   updateFxInputs();
-  applyDesktopLyricsState(true);
-  applyWallpaperModeState(true);
   updateRenderPowerClasses();
   applyRendererPowerMode();
   setStageLyricPalette(stageLyrics.coverPalette || stageLyrics.palette);
@@ -26137,239 +25946,9 @@ document.addEventListener('DOMContentLoaded', function(){
   splashTimer = setTimeout(markSplashReadyToEnter, 5000);
 });
 
-var desktopOverlayPushState = {
-  lyricsAt: 0,
-  wallpaperAt: 0,
-  lastLyricsKey: '',
-  lastLyricsBeatKey: '',
-  lastWallpaperKey: ''
-};
 function getDesktopWindowApi() {
   return window.desktopWindow && window.desktopWindow.isDesktop ? window.desktopWindow : null;
 }
-function currentDesktopSongMeta() {
-  var song = playQueue && currentIdx >= 0 ? playQueue[currentIdx] : null;
-  song = song || currentLyricSong && currentLyricSong() || {};
-  return {
-    title: song.name || song.title || 'Mineradio',
-    artist: song.artist || song.ar || song.author || '',
-    cover: (typeof songCoverSrc === 'function' && song) ? (songCoverSrc(song, 360) || song.cover || '') : (song.cover || '')
-  };
-}
-function normalizeDesktopLyricText(text) {
-  return String(text || '').replace(/\s+/g, ' ').trim();
-}
-function currentDesktopLyricSnapshot() {
-  var t = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
-  var lines = Array.isArray(lyricsLines) ? lyricsLines : [];
-  if (playing && audio && lines.length) {
-    var idx = -1;
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i].t <= t + 0.05) idx = i;
-      else break;
-    }
-    if (idx >= 0) {
-      var curLine = lines[idx] || { t:t, text:'' };
-      var nextLine = lines[idx + 1];
-      var nextT = nextLine && nextLine.t > curLine.t ? nextLine.t : Math.min((audio && audio.duration) || t + 4, curLine.t + (curLine.duration || 4.8));
-      var span = Math.max(0.75, nextT - curLine.t);
-      return {
-        text: normalizeDesktopLyricText(curLine.text || currentLyricFallbackText()),
-        progress: getLyricLineProgress(curLine, nextLine, t),
-        progressSpan: span
-      };
-    }
-    var introText = normalizeDesktopLyricText(currentLyricFallbackText());
-    if (introText) {
-      var firstLine = lines[0];
-      var introEnd = firstLine && firstLine.t > 0 ? firstLine.t : Math.min((audio && audio.duration) || 4.8, 4.8);
-      return {
-        text: introText,
-        progress: getLyricLineProgress({ t:0, text:introText, duration:Math.max(0.8, introEnd), charCount:Math.max(1, introText.length), fallback:true }, null, t),
-        progressSpan: Math.max(0.8, introEnd)
-      };
-    }
-  }
-  if (stageLyrics && stageLyrics.currentText) {
-    return {
-      text: normalizeDesktopLyricText(stageLyrics.currentText),
-      progress: stageLyrics.current && stageLyrics.current.userData ? clampRange(Number(stageLyrics.current.userData.lastLyricProgress) || 0, 0, 1) : 0,
-      progressSpan: 4.8
-    };
-  }
-  return { text: normalizeDesktopLyricText(currentDesktopSongMeta().title || 'Mineradio'), progress: 0, progressSpan: 4.8 };
-}
-function desktopOverlayColorValue(value, fallback) {
-  var raw = String(value || '').trim();
-  fallback = String(fallback || '#d6f8ff').trim();
-  if (/^#[0-9a-f]{3}$/i.test(raw) || /^#[0-9a-f]{6}$/i.test(raw)) return normalizeHexColor(raw, fallback);
-  if (/^rgba?\(/i.test(raw) || /^hsla?\(/i.test(raw)) return raw;
-  return normalizeHexColor(raw, fallback);
-}
-function desktopOverlayColors() {
-  var pal = stageLyrics && stageLyrics.palette || {};
-  return {
-    primary: desktopOverlayColorValue(pal.primary || fx.lyricColor || '#d6f8ff', '#d6f8ff'),
-    secondary: desktopOverlayColorValue(pal.secondary || fx.visualTintColor || '#9cffdf', '#9cffdf'),
-    highlight: desktopOverlayColorValue(pal.highlight || fx.lyricHighlightColor || '#fff0b8', '#fff0b8'),
-    glow: desktopOverlayColorValue(pal.glowColor || pal.secondary || pal.primary || fx.lyricGlowColor || '#9cffdf', '#9cffdf')
-  };
-}
-function desktopLyricsMotionPayload() {
-  return {
-    lyricGlow: !!fx.lyricGlow,
-    lyricGlowBeat: !!fx.lyricGlowBeat,
-    lyricGlowStrength: fx.lyricGlow ? clampRange(Number(fx.lyricGlowStrength) || 0, 0, 0.85) : 0,
-    highBloom: stageLyrics && isFinite(stageLyrics.highBloom) ? clampRange(stageLyrics.highBloom, 0, 1.45) : 0,
-    beatGlow: stageLyrics && isFinite(stageLyrics.beatGlow) ? clampRange(stageLyrics.beatGlow, 0, 1.7) : 0,
-    beatPulse: isFinite(beatPulse) ? clampRange(beatPulse, 0, 1.4) : 0,
-    bass: isFinite(bass) ? clampRange(bass, 0, 1.2) : 0
-  };
-}
-function desktopLyricsPlaybackPayload() {
-  var time = audio && isFinite(audio.currentTime) ? Number(audio.currentTime) : 0;
-  var duration = audio && isFinite(audio.duration) ? Number(audio.duration) : 0;
-  var rate = audio && isFinite(audio.playbackRate) && audio.playbackRate > 0 ? Number(audio.playbackRate) : 1;
-  return {
-    time: Math.max(0, time),
-    duration: Math.max(0, duration),
-    rate: clampRange(rate, 0.25, 4)
-  };
-}
-function desktopLyricsActiveBeatMap() {
-  var useDj = !!(djMode && djMode.active && currentDjBeatMap);
-  return {
-    source: useDj ? 'dj' : 'mr',
-    map: useDj ? currentDjBeatMap : currentBeatMap
-  };
-}
-function desktopLyricsBeatMapPayload(force) {
-  var selected = desktopLyricsActiveBeatMap();
-  var map = selected && selected.map;
-  var source = selected && selected.source || 'mr';
-  var cameraCount = map ? ((map.cameraBeats && map.cameraBeats.length) || (map.beats && map.beats.length) || (map.kicks && map.kicks.length) || 0) : 0;
-  var pulseCount = map ? ((map.pulseBeats && map.pulseBeats.length) || (map.kicks && map.kicks.length) || 0) : 0;
-  var duration = map && isFinite(map.duration) ? Number(map.duration) : 0;
-  var partialUntil = map && isFinite(map.partialUntilSec) ? Number(map.partialUntilSec) : 0;
-  var key = map
-    ? [source, map.analyzedAt || 0, cameraCount, pulseCount, Math.round(duration * 10), Math.round(partialUntil * 10), map.tempoSource || 'local'].join('|')
-    : 'none';
-  var shouldSendMap = !!force || key !== desktopOverlayPushState.lastLyricsBeatKey;
-  desktopOverlayPushState.lastLyricsBeatKey = key;
-  var payload = { beatMapKey: key };
-  if (shouldSendMap) payload.beatMap = map ? packLocalBeatMap(map) : null;
-  return payload;
-}
-function notifyDesktopLyricsBeatMapReady() {
-  try {
-    if (fx && fx.desktopLyrics) pushDesktopLyricsState(true);
-  } catch (e) {}
-}
-function desktopLyricsPushInterval() {
-  var fps = normalizeDesktopLyricsFps(fx && fx.desktopLyricsFps);
-  if (!fps) return 8;
-  return Math.max(8, Math.min(42, 1000 / fps));
-}
-function desktopLyricsPayload(forceBeatMap) {
-  var meta = currentDesktopSongMeta();
-  var lyric = currentDesktopLyricSnapshot();
-  var beatPayload = desktopLyricsBeatMapPayload(!!forceBeatMap);
-  var payload = {
-    enabled: !!fx.desktopLyrics && !isDevelopmentLockedFx('desktopLyrics'),
-    text: lyric.text,
-    progress: lyric.progress,
-    progressSpan: lyric.progressSpan,
-    title: meta.title,
-    artist: meta.artist,
-    playing: !!playing,
-    size: clampRange(Number(fx.desktopLyricsSize) || fxDefaults.desktopLyricsSize, 0.72, 1.55),
-    opacity: clampRange(fx.desktopLyricsOpacity == null ? fxDefaults.desktopLyricsOpacity : Number(fx.desktopLyricsOpacity), 0.28, 1),
-    y: clampRange(fx.desktopLyricsY == null ? fxDefaults.desktopLyricsY : Number(fx.desktopLyricsY), 0.08, 0.92),
-    clickThrough: isDevelopmentLockedFx('desktopLyricsClickThrough') ? true : fx.desktopLyricsClickThrough !== false,
-    lyricGlowParticles: !!fx.lyricGlowParticles,
-    cinema: fx.desktopLyricsCinema !== false,
-    highlightFollow: fx.desktopLyricsHighlight === true,
-    frameRate: normalizeDesktopLyricsFps(fx.desktopLyricsFps),
-    fontFamily: lyricFontStackForKey(fx.lyricFont),
-    fontWeight: lyricFontWeightValue(),
-    letterSpacing: clampRange(Number(fx.lyricLetterSpacing) || 0, -0.04, 0.18),
-    lineHeight: lyricLineHeightFactor(),
-    lyricScale: clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65),
-    feather: lyricsHasNativeKaraoke ? 0.030 : 0.055,
-    motion: desktopLyricsMotionPayload(),
-    playback: desktopLyricsPlaybackPayload(),
-    beatMapKey: beatPayload.beatMapKey,
-    colors: desktopOverlayColors()
-  };
-  if (Object.prototype.hasOwnProperty.call(beatPayload, 'beatMap')) payload.beatMap = beatPayload.beatMap;
-  return payload;
-}
-function wallpaperPayload() {
-  var meta = currentDesktopSongMeta();
-  return {
-    enabled: !!fx.wallpaperMode && !isDevelopmentLockedFx('wallpaperMode'),
-    title: meta.title,
-    artist: meta.artist,
-    cover: meta.cover,
-    playing: !!playing,
-    preset: fx.preset,
-    opacity: clampRange(fx.wallpaperOpacity == null ? fxDefaults.wallpaperOpacity : Number(fx.wallpaperOpacity), 0.35, 1),
-    colors: desktopOverlayColors()
-  };
-}
-function pushDesktopLyricsState(force) {
-  var api = getDesktopWindowApi();
-  if (!api || typeof api.updateDesktopLyrics !== 'function') return;
-  var now = performance.now();
-  if (!force && now - desktopOverlayPushState.lyricsAt < desktopLyricsPushInterval()) return;
-  var payload = desktopLyricsPayload(!!force);
-  var colors = payload.colors || {};
-  var motion = payload.motion || {};
-  var key = payload.enabled + '|' + payload.text + '|' + Math.round(payload.progress * 1000) + '|' + Math.round((payload.progressSpan || 0) * 100) + '|' + payload.playing + '|' + payload.size + '|' + payload.opacity + '|' + payload.y + '|' + payload.clickThrough + '|' + payload.cinema + '|' + payload.highlightFollow + '|' + payload.frameRate + '|' + payload.fontFamily + '|' + payload.fontWeight + '|' + payload.letterSpacing + '|' + payload.lineHeight + '|' + payload.lyricScale + '|' + payload.feather + '|' + payload.beatMapKey + '|' + colors.primary + '|' + colors.secondary + '|' + colors.highlight + '|' + colors.glow + '|' + motion.lyricGlow + '|' + motion.lyricGlowBeat + '|' + Math.round((motion.lyricGlowStrength || 0) * 100) + '|' + Math.round((motion.highBloom || 0) * 100) + '|' + Math.round((motion.beatGlow || 0) * 100) + '|' + Math.round((motion.beatPulse || 0) * 100) + '|' + Math.round((motion.bass || 0) * 100);
-  if (!force && key === desktopOverlayPushState.lastLyricsKey && now - desktopOverlayPushState.lyricsAt < 900) return;
-  desktopOverlayPushState.lyricsAt = now;
-  desktopOverlayPushState.lastLyricsKey = key;
-  api.updateDesktopLyrics(payload).catch(function(e){ console.warn('desktop lyrics update failed:', e); });
-}
-function applyDesktopLyricsState(force) {
-  var api = getDesktopWindowApi();
-  if (!api) return;
-  normalizeDevelopmentLockedFxState();
-  var payload = desktopLyricsPayload(true);
-  if (typeof api.setDesktopLyricsEnabled === 'function') {
-    api.setDesktopLyricsEnabled(!!payload.enabled, payload).catch(function(e){ console.warn('desktop lyrics state failed:', e); });
-  }
-  pushDesktopLyricsState(!!force);
-}
-function pushWallpaperState(force) {
-  var api = getDesktopWindowApi();
-  if (!api || typeof api.updateWallpaperMode !== 'function') return;
-  var now = performance.now();
-  if (!force && now - desktopOverlayPushState.wallpaperAt < 260) return;
-  var payload = wallpaperPayload();
-  var key = payload.enabled + '|' + payload.title + '|' + payload.artist + '|' + payload.cover + '|' + payload.playing + '|' + payload.preset + '|' + payload.opacity;
-  if (!force && key === desktopOverlayPushState.lastWallpaperKey && now - desktopOverlayPushState.wallpaperAt < 1400) return;
-  desktopOverlayPushState.wallpaperAt = now;
-  desktopOverlayPushState.lastWallpaperKey = key;
-  api.updateWallpaperMode(payload).catch(function(e){ console.warn('wallpaper update failed:', e); });
-}
-function applyWallpaperModeState(force) {
-  var api = getDesktopWindowApi();
-  if (!api) return;
-  normalizeDevelopmentLockedFxState();
-  var payload = wallpaperPayload();
-  if (typeof api.setWallpaperMode === 'function') {
-    api.setWallpaperMode(!!payload.enabled, payload).catch(function(e){ console.warn('wallpaper state failed:', e); });
-  }
-  pushWallpaperState(!!force);
-}
-function syncDesktopOverlayState() {
-  if (fx.desktopLyrics) pushDesktopLyricsState(false);
-  if (fx.wallpaperMode) pushWallpaperState(false);
-}
-setInterval(function(){
-  if (fx && (fx.desktopLyrics || fx.wallpaperMode)) syncDesktopOverlayState();
-}, 320);
 
 // 全屏
 var desktopFullscreenActive = false;
@@ -26454,28 +26033,6 @@ function toggleFullscreen() {
     });
   });
 
-  if (typeof api.onDesktopLyricsLockState === 'function') {
-    api.onDesktopLyricsLockState(function(payload){
-      var locked = !payload || payload.locked !== false;
-      if (fx.desktopLyricsClickThrough === locked) return;
-      fx.desktopLyricsClickThrough = locked;
-      updateFxInputs();
-      saveLyricLayout();
-      pushDesktopLyricsState(true);
-      showToast(locked ? '桌面歌词已锁定' : '桌面歌词可移动');
-    });
-  }
-  if (typeof api.onDesktopLyricsEnabledState === 'function') {
-    api.onDesktopLyricsEnabledState(function(payload){
-      var enabled = !!(payload && payload.enabled);
-      if (fx.desktopLyrics === enabled) return;
-      fx.desktopLyrics = enabled;
-      updateFxInputs();
-      saveLyricLayout();
-      showToast(enabled ? '桌面歌词已开启' : '桌面歌词已关闭');
-    });
-  }
-
   api.onStateChange(applyState);
   if (typeof api.getState === 'function') {
     api.getState().then(applyState).catch(function(){ applyState({}); });
@@ -26514,8 +26071,6 @@ scheduleUiWarmTask(function(){
 applyUserCapsuleAutoHideState();
 applyFxFabAutoHideState();
 applyControlsAutoHidePreference();
-applyDesktopLyricsState(false);
-applyWallpaperModeState(false);
 setShelfMode(fx.shelf);
 applyStartupStarfieldPreset();
 applyPlaylistPanelPinState(false);
@@ -26862,7 +26417,6 @@ function animate() {
   }
   updateSkullParticleLayer(dt);
   updateStageLyrics3D(dt);
-  syncDesktopOverlayState();
 
   // 缩略图脉动
   if (currentIdx >= 0) {
