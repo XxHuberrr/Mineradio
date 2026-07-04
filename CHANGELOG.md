@@ -1,6 +1,13 @@
 # Changelog
 
-## v1.1.1
+## v1.2.0
+
+- 新增 Spotify 官方 Web Playback SDK 集成，支持跨国曲库。
+- 在个人中心增加 Spotify 登录按钮，支持 OAuth2.0 授权。
+- 搜索区支持切换至 Spotify 曲库进行搜索。
+- 支持 Spotify Premium 账号直接在播放器内播放完整歌曲。
+- 播放 Spotify 歌曲时自动进入纯净模式（隐藏 3D 粒子），保证客户端流畅稳定。
+- 新增支持从根目录读取 `.env` 环境变量文件。## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.
 - The installer now forces the target path into a dedicated `Mineradio` folder, blocks non-empty non-Mineradio-owned targets, and blocks C drive installs when a D-Z drive is available.
