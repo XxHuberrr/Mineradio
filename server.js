@@ -3164,11 +3164,9 @@ function normalizeNeteaseVip(profile, account, extra) {
   extra = extra || {};
   const vipInfo = profile.vipInfo || profile.vipinfo || account.vipInfo || account.vipinfo || extra.vipInfo || extra.vipinfo || {};
   const objects = [account, profile, vipInfo, extra];
-  const vipType = firstPositiveNumberFrom(objects, [
-    'vipType', 'vip_type', 'viptype', 'musicVipType', 'music_vip_type',
-    'musicVipLevel', 'music_vip_level', 'redVipLevel', 'red_vip_level',
-    'blackVipLevel', 'black_vip_level', 'luxuryVipLevel', 'luxury_vip_level',
-    'svipType', 'svip_type',
+  // 只从 profile/account 的标准 vipType 字段取 VIP 类型，避免误读其他 numeric level 字段
+  const vipType = firstPositiveNumberFrom([profile, account, vipInfo], [
+    'vipType', 'vip_type', 'viptype',
   ]);
   const text = collectVipStringValues({ account, profile, vipInfo, extra }, [], 0).join(' ').toLowerCase();
   const svipFlag = objects.some(obj => obj && (
