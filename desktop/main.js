@@ -3,6 +3,7 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const mainLogger = require('./logger.js');
 
 let mainWindow = null;
 let localServer = null;
@@ -36,6 +37,7 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -608,6 +610,14 @@ async function clearQQMusicLoginSession() {
   return { ok: true };
 }
 
+async function clearKugouMusicLoginSession() {
+  const cookieSession = session.fromPartition(KUGOU_LOGIN_PARTITION);
+  await cookieSession.clearStorageData({
+    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
+  });
+  return { ok: true };
+}
+
 async function clearNeteaseMusicLoginSession() {
   const cookieSession = session.fromPartition(NETEASE_LOGIN_PARTITION);
   await cookieSession.clearStorageData({
@@ -1101,6 +1111,16 @@ ipcMain.handle('desktop-window-minimize', (event) => {
   getSenderWindow(event)?.minimize();
 });
 
+ipcMain.on('mineradio-log-write', (_event, payload) => {
+  try {
+    if (!payload || typeof payload !== 'object') return;
+    const { level, scope, message, data } = payload;
+    mainLogger.log(level || 'INFO', scope || 'Renderer', message || '', data);
+  } catch (e) {
+    // 日志失败不影响主流程
+  }
+});
+
 ipcMain.handle('desktop-window-toggle-maximize', (event) => {
   toggleFullscreen(getSenderWindow(event));
 });
@@ -1174,6 +1194,10 @@ ipcMain.handle('qq-music-open-login', async (event) => {
 
 ipcMain.handle('qq-music-clear-login', async () => {
   return clearQQMusicLoginSession();
+});
+
+ipcMain.handle('kugou-music-clear-login', async () => {
+  return clearKugouMusicLoginSession();
 });
 
 ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
@@ -1327,7 +1351,16 @@ async function createWindow() {
   process.env.PORT = String(port);
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  process.env.KUGOU_TOKEN_FILE = path.join(app.getPath('userData'), '.kugou-token');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  try {
+    const logDir = path.join(app.getPath('userData'), 'logs');
+    process.env.MINERADIO_LOG_DIR = logDir;
+    mainLogger.setLogDir(logDir);
+    mainLogger.log('INFO', 'Main', 'Mineradio main process started', { port, logDir });
+  } catch (e) {
+    console.warn('Logger init failed:', e.message);
+  }
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -1338,6 +1371,17 @@ async function createWindow() {
     }
   } catch (e) {
     console.warn('QQ cookie migration skipped:', e.message);
+  }
+  try {
+    const legacyKugouToken = path.join(__dirname, '..', '.kugou-token');
+    if (fs.existsSync(legacyKugouToken)) {
+      if (!fs.existsSync(process.env.KUGOU_TOKEN_FILE)) {
+        fs.copyFileSync(legacyKugouToken, process.env.KUGOU_TOKEN_FILE);
+      }
+      fs.unlinkSync(legacyKugouToken);
+    }
+  } catch (e) {
+    console.warn('Kugou token migration skipped:', e.message);
   }
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
