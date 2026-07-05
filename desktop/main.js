@@ -32,6 +32,7 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_ICON_ICNS = path.join(__dirname, '..', 'build', 'icon.icns');
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -47,9 +48,10 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-background-timer-throttling'],
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') {
+  CHROMIUM_PERFORMANCE_SWITCHES.push(['force_high_performance_gpu'], ['use-angle', 'd3d11']);
+}
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -417,7 +419,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: process.platform === 'darwin' ? APP_ICON_ICNS : APP_ICON_ICO,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
@@ -519,7 +521,7 @@ async function openQQMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: process.platform === 'darwin' ? APP_ICON_ICNS : APP_ICON_ICO,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
@@ -811,8 +813,9 @@ function handleDesktopLyricsGlobalMiddleClick() {
 }
 
 function startDesktopLyricsMousePoller() {
-  if (process.platform !== 'win32' || desktopLyricsMousePoller) return;
-  const script = `
+  if (desktopLyricsMousePoller) return;
+  if (process.platform === 'win32') {
+    const script = `
 $ErrorActionPreference = "SilentlyContinue"
 Add-Type @"
 using System;
@@ -832,30 +835,72 @@ while ($true) {
   Start-Sleep -Milliseconds 24
 }
 `;
-  try {
-    desktopLyricsMousePoller = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    desktopLyricsMousePoller.stdout.on('data', (chunk) => {
-      desktopLyricsMousePollerBuffer += chunk.toString('utf8');
-      const lines = desktopLyricsMousePollerBuffer.split(/\r?\n/);
-      desktopLyricsMousePollerBuffer = lines.pop() || '';
-      lines.forEach((line) => {
-        if (line.trim() === 'MMB') handleDesktopLyricsGlobalMiddleClick();
+    try {
+      desktopLyricsMousePoller = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-    });
-    desktopLyricsMousePoller.on('exit', () => {
+      desktopLyricsMousePoller.stdout.on('data', (chunk) => {
+        desktopLyricsMousePollerBuffer += chunk.toString('utf8');
+        const lines = desktopLyricsMousePollerBuffer.split(/\r?\n/);
+        desktopLyricsMousePollerBuffer = lines.pop() || '';
+        lines.forEach((line) => {
+          if (line.trim() === 'MMB') handleDesktopLyricsGlobalMiddleClick();
+        });
+      });
+      desktopLyricsMousePoller.on('exit', () => {
+        desktopLyricsMousePoller = null;
+        desktopLyricsMousePollerBuffer = '';
+      });
+      desktopLyricsMousePoller.on('error', () => {
+        desktopLyricsMousePoller = null;
+        desktopLyricsMousePollerBuffer = '';
+      });
+    } catch (e) {
       desktopLyricsMousePoller = null;
       desktopLyricsMousePollerBuffer = '';
-    });
-    desktopLyricsMousePoller.on('error', () => {
+    }
+  } else if (process.platform === 'darwin') {
+    const script = `
+#!/usr/bin/osascript
+global prev
+set prev to false
+repeat
+    set current to button number of (get mouse button state)
+    set isDown to current is 2
+    if isDown and not prev then
+        do shell script "echo MMB"
+    end if
+    set prev to isDown
+    delay 0.024
+end repeat
+`;
+    try {
+      desktopLyricsMousePoller = spawn('osascript', ['-'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      desktopLyricsMousePoller.stdin.write(script);
+      desktopLyricsMousePoller.stdin.end();
+      desktopLyricsMousePoller.stdout.on('data', (chunk) => {
+        desktopLyricsMousePollerBuffer += chunk.toString('utf8');
+        const lines = desktopLyricsMousePollerBuffer.split(/\r?\n/);
+        desktopLyricsMousePollerBuffer = lines.pop() || '';
+        lines.forEach((line) => {
+          if (line.trim() === 'MMB') handleDesktopLyricsGlobalMiddleClick();
+        });
+      });
+      desktopLyricsMousePoller.on('exit', () => {
+        desktopLyricsMousePoller = null;
+        desktopLyricsMousePollerBuffer = '';
+      });
+      desktopLyricsMousePoller.on('error', () => {
+        desktopLyricsMousePoller = null;
+        desktopLyricsMousePollerBuffer = '';
+      });
+    } catch (e) {
       desktopLyricsMousePoller = null;
       desktopLyricsMousePollerBuffer = '';
-    });
-  } catch (e) {
-    desktopLyricsMousePoller = null;
-    desktopLyricsMousePollerBuffer = '';
+    }
   }
 }
 
@@ -1357,7 +1402,7 @@ async function createWindow() {
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: process.platform === 'darwin' ? APP_ICON_ICNS : APP_ICON_ICO,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
