@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Menu } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -48,8 +48,10 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') {
+  CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
+}
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -1049,6 +1051,7 @@ function createWallpaperWindow(payload = {}) {
   const bounds = screen.getPrimaryDisplay().bounds;
   wallpaperWindow = new BrowserWindow({
     ...bounds,
+    ...(process.platform === 'darwin' ? { type: 'desktop' } : {}),
     frame: false,
     transparent: false,
     backgroundColor: '#050608',
@@ -1068,6 +1071,13 @@ function createWallpaperWindow(payload = {}) {
     },
   });
   wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
+  if (process.platform === 'darwin') {
+    try {
+      wallpaperWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+    } catch (e) {
+      console.warn('Wallpaper workspace pin skipped:', e.message);
+    }
+  }
   wallpaperWindow.once('ready-to-show', () => {
     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
     positionWallpaperWindow();
@@ -1317,9 +1327,11 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   }
 });
 
-async function createWindow() {
-  htmlFullscreenActive = false;
-  windowFullscreenActive = false;
+async function ensureLocalServer() {
+  if (localServer) {
+    await waitForServer(localServer);
+    return;
+  }
   const port = await findOpenPort(3000);
   mainServerPort = port;
 
@@ -1342,6 +1354,13 @@ async function createWindow() {
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
+}
+
+async function createWindow() {
+  htmlFullscreenActive = false;
+  windowFullscreenActive = false;
+  await ensureLocalServer();
+  const port = mainServerPort;
 
   const initialBounds = getWindowedBounds();
 
@@ -1350,10 +1369,10 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    ...(process.platform === 'darwin' ? {} : { frame: false }),
     fullscreen: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: process.platform !== 'darwin',
+    backgroundColor: process.platform === 'darwin' ? '#050608' : '#00000000',
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
@@ -1428,6 +1447,13 @@ async function createWindow() {
 
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+if (process.platform === 'darwin') {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]));
+}
 
 if (!gotSingleInstanceLock) {
   app.quit();

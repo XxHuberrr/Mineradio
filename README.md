@@ -23,6 +23,17 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、�
 2. Windows SmartScreen 弹出蓝色拦截窗口时，点 `更多信息`，再点 `仍要运行`。
 3. 如果杀毒软件明确显示木马、高危或已经隔离，不要强行运行；删除该文件后重新从蓝奏云或 GitHub Release 下载，仍然异常请带截图反馈给作者。
 
+## macOS 版本
+
+Mineradio 提供 Apple Silicon (M 系列芯片) 的 macOS 安装包 `Mineradio-<版本号>-arm64.dmg`，可在 GitHub Release 下载。Intel 芯片的 Mac 暂不支持。
+
+macOS 安装包未进行 Apple 签名与公证，首次打开时 Gatekeeper 会提示"无法验证开发者"：
+
+1. 在「访达 → 应用程序」中找到 Mineradio，右键（或按住 Control 点按）选择「打开」，再点「打开」确认。
+2. 或在终端执行 `xattr -cr /Applications/Mineradio.app` 后正常双击打开。
+
+macOS 版差异说明：桌面歌词的锁定/解锁请使用软件内视觉面板的开关（Windows 上的全局鼠标中键切换暂不支持）；应用内更新入口在 macOS 上会跳转到 Release 页面手动下载。
+
 ## 作者支持
 
 如果 Mineradio 陪你多听了一首歌，也欢迎请作者一杯咖啡。
