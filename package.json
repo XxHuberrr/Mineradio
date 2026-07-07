@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "build:win:dir": "electron-builder --win dir",
+    "build:mac": "electron-builder --mac dmg"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -45,6 +46,20 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.music",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Mineradio-${version}-arm64.dmg"
     },
     "nsis": {
       "oneClick": false,
