@@ -76,7 +76,7 @@ const UPDATE_FALLBACK_NOTES = [
 ];
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
-const WEATHER_IP_LOCATION_URL = 'http://ip-api.com/json/';
+const WEATHER_IP_LOCATION_URL = 'https://ipwho.is/';
 const WEATHER_DEFAULT_LOCATION = {
   name: '上海',
   country: 'China',
@@ -170,20 +170,58 @@ function rawCookieFallback(input) {
   if (Array.isArray(input) && input.every(item => typeof item === 'string')) return input.join('; ').trim();
   return '';
 }
-let userCookie = '';
-try { if (fs.existsSync(COOKIE_FILE)) userCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); }
-catch (e) { userCookie = ''; }
-function saveCookie(c) {
-  userCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
-  try { fs.writeFileSync(COOKIE_FILE, userCookie); } catch (e) {}
+// 登录 Cookie 落盘加密：Electron 主进程内用 safeStorage（macOS Keychain / Windows DPAPI），
+// 纯 Node 环境或系统不支持时退回明文，旧明文文件首次读取后自动迁移为密文。
+let cookieSafeStorage = null;
+try {
+  const electron = require('electron');
+  if (electron && electron.safeStorage && typeof electron.safeStorage.isEncryptionAvailable === 'function') {
+    cookieSafeStorage = electron.safeStorage;
+  }
+} catch (e) { cookieSafeStorage = null; }
+const COOKIE_ENCRYPTION_PREFIX = 'MRENC1:';
+
+function cookieEncryptionAvailable() {
+  try { return !!(cookieSafeStorage && cookieSafeStorage.isEncryptionAvailable()); }
+  catch (e) { return false; }
 }
 
-let qqCookie = '';
-try { if (fs.existsSync(QQ_COOKIE_FILE)) qqCookie = fs.readFileSync(QQ_COOKIE_FILE, 'utf8').trim(); }
-catch (e) { qqCookie = ''; }
+function writeCookieFileValue(file, value) {
+  const text = String(value || '');
+  try {
+    if (text && cookieEncryptionAvailable()) {
+      fs.writeFileSync(file, COOKIE_ENCRYPTION_PREFIX + cookieSafeStorage.encryptString(text).toString('base64'));
+    } else {
+      fs.writeFileSync(file, text);
+    }
+  } catch (e) {}
+}
+
+function readCookieFileValue(file) {
+  let raw = '';
+  try { if (fs.existsSync(file)) raw = fs.readFileSync(file, 'utf8').trim(); }
+  catch (e) { return ''; }
+  if (!raw) return '';
+  if (raw.startsWith(COOKIE_ENCRYPTION_PREFIX)) {
+    if (!cookieEncryptionAvailable()) return '';
+    try {
+      return cookieSafeStorage.decryptString(Buffer.from(raw.slice(COOKIE_ENCRYPTION_PREFIX.length), 'base64')).trim();
+    } catch (e) { return ''; }
+  }
+  if (cookieEncryptionAvailable()) writeCookieFileValue(file, raw);
+  return raw;
+}
+
+let userCookie = readCookieFileValue(COOKIE_FILE);
+function saveCookie(c) {
+  userCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
+  writeCookieFileValue(COOKIE_FILE, userCookie);
+}
+
+let qqCookie = readCookieFileValue(QQ_COOKIE_FILE);
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
-  try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+  writeCookieFileValue(QQ_COOKIE_FILE, qqCookie);
 }
 
 // ---------- 工具 ----------
@@ -1990,23 +2028,23 @@ async function fetchOpenMeteoWeather(params) {
 
 async function fetchIpWeatherLocation() {
   const u = new URL(WEATHER_IP_LOCATION_URL);
-  u.searchParams.set('fields', 'status,message,country,regionName,city,lat,lon,timezone,query');
+  u.searchParams.set('fields', 'success,message,country,region,city,latitude,longitude,timezone,ip');
   u.searchParams.set('lang', 'zh-CN');
   const body = await requestJson(u.toString(), { headers: { 'User-Agent': UA } });
-  if (!body || body.status !== 'success' || !Number.isFinite(Number(body.lat)) || !Number.isFinite(Number(body.lon))) {
+  if (!body || body.success === false || !Number.isFinite(Number(body.latitude)) || !Number.isFinite(Number(body.longitude))) {
     const err = new Error(body && body.message || 'IP_LOCATION_FAILED');
     err.body = body;
     throw err;
   }
   return {
-    provider: 'ip-api',
+    provider: 'ipwho.is',
     city: body.city || WEATHER_DEFAULT_LOCATION.name,
-    region: body.regionName || '',
+    region: body.region || '',
     country: body.country || '',
-    latitude: Number(body.lat),
-    longitude: Number(body.lon),
-    timezone: body.timezone || 'auto',
-    ip: body.query || '',
+    latitude: Number(body.latitude),
+    longitude: Number(body.longitude),
+    timezone: (body.timezone && (body.timezone.id || body.timezone.name)) || (typeof body.timezone === 'string' ? body.timezone : 'auto') || 'auto',
+    ip: body.ip || '',
   };
 }
 
