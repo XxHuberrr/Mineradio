@@ -1051,6 +1051,7 @@ function createWallpaperWindow(payload = {}) {
   const bounds = screen.getPrimaryDisplay().bounds;
   wallpaperWindow = new BrowserWindow({
     ...bounds,
+    ...(process.platform === 'darwin' ? { type: 'desktop' } : {}),
     frame: false,
     transparent: false,
     backgroundColor: '#050608',
@@ -1070,6 +1071,13 @@ function createWallpaperWindow(payload = {}) {
     },
   });
   wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
+  if (process.platform === 'darwin') {
+    try {
+      wallpaperWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+    } catch (e) {
+      console.warn('Wallpaper workspace pin skipped:', e.message);
+    }
+  }
   wallpaperWindow.once('ready-to-show', () => {
     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
     positionWallpaperWindow();
