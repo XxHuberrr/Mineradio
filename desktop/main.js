@@ -1319,9 +1319,11 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   }
 });
 
-async function createWindow() {
-  htmlFullscreenActive = false;
-  windowFullscreenActive = false;
+async function ensureLocalServer() {
+  if (localServer) {
+    await waitForServer(localServer);
+    return;
+  }
   const port = await findOpenPort(3000);
   mainServerPort = port;
 
@@ -1344,6 +1346,13 @@ async function createWindow() {
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
+}
+
+async function createWindow() {
+  htmlFullscreenActive = false;
+  windowFullscreenActive = false;
+  await ensureLocalServer();
+  const port = mainServerPort;
 
   const initialBounds = getWindowedBounds();
 
