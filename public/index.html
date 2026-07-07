@@ -26453,6 +26453,9 @@ function toggleFullscreen() {
     if (restoreIcon) restoreIcon.style.display = isFullScreen ? '' : 'none';
   }
 
+  if (api.platform === 'darwin') {
+    document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
+  }
   document.querySelectorAll('[data-window-action]').forEach(function(btn){
     btn.addEventListener('click', function(e){
       e.preventDefault();

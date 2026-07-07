@@ -1369,7 +1369,9 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 14 } }
+      : { frame: false }),
     fullscreen: false,
     transparent: true,
     backgroundColor: '#00000000',
