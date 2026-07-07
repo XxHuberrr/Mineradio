@@ -23096,6 +23096,16 @@ function startUpdatePreviewDownload() {
     return;
   }
   if (updatePreviewState.configured && updatePreviewState.updateAvailable) {
+    if (window.desktopWindow && window.desktopWindow.platform === 'darwin') {
+      var macLink = updatePreviewState.releaseUrl || updatePreviewState.downloadUrl;
+      if (macLink) {
+        window.open(macLink, '_blank');
+        showToast('已打开更新页面');
+      } else {
+        showToast('这个版本还没有可用下载链接');
+      }
+      return;
+    }
     if (updatePreviewState.patchAvailable && updatePreviewState.patchUrl && !updatePreviewState.patchFallbackTried) {
       startRealUpdatePatch();
     } else if (updatePreviewState.downloadUrl) {
