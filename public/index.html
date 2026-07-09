@@ -1145,6 +1145,33 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .cover-color-loupe{display:none;position:fixed;z-index:1500;width:112px;height:112px;border-radius:50%;border:2px solid #050505;background:var(--loupe-bg,#111);box-shadow:0 18px 48px rgba(0,0,0,.52),0 0 0 1px rgba(255,255,255,.24),inset 0 0 0 1px rgba(255,255,255,.18);pointer-events:none;overflow:hidden}
 .cover-color-loupe.show{display:block}
 .cover-color-loupe::after{content:'';position:absolute;left:50%;top:50%;width:12px;height:12px;border:1px solid rgba(255,255,255,.82);border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.9)}
+.we-wallpaper-pop{display:none;position:fixed;left:50%;top:50%;z-index:9999;width:min(480px,calc(100vw - 48px));max-height:min(480px,calc(100vh - 120px));padding:14px;border-radius:17px;border:1px solid rgba(var(--fc-accent-rgb),.18);background:linear-gradient(145deg,rgba(12,13,18,.97),rgba(2,3,5,.95));box-shadow:0 28px 90px rgba(0,0,0,.72),0 0 0 1px rgba(255,255,255,.06),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(22px) saturate(1.14);-webkit-backdrop-filter:blur(22px) saturate(1.14);transform:translate(-50%,-50%)}
+.we-wallpaper-pop.show{display:flex;flex-direction:column}
+.we-wallpaper-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;color:rgba(255,255,255,.78);font-size:12px;font-weight:760;letter-spacing:.06em;text-transform:uppercase;flex-shrink:0}
+.we-wallpaper-head-act{display:flex;align-items:center;gap:8px}
+.we-wallpaper-current-btn{height:26px;padding:0 10px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.76);font-size:11px;cursor:pointer;white-space:nowrap}
+.we-wallpaper-current-btn:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.28)}
+.we-wallpaper-body{flex:1;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.12) transparent}
+.we-wallpaper-body::-webkit-scrollbar{width:5px}
+.we-wallpaper-body::-webkit-scrollbar-track{background:transparent}
+.we-wallpaper-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:999px}
+.we-wallpaper-body::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+.we-wallpaper-loading{text-align:center;padding:40px 12px;color:rgba(255,255,255,.46);font-size:13px}
+.we-wallpaper-empty{text-align:center;padding:40px 12px;color:rgba(255,255,255,.42);font-size:13px;line-height:1.7}
+.we-wallpaper-empty small{color:rgba(255,255,255,.28);font-size:11px}
+.we-wallpaper-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;padding:2px}
+.we-wallpaper-card{border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);overflow:hidden;cursor:pointer;transition:border-color .18s,box-shadow .18s}
+.we-wallpaper-card:hover,.we-wallpaper-card.current{border-color:rgba(var(--fc-accent-rgb),.44);box-shadow:0 0 0 1px rgba(var(--fc-accent-rgb),.18)}
+.we-wallpaper-card.current::after{content:'当前';position:absolute;top:6px;right:6px;padding:2px 7px;border-radius:6px;background:rgba(var(--fc-accent-rgb),.28);color:#fff;font-size:10px;font-weight:700;pointer-events:none}
+.we-wallpaper-thumb{position:relative;width:100%;aspect-ratio:16/9;background:rgba(0,0,0,.35);overflow:hidden}
+.we-wallpaper-thumb img{display:block;width:100%;height:100%;object-fit:cover}
+.we-wallpaper-thumb .we-thumb-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.18);font-size:28px}
+.we-wallpaper-label{padding:8px 10px;font-size:11px;color:rgba(255,255,255,.62);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3}
+.we-wallpaper-badge{display:inline-block;padding:1px 5px;margin-left:4px;border-radius:4px;background:rgba(255,255,255,.08);font-size:9px;color:rgba(255,255,255,.38);vertical-align:middle}
+.we-wallpaper-btn{position:relative}
+.we-wallpaper-btn::after{content:'WE';position:absolute;top:-3px;right:-6px;padding:1px 4px;border-radius:4px;background:rgba(var(--fc-accent-rgb),.22);color:rgba(255,255,255,.68);font-size:8px;font-weight:700;pointer-events:none}
+.we-wallpaper-stale-hint{font-size:10px;color:rgba(255,255,255,.38);cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.12)}
+.we-wallpaper-stale-hint:hover{color:rgba(255,255,255,.68);text-decoration-color:rgba(255,255,255,.32)}
 .color-lab-pop{display:none;position:fixed;left:50%;top:50%;z-index:1401;width:min(330px,calc(100vw - 42px));padding:14px;border-radius:17px;border:1px solid rgba(255,255,255,.12);background:linear-gradient(145deg,#09090b,#020203);box-shadow:0 28px 90px rgba(0,0,0,.64),0 0 0 1px rgba(var(--fc-accent-rgb),.12),inset 0 1px 0 rgba(255,255,255,.08);color:#fff;transform:translate(-50%,-50%)}
 .color-lab-pop.show{display:block!important}
 .color-lab-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:11px;font-weight:760;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.68)}
@@ -2070,6 +2097,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
     <button class="fx-mini-btn ghost" type="button" onclick="document.getElementById('background-image-input').click()">选择</button>
     <div class="fx-color-row-label">背景媒体<small id="bg-image-value">未设置</small></div>
     <button class="fx-mini-btn ghost" type="button" onclick="clearCustomBackgroundImage()">清除</button>
+    <button class="fx-mini-btn ghost we-wallpaper-btn" type="button" onclick="openWallpaperEngineBrowser()" title="浏览 Wallpaper Engine 已下载壁纸">WE壁纸</button>
   </div>
   <div class="fx-slider"><label>背景透明度</label><input id="fx-bgopacity" type="range" min="0" max="1" step="0.01"><output></output></div>
   <div class="fx-slider"><label>控制台玻璃色差</label><input id="fx-glassaberration" type="range" min="0" max="140" step="1"><output></output></div>
@@ -2258,6 +2286,15 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 
   <div class="fx-actions">
     <button class="fx-mini-btn" onclick="resetFx()">恢复默认</button>
+  </div>
+</div>
+
+<div class="we-wallpaper-pop" id="we-wallpaper-pop">
+  <div class="we-wallpaper-head"><span>Wallpaper Engine 壁纸</span><div class="we-wallpaper-head-act"><span class="we-wallpaper-stale-hint" id="we-stale-hint" style="display:none"></span><button class="we-wallpaper-current-btn" id="we-current-btn" type="button" onclick="useCurrentWallpaperEngine()" style="display:none">使用当前壁纸</button><button class="cover-color-close" type="button" onclick="closeWallpaperEngineBrowser()">×</button></div></div>
+  <div class="we-wallpaper-body">
+    <div class="we-wallpaper-loading" id="we-wallpaper-loading">正在扫描 Steam 创意工坊目录…</div>
+    <div class="we-wallpaper-grid" id="we-wallpaper-grid"></div>
+    <div class="we-wallpaper-empty" id="we-wallpaper-empty" style="display:none">未找到已下载的 Wallpaper Engine 壁纸。<br><small>请先在 Wallpaper Engine 中订阅并下载壁纸。</small></div>
   </div>
 </div>
 
@@ -7954,6 +7991,7 @@ function normalizeCustomBackgroundImage(value) {
   if (!src) return '';
   if (/^data:image\/(png|jpe?g|webp);base64,/i.test(src)) return src;
   if (/^https?:\/\//i.test(src)) return src;
+  if (/^mineradio-we:\/\//i.test(src)) return src;
   return '';
 }
 function normalizeCustomBackgroundMedia(value) {
@@ -7961,7 +7999,7 @@ function normalizeCustomBackgroundMedia(value) {
   if (typeof value === 'string') {
     var img = normalizeCustomBackgroundImage(value);
     if (img) return { type: 'image', src: img };
-    if (/^data:video\/(mp4|webm|quicktime);base64,/i.test(value) || /^https?:\/\//i.test(value)) return { type: 'video', src: String(value) };
+    if (/^data:video\/(mp4|webm|quicktime);base64,/i.test(value) || /^https?:\/\//i.test(value) || /^mineradio-we:\/\//i.test(value)) return { type: 'video', src: String(value) };
     return null;
   }
   if (typeof value !== 'object') return null;
@@ -7973,7 +8011,7 @@ function normalizeCustomBackgroundMedia(value) {
   if (type === 'video') {
     var src = String(value.src || '').trim();
     var id = String(value.id || '').trim();
-    if (!id && !/^data:video\/(mp4|webm|quicktime);base64,/i.test(src) && !/^https?:\/\//i.test(src)) return null;
+	    if (!id && !/^data:video\/(mp4|webm|quicktime);base64,/i.test(src) && !/^https?:\/\//i.test(src) && !/^mineradio-we:\/\//i.test(src)) return null;
     return {
       type: 'video',
       id: id,
@@ -20929,6 +20967,223 @@ function readBackgroundMediaFile(file) {
   else if (/^video\//i.test(file.type || '')) readBackgroundVideoFile(file);
   else showToast('请选择图片或视频文件');
 }
+// === Wallpaper Engine 壁纸浏览器 ===
+var weWallpaperCache = null;
+var weWallpaperCurrentId = null;
+function openWallpaperEngineBrowser() {
+  var pop = document.getElementById('we-wallpaper-pop');
+  if (!pop) return;
+  pop.classList.add('show');
+  var grid = document.getElementById('we-wallpaper-grid');
+  var loading = document.getElementById('we-wallpaper-loading');
+  var empty = document.getElementById('we-wallpaper-empty');
+  var currentBtn = document.getElementById('we-current-btn');
+  var staleHint = document.getElementById('we-stale-hint');
+  if (grid) grid.innerHTML = '';
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
+  if (currentBtn) currentBtn.style.display = 'none';
+  if (staleHint) staleHint.style.display = 'none';
+  weWallpaperCache = null;
+  if (!window.desktopWindow || !window.desktopWindow.weWallpaperList) {
+    if (loading) loading.textContent = '未检测到 Steam 创意工坊目录。\n请确认 Steam 已安装且订阅了 Wallpaper Engine 壁纸。';
+    return;
+  }
+  window.desktopWindow.weWallpaperList().then(function(res) {
+    if (!res || !res.ok) {
+      if (loading) loading.textContent = '扫描失败: ' + ((res && res.error) || '未知错误');
+      return;
+    }
+    weWallpaperCache = res;
+    weWallpaperCurrentId = res.currentId || null;
+    renderWallpaperEngineGrid(res.wallpapers, res.currentId);
+    scanStaleWallpaperFolders();
+  }).catch(function(err) {
+    if (loading) loading.textContent = '扫描失败: ' + (err.message || '连接错误');
+    console.warn('WE wallpaper list failed:', err);
+  });
+}
+function scanStaleWallpaperFolders() {
+  if (!window.desktopWindow || !window.desktopWindow.weWallpaperScanStale) return;
+  window.desktopWindow.weWallpaperScanStale().then(function(res) {
+    var staleHint = document.getElementById('we-stale-hint');
+    if (!staleHint) return;
+    if (res && res.ok && res.staleCount > 0) {
+      staleHint.style.display = '';
+      staleHint.textContent = res.staleCount + ' 个已取消订阅的残留文件夹';
+      staleHint.title = '点击清理这些文件夹';
+      staleHint.onclick = function() { cleanupStaleWallpaperFolders(); };
+    }
+  }).catch(function() {});
+}
+function cleanupStaleWallpaperFolders() {
+  if (!window.desktopWindow || !window.desktopWindow.weWallpaperCleanup) return;
+  var staleHint = document.getElementById('we-stale-hint');
+  if (staleHint) { staleHint.textContent = '正在清理…'; staleHint.onclick = null; }
+  window.desktopWindow.weWallpaperCleanup().then(function(res) {
+    if (res && res.ok) {
+      showToast('已清理 ' + res.removed + ' 个残留文件夹');
+      if (staleHint) staleHint.style.display = 'none';
+      // Refresh the wallpaper list
+      weWallpaperCache = null;
+      openWallpaperEngineBrowser();
+    } else {
+      if (staleHint) { staleHint.textContent = '清理失败'; staleHint.onclick = function() { cleanupStaleWallpaperFolders(); }; }
+    }
+  }).catch(function(err) {
+    if (staleHint) { staleHint.textContent = '清理失败: ' + (err.message || ''); staleHint.onclick = function() { cleanupStaleWallpaperFolders(); }; }
+  });
+}
+function renderWallpaperEngineGrid(wallpapers, currentId) {
+  var grid = document.getElementById('we-wallpaper-grid');
+  var loading = document.getElementById('we-wallpaper-loading');
+  var empty = document.getElementById('we-wallpaper-empty');
+  var currentBtn = document.getElementById('we-current-btn');
+  if (loading) loading.style.display = 'none';
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (!wallpapers || !wallpapers.length) {
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (currentId) {
+    weWallpaperCurrentId = currentId;
+    if (currentBtn) currentBtn.style.display = '';
+  }
+  for (var i = 0; i < wallpapers.length; i++) {
+    var wp = wallpapers[i];
+    var card = document.createElement('div');
+    card.className = 'we-wallpaper-card' + (wp.id === currentId ? ' current' : '');
+    card.setAttribute('data-we-id', wp.id);
+    card.onclick = function(id) { return function() { selectWallpaperEngineItem(id); }; }(wp.id);
+    var thumb = document.createElement('div');
+    thumb.className = 'we-wallpaper-thumb';
+    var placeholder = document.createElement('div');
+    placeholder.className = 'we-thumb-placeholder';
+    placeholder.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+    thumb.appendChild(placeholder);
+    var img = document.createElement('img');
+    img.alt = wp.title;
+    img.loading = 'lazy';
+    img.onload = function(el) { return function() { if (el.parentElement) { var ph = el.parentElement.querySelector('.we-thumb-placeholder'); if (ph) ph.style.display = 'none'; } }; }(img);
+    img.onerror = function(el) { return function() { el.style.display = 'none'; }; }(img);
+    thumb.appendChild(img);
+    card.appendChild(thumb);
+    var label = document.createElement('div');
+    label.className = 'we-wallpaper-label';
+    var typeBadge = '';
+    if (wp.type === 'video') typeBadge = '<span class="we-wallpaper-badge">视频</span>';
+    else if (wp.type === 'web') typeBadge = '<span class="we-wallpaper-badge">网页</span>';
+    else if (wp.type === 'scene') typeBadge = '<span class="we-wallpaper-badge">场景</span>';
+    label.innerHTML = wp.title + typeBadge;
+    card.appendChild(label);
+    grid.appendChild(card);
+    // Lazy-load thumbnail
+    loadWallpaperEngineThumbnail(wp.id, img);
+  }
+}
+var weThumbnailQueue = [];
+var weThumbnailTimer = null;
+function loadWallpaperEngineThumbnail(id, imgEl) {
+  weThumbnailQueue.push({ id: id, el: imgEl });
+  if (!weThumbnailTimer) {
+    weThumbnailTimer = setTimeout(flushWallpaperEngineThumbnails, 60);
+  }
+}
+function flushWallpaperEngineThumbnails() {
+  weThumbnailTimer = null;
+  if (!weThumbnailQueue.length) return;
+  var batch = weThumbnailQueue.splice(0, 6); // Load 6 at a time
+  for (var i = 0; i < batch.length; i++) {
+    (function(item) {
+      if (!item.el || !item.el.parentElement) return;
+      if (!window.desktopWindow || !window.desktopWindow.weWallpaperThumbnail) {
+        // No IPC available: hide placeholder, keep empty
+        var ph = item.el.parentElement.querySelector('.we-thumb-placeholder');
+        if (ph) ph.style.display = 'none';
+        return;
+      }
+      window.desktopWindow.weWallpaperThumbnail(item.id).then(function(res) {
+        if (res && res.ok && res.url && item.el && item.el.parentElement) {
+          item.el.src = res.url;
+          item.el.onerror = function() {
+            item.el.style.display = 'none';
+            var ph = item.el.parentElement.querySelector('.we-thumb-placeholder');
+            if (ph) { ph.innerHTML = '!'; ph.style.display = 'flex'; }
+          };
+        } else {
+          // Load failed: hide placeholder
+          var ph = item.el.parentElement.querySelector('.we-thumb-placeholder');
+          if (ph) ph.style.display = 'none';
+        }
+      }).catch(function() {
+        var ph = item.el.parentElement.querySelector('.we-thumb-placeholder');
+        if (ph) ph.style.display = 'none';
+      });
+    })(batch[i]);
+  }
+  if (weThumbnailQueue.length) {
+    weThumbnailTimer = setTimeout(flushWallpaperEngineThumbnails, 80);
+  }
+}
+function selectWallpaperEngineItem(id) {
+  if (!window.desktopWindow || !window.desktopWindow.weWallpaperMedia) {
+    showToast('桌面环境不可用');
+    return;
+  }
+  showToast('正在加载壁纸...');
+  window.desktopWindow.weWallpaperMedia(id, 'image').then(function(res) {
+    if (!res || !res.ok) {
+      showToast('壁纸加载失败');
+      return;
+    }
+    var media = res.type === 'video'
+      ? { type: 'video', src: res.url, name: res.title || '' }
+      : { type: 'image', src: res.url, name: res.title || '' };
+    setCustomBackgroundMedia(media, false);
+    // 自动切到自定义背景和虚无模式以获得最佳效果
+    if (fx.backgroundColorMode !== 'custom') {
+      fx.backgroundColorMode = 'custom';
+      fx.backgroundColorCustom = true;
+    }
+    updateCustomBackgroundControls();
+    saveLyricLayout();
+    showToast('已应用: ' + (res.title || 'WE壁纸'));
+    closeWallpaperEngineBrowser();
+    // 如果当前不在虚无模式，提示切换
+    if (fx.preset !== 3) {
+      setTimeout(function() {
+        showToast('提示: 切换到"虚空"预设可看到完整背景');
+      }, 1600);
+    }
+  }).catch(function(err) {
+    showToast('壁纸加载失败: ' + (err.message || '错误'));
+  });
+}
+function useCurrentWallpaperEngine() {
+  if (weWallpaperCurrentId) {
+    selectWallpaperEngineItem(weWallpaperCurrentId);
+  } else {
+    showToast('未检测到当前使用的壁纸');
+  }
+}
+function openWeWallpaperFolder(id) {
+  if (!window.desktopWindow || !window.desktopWindow.weWallpaperOpenFolder) {
+    showToast('桌面环境不可用');
+    return;
+  }
+  window.desktopWindow.weWallpaperOpenFolder(id).then(function(res) {
+    if (res && res.ok) showToast('已打开文件夹');
+    else showToast('打开失败');
+  }).catch(function() { showToast('打开失败'); });
+}
+function closeWallpaperEngineBrowser() {
+  var pop = document.getElementById('we-wallpaper-pop');
+  if (pop) pop.classList.remove('show');
+  weThumbnailQueue = [];
+  if (weThumbnailTimer) { clearTimeout(weThumbnailTimer); weThumbnailTimer = null; }
+}
 function applyUiAccentColor() {
   var color = normalizeHexColor(fx.uiAccentColor || '#00f5d4', '#00f5d4');
   var rgb = hexToRgb(color);
@@ -22321,6 +22576,12 @@ function bindFxPanel() {
       if (!pop || !pop.classList.contains('show')) return;
       if (e.target && (e.target.closest('#cover-color-pop') || e.target.closest('#visual-tint-auto-btn'))) return;
       closeCoverColorPicker();
+    }, true);
+    document.addEventListener('mousedown', function(e){
+      var pop = document.getElementById('we-wallpaper-pop');
+      if (!pop || !pop.classList.contains('show')) return;
+      if (e.target && e.target.closest('#we-wallpaper-pop')) return;
+      closeWallpaperEngineBrowser();
     }, true);
   }
   // 三态
@@ -25215,6 +25476,12 @@ document.addEventListener('keydown', function(e){
     if (trackDetailModal && trackDetailModal.classList.contains('show')) {
       e.preventDefault();
       closeTrackDetailModal();
+      return;
+    }
+    var weWallpaperPop = document.getElementById('we-wallpaper-pop');
+    if (weWallpaperPop && weWallpaperPop.classList.contains('show')) {
+      e.preventDefault();
+      closeWallpaperEngineBrowser();
       return;
     }
     if (miniQueueOpen) { closeMiniQueue(); return; }

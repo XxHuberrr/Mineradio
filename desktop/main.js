@@ -1289,6 +1289,318 @@ ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
   }
 });
 
+// === Wallpaper Engine 集成 ===
+
+function findPreviewFile(folder) {
+  var candidates = ['preview.jpg', 'preview.png', 'preview.gif', 'preview.webp'];
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var p = path.join(folder, candidates[ci]);
+    if (fs.existsSync(p)) return candidates[ci];
+  }
+  try {
+    var files = fs.readdirSync(folder);
+    for (var fi = 0; fi < files.length; fi++) {
+      if (/\.(jpg|jpeg|png|webp|gif)$/i.test(files[fi])) return files[fi];
+    }
+  } catch (_) {}
+  return null;
+}
+
+// Parse Steam ACF (Valve KeyValues) to get subscribed workshop item IDs
+// ACF format: key and brace may be on same line (tab-separated) or separate lines
+function parseWorkshopAcfSubscribedIds(acfPath) {
+  var ids = [];
+  try {
+    var text = fs.readFileSync(acfPath, 'utf8');
+    var inItems = false;
+    var depth = 0;
+    var targetDepth = 0; // items are nested one level deeper than WorkshopItemsInstalled
+    var lines = text.split(/\r?\n/);
+    for (var li = 0; li < lines.length; li++) {
+      var raw = lines[li];
+      // Don't trim before brace counting — just scan the whole line
+      for (var ci = 0; ci < raw.length; ci++) {
+        if (raw[ci] === '{') depth++;
+        else if (raw[ci] === '}') depth--;
+      }
+      var key = raw.replace(/[{}]/g, '').trim();
+      if (!inItems) {
+        if (/^"WorkshopItemsInstalled"$/i.test(key)) {
+          inItems = true;
+          targetDepth = depth + 1; // items are at depth+1
+        }
+        continue;
+      }
+      // Match numeric keys at target depth
+      if (depth === targetDepth && /^"(\d+)"$/.test(key)) {
+        ids.push(key.replace(/"/g, ''));
+      }
+      if (depth < targetDepth) break;
+    }
+  } catch (_) {}
+  return ids;
+}
+
+function findWallpaperEngineWorkshopDirs() {
+  var dirs = [];
+  // Env var override
+  if (process.env.MINERADIO_WE_WORKSHOP) {
+    var custom = process.env.MINERADIO_WE_WORKSHOP.trim();
+    if (fs.existsSync(custom) && dirs.indexOf(custom) < 0) dirs.push(custom);
+  }
+  // Scan all drives for common Steam patterns
+  var patterns = [
+    ':\\Steam\\steamapps\\workshop\\content\\431960',
+    ':\\SteamLibrary\\steamapps\\workshop\\content\\431960',
+    ':\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\431960',
+  ];
+  for (var di = 0; di < 26; di++) {
+    var drive = String.fromCharCode('A'.charCodeAt(0) + di);
+    for (var pi = 0; pi < patterns.length; pi++) {
+      var p = drive + patterns[pi];
+      try { if (fs.existsSync(p) && dirs.indexOf(p) < 0) dirs.push(p); } catch (_) {}
+    }
+  }
+  // Also check libraryfolders.vdf for additional libraries
+  for (var di = 0; di < 26; di++) {
+    var drive = String.fromCharCode('A'.charCodeAt(0) + di);
+    var vdfPaths = [
+      drive + ':\\Steam\\steamapps\\libraryfolders.vdf',
+      drive + ':\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf',
+    ];
+    for (var vi = 0; vi < vdfPaths.length; vi++) {
+      try {
+        if (!fs.existsSync(vdfPaths[vi])) continue;
+        var vdf = fs.readFileSync(vdfPaths[vi], 'utf8');
+        var re = /"path"\s+"([^"]+)"/gi;
+        var m;
+        while ((m = re.exec(vdf)) !== null) {
+          var libPath = m[1].replace(/\\\\/g, '\\');
+          var d = path.join(libPath, 'steamapps', 'workshop', 'content', '431960');
+          if (fs.existsSync(d) && dirs.indexOf(d) < 0) dirs.push(d);
+        }
+      } catch (_) {}
+    }
+  }
+  return dirs;
+}
+
+// Scan ALL directories under all workshop/431960/ folders (not just subscribed ones)
+// Returns { subscribed: [...], unsubscribed: [...], hasAcf: bool, workshopDirsCount: int }
+function findAllSubscribedWeIds() {
+  var workshopDirs = findWallpaperEngineWorkshopDirs();
+  var allIds = [];
+  for (var wi = 0; wi < workshopDirs.length; wi++) {
+    // workshop/content/431960 → go up to workshop/ → appworkshop_431960.acf
+    var workshopRoot = path.resolve(workshopDirs[wi], '..', '..');
+    var acf = path.join(workshopRoot, 'appworkshop_431960.acf');
+    if (fs.existsSync(acf)) {
+      var ids = parseWorkshopAcfSubscribedIds(acf);
+      for (var ii = 0; ii < ids.length; ii++) {
+        if (allIds.indexOf(ids[ii]) < 0) allIds.push(ids[ii]);
+      }
+    }
+  }
+  return allIds;
+}
+
+function partitionWorkshopFolders() {
+  var subscribedIds = findAllSubscribedWeIds();
+  var subscribedSet = {};
+  for (var si = 0; si < subscribedIds.length; si++) subscribedSet[subscribedIds[si]] = true;
+  var hasAcf = subscribedIds.length > 0;
+  var subscribed = [];
+  var unsubscribed = [];
+  var seen = {};
+  var workshopDirs = findWallpaperEngineWorkshopDirs();
+  for (var wi = 0; wi < workshopDirs.length; wi++) {
+    var dirs;
+    try { dirs = fs.readdirSync(workshopDirs[wi]); } catch (_) { continue; }
+    for (var di = 0; di < dirs.length; di++) {
+      var dir = dirs[di];
+      if (seen[dir] || !/^\d+$/.test(dir)) continue;
+      seen[dir] = true;
+      var fullPath = path.join(workshopDirs[wi], dir);
+      try {
+        if (!fs.statSync(fullPath).isDirectory()) continue;
+      } catch (_) { continue; }
+      var projectJson = path.join(fullPath, 'project.json');
+      if (!fs.existsSync(projectJson)) continue;
+      try {
+        var raw = fs.readFileSync(projectJson, 'utf8');
+        var meta = JSON.parse(raw);
+        var preview = findPreviewFile(fullPath);
+        if (!preview) continue;
+        // Find actual media file (for video/web types)
+        var mediaFile = null;
+        var wpType = meta.type || 'scene';
+        if (wpType === 'video' && meta.file) {
+          var candidateVideo = path.join(fullPath, meta.file);
+          if (fs.existsSync(candidateVideo)) mediaFile = meta.file;
+        }
+        var entry = {
+          id: dir,
+          title: meta.title || dir,
+          type: wpType,
+          preview: preview,
+          folder: fullPath,
+          mediaFile: mediaFile,
+        };
+        if (!hasAcf || subscribedSet[dir]) {
+          subscribed.push(entry);
+        } else {
+          unsubscribed.push(entry);
+        }
+      } catch (_) {}
+    }
+  }
+  subscribed.sort(function(a, b) { return a.title.localeCompare(b.title); });
+  unsubscribed.sort(function(a, b) { return a.title.localeCompare(b.title); });
+  return { subscribed: subscribed, unsubscribed: unsubscribed, hasAcf: hasAcf, workshopDirsCount: workshopDirs.length };
+}
+
+// Count stale (unsubscribed but still on disk) folders
+function countStaleWallpaperFolders() {
+  var partition = partitionWorkshopFolders();
+  if (!partition.hasAcf) return []; // Can't tell without ACF
+  return partition.unsubscribed.map(function(w) { return w.folder; });
+}
+
+function scanWallpaperEngineWorkshop() {
+  var partition = partitionWorkshopFolders();
+  console.log('[WE scan] found workshop dirs:', partition.workshopDirsCount, 'subscribed:', partition.subscribed.length, 'unsubscribed:', partition.unsubscribed.length, 'hasAcf:', partition.hasAcf);
+  return partition.subscribed;
+}
+
+function detectCurrentWallpaperEngineId() {
+  try {
+    // Try WE's own config: %APPDATA%\wallpaper_engine\..
+    // WE stores current wallpaper in the user's config binary, but we can try the simplest path
+    var weConfigPaths = [
+      path.join(app.getPath('appData'), 'wallpaper_engine'),
+      path.join(process.env.ProgramData || 'C:\\ProgramData', 'wallpaper_engine'),
+    ];
+    // WE 2.x uses a SQLite DB: %APPDATA%\wallpaper_engine\wallpaper_engine.db (unlikely)
+    // WE on Steam stores info differently; simplest is to check the running process window title
+    // Fallback: check if WE's own config JSON exists
+    for (var wci = 0; wci < weConfigPaths.length; wci++) {
+      var configDir = weConfigPaths[wci];
+      if (!fs.existsSync(configDir)) continue;
+      var settingsJson = path.join(configDir, 'settings.json');
+      if (fs.existsSync(settingsJson)) {
+        var raw = fs.readFileSync(settingsJson, 'utf8');
+        var settings = JSON.parse(raw);
+        // Different WE versions may store the active wallpaper differently
+        if (settings.activeWallpaper) return String(settings.activeWallpaper);
+        if (settings.currentWallpaper) return String(settings.currentWallpaper);
+        if (settings.selectedWallpaper) return String(settings.selectedWallpaper);
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+// Cache: scan once, reuse until invalidated
+var _weWallpaperCache = null;
+
+function getCachedWallpaperList() {
+  if (!_weWallpaperCache) {
+    _weWallpaperCache = scanWallpaperEngineWorkshop();
+  }
+  return _weWallpaperCache;
+}
+
+function invalidateWeWallpaperCache() {
+  _weWallpaperCache = null;
+}
+
+function findWallpaperById(id) {
+  var list = getCachedWallpaperList();
+  for (var wi = 0; wi < list.length; wi++) {
+    if (list[wi].id === id) return list[wi];
+  }
+  return null;
+}
+
+function getImageMimeType(ext) {
+  var mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp' };
+  return mimeMap[(ext || '').toLowerCase()] || 'image/jpeg';
+}
+
+ipcMain.handle('mineradio-we-wallpaper-list', async () => {
+  try {
+    invalidateWeWallpaperCache(); // Always fresh on explicit list request
+    var wallpapers = getCachedWallpaperList();
+    var currentId = detectCurrentWallpaperEngineId();
+    return { ok: true, wallpapers: wallpapers, currentId: currentId };
+  } catch (e) {
+    console.error('[WE] list error:', e);
+    return { ok: false, error: e.message || String(e), wallpapers: [], currentId: null };
+  }
+});
+
+ipcMain.handle('mineradio-we-wallpaper-thumbnail', async (_event, wallpaperId) => {
+  try {
+    var wp = findWallpaperById(wallpaperId);
+    if (!wp) return { ok: false, error: 'WALLPAPER_NOT_FOUND' };
+    var port = process.env.PORT || '3000';
+    return { ok: true, url: 'http://127.0.0.1:' + port + '/we-media/' + wallpaperId + '/' + encodeURIComponent(wp.preview) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('mineradio-we-wallpaper-media', async (_event, wallpaperId, mediaType) => {
+  try {
+    var wp = findWallpaperById(wallpaperId);
+    if (!wp) return { ok: false, error: 'WALLPAPER_NOT_FOUND' };
+    var port = process.env.PORT || '3000';
+    if (wp.type === 'video' && wp.mediaFile) {
+      return { ok: true, url: 'http://127.0.0.1:' + port + '/we-media/' + wallpaperId + '/' + encodeURIComponent(wp.mediaFile), type: 'video', title: wp.title };
+    }
+    return { ok: true, url: 'http://127.0.0.1:' + port + '/we-media/' + wallpaperId + '/' + encodeURIComponent(wp.preview), type: 'image', title: wp.title };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('mineradio-we-wallpaper-open-folder', async (_event, wallpaperId) => {
+  try {
+    var wp = findWallpaperById(wallpaperId);
+    if (!wp) return { ok: false, error: 'WALLPAPER_NOT_FOUND' };
+    shell.openPath(wp.folder);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('mineradio-we-wallpaper-cleanup', async () => {
+  try {
+    var stale = countStaleWallpaperFolders();
+    var removed = 0;
+    for (var si = 0; si < stale.length; si++) {
+      try {
+        fs.rmSync(stale[si], { recursive: true, force: true });
+        removed++;
+      } catch (_) {}
+    }
+    invalidateWeWallpaperCache();
+    return { ok: true, staleCount: stale.length, removed: removed };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('mineradio-we-wallpaper-scan-stale', async () => {
+  try {
+    var stale = countStaleWallpaperFolders();
+    return { ok: true, staleCount: stale.length, staleFolders: stale };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 ipcMain.handle('mineradio-wallpaper-set-enabled', async (_event, enabled, payload) => {
   try {
     if (enabled) createWallpaperWindow(payload || {});

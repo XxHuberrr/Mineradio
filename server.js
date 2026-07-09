@@ -4183,6 +4183,45 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---------- 静态资源 ----------
+  // === Wallpaper Engine 媒体代理 (stream from disk, no memory copy) ===
+  if (pn.startsWith('/we-media/')) {
+    var wePath = decodeURIComponent(pn).replace(/^\/we-media\//, '');
+    // wePath = "<wallpaperId>/<filename>"
+    // Find the file on disk via known workshop dirs
+    var weServed = false;
+    var wePatterns = [
+      ':\\Steam\\steamapps\\workshop\\content\\431960',
+      ':\\SteamLibrary\\steamapps\\workshop\\content\\431960',
+      ':\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\431960',
+    ];
+    for (var di = 0; di < 26 && !weServed; di++) {
+      var drive = String.fromCharCode('A'.charCodeAt(0) + di);
+      for (var pi = 0; pi < wePatterns.length && !weServed; pi++) {
+        var base = drive + wePatterns[pi];
+        var fullPath = path.join(base, wePath);
+        try {
+          if (!fs.existsSync(fullPath)) continue;
+          var st = fs.statSync(fullPath);
+          if (!st.isFile()) continue;
+          var ext = path.extname(fullPath).toLowerCase();
+          var mime = MIME[ext] || 'application/octet-stream';
+          res.writeHead(200, {
+            'Content-Type': mime,
+            'Content-Length': st.size,
+            'Cache-Control': 'public, max-age=86400',
+          });
+          fs.createReadStream(fullPath).pipe(res);
+          weServed = true;
+        } catch (_) {}
+      }
+    }
+    if (!weServed) {
+      res.writeHead(404);
+      res.end('Not Found');
+    }
+    return;
+  }
+
   if (pn === '/favicon.ico') {
     serveStatic(res, path.join(__dirname, 'build', 'icon.ico'));
     return;
