@@ -15952,10 +15952,9 @@ function switchPlaybackVisualToEmily() {
 }
 function applyStartupStarfieldPreset() {
   if (playing || currentIdx >= 0) return;
-  startupVisualPreviewActive = true;
-  if (typeof setPreset === 'function' && fx.preset !== 5) {
-    setPreset(5, { silent: true, preserveCamera: false, skipTransition: true, noSave: true });
-  } else if (typeof syncFxUniforms === 'function') {
+  startupVisualPreviewActive = false;
+  playbackVisualPreset = clampRange(Number(fx.preset) || 0, 0, presetMeta.length - 1);
+  if (typeof syncFxUniforms === 'function') {
     syncFxUniforms();
   }
 }
