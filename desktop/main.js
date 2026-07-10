@@ -25,7 +25,6 @@ let mainWindowStateTimer = null;
 let mainWindowPassthroughActive = false;
 let mainWindowPassthroughMouseHot = false;
 let mainWindowPassthroughMousePoller = null;
-let passthroughShortcutRegistered = false;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -40,7 +39,6 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
-const PASSTHROUGH_TOGGLE_ACCELERATOR = 'Control+Alt+T';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -280,7 +278,6 @@ function sendPassthroughState(win) {
   if (!win || win.isDestroyed()) return;
   win.webContents.send('desktop-window-passthrough-state', {
     enabled: mainWindowPassthroughActive,
-    accelerator: PASSTHROUGH_TOGGLE_ACCELERATOR,
   });
   sendWindowState(win);
 }
@@ -290,8 +287,8 @@ function updatePassthroughMouseMode() {
   if (!win || !mainWindowPassthroughActive) return;
   const bounds = win.getBounds();
   const point = screen.getCursorScreenPoint();
-  const hotWidth = Math.min(260, Math.max(190, Math.round(bounds.width * 0.18)));
-  const hotHeight = 96;
+  const hotWidth = Math.min(300, Math.max(230, Math.round(bounds.width * 0.22)));
+  const hotHeight = 120;
   const hot = point.x >= bounds.x + bounds.width - hotWidth
     && point.x <= bounds.x + bounds.width
     && point.y >= bounds.y + bounds.height - hotHeight
@@ -303,7 +300,7 @@ function updatePassthroughMouseMode() {
 
 function startPassthroughMousePoller() {
   if (mainWindowPassthroughMousePoller) return;
-  mainWindowPassthroughMousePoller = setInterval(updatePassthroughMouseMode, 80);
+  mainWindowPassthroughMousePoller = setInterval(updatePassthroughMouseMode, 32);
   updatePassthroughMouseMode();
 }
 
@@ -318,12 +315,9 @@ function stopPassthroughMousePoller(win) {
 
 function setMainWindowPassthrough(enabled) {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (enabled && !passthroughShortcutRegistered) registerPassthroughShortcut();
-  if (enabled && !passthroughShortcutRegistered) {
-    return { ok: false, enabled: mainWindowPassthroughActive, error: 'PASSTHROUGH_SHORTCUT_UNAVAILABLE' };
-  }
-  mainWindowPassthroughActive = !!enabled;
   if (!win) return { ok: false, enabled: mainWindowPassthroughActive, error: 'NO_MAIN_WINDOW' };
+  const previous = mainWindowPassthroughActive;
+  mainWindowPassthroughActive = !!enabled;
   try {
     if (mainWindowPassthroughActive) {
       mainWindowPassthroughMouseHot = false;
@@ -340,25 +334,15 @@ function setMainWindowPassthrough(enabled) {
       win.focus();
     }
     sendPassthroughState(win);
-    return { ok: true, enabled: mainWindowPassthroughActive, accelerator: PASSTHROUGH_TOGGLE_ACCELERATOR };
+    return { ok: true, enabled: mainWindowPassthroughActive };
   } catch (e) {
-    return { ok: false, enabled: mainWindowPassthroughActive, error: e.message || 'PASSTHROUGH_FAILED' };
+    mainWindowPassthroughActive = previous;
+    return { ok: false, enabled: previous, error: e.message || 'PASSTHROUGH_FAILED' };
   }
 }
 
 function toggleMainWindowPassthrough() {
   return setMainWindowPassthrough(!mainWindowPassthroughActive);
-}
-
-function registerPassthroughShortcut() {
-  if (passthroughShortcutRegistered) return;
-  try {
-    passthroughShortcutRegistered = globalShortcut.register(PASSTHROUGH_TOGGLE_ACCELERATOR, () => {
-      toggleMainWindowPassthrough();
-    });
-  } catch (_) {
-    passthroughShortcutRegistered = false;
-  }
 }
 
 function getUpdateDownloadDir() {
@@ -1543,7 +1527,6 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
-    registerPassthroughShortcut();
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
@@ -1565,10 +1548,6 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     if (mainWindowPassthroughActive) setMainWindowPassthrough(false);
-    if (passthroughShortcutRegistered) {
-      try { globalShortcut.unregister(PASSTHROUGH_TOGGLE_ACCELERATOR); } catch (_) {}
-      passthroughShortcutRegistered = false;
-    }
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();

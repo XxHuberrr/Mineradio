@@ -53,24 +53,12 @@ body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-mode-btn:hover{background:rgba(255,83,103,.10);border-color:rgba(255,83,103,.34);color:#fff;transform:translateY(-1px)}
 .desktop-mode-btn.on{color:#fff;border-color:rgba(255,83,103,.50);background:rgba(255,83,103,.13);box-shadow:0 12px 34px rgba(255,83,103,.09),inset 0 1px 0 rgba(255,255,255,.08)}
 .desktop-mode-btn.on::before{background:#ff5367;box-shadow:0 0 16px rgba(255,83,103,.56)}
-body.desktop-passthrough-mode #desktop-titlebar,
-body.desktop-passthrough-mode #fx-fab,
-body.desktop-passthrough-mode #fx-fab-hide-btn,
-body.desktop-passthrough-mode #fx-panel,
-body.desktop-passthrough-mode #playlist-panel,
-body.desktop-passthrough-mode #bottom-bar,
-body.desktop-passthrough-mode #bottom-handle,
-body.desktop-passthrough-mode #top-right,
-body.desktop-passthrough-mode #search-area,
-body.desktop-passthrough-mode #empty-home,
-body.desktop-passthrough-mode #hint,
-body.desktop-passthrough-mode #mini-queue,
-body.desktop-passthrough-mode #queue-panel,
-body.desktop-passthrough-mode .modal,
-body.desktop-passthrough-mode .we-wallpaper-pop,
-body.desktop-passthrough-mode .cover-color-pop,
-body.desktop-passthrough-mode .color-lab-pop{opacity:0!important;pointer-events:none!important;visibility:hidden!important}
-#desktop-passthrough-panel{display:none;position:fixed;right:18px;bottom:18px;z-index:12000;align-items:center;gap:8px;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(3,5,8,.66);box-shadow:0 18px 54px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(20px) saturate(1.12);-webkit-backdrop-filter:blur(20px) saturate(1.12);pointer-events:auto;visibility:visible!important;opacity:.92!important}
+body.desktop-passthrough-mode #custom-bg,
+body.desktop-passthrough-mode #album-bg{opacity:0!important;visibility:hidden!important}
+body.desktop-passthrough-mode #custom-bg-video,
+body.desktop-passthrough-mode #custom-bg::before,
+body.desktop-passthrough-mode #custom-bg::after{opacity:0!important}
+#desktop-passthrough-panel{display:none;position:fixed;right:18px;bottom:18px;z-index:12000;align-items:center;gap:8px;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(3,5,8,.66);box-shadow:0 18px 54px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(20px) saturate(1.12);-webkit-backdrop-filter:blur(20px) saturate(1.12);pointer-events:auto;visibility:visible!important;opacity:.92!important}
 body.desktop-passthrough-mode #desktop-passthrough-panel{display:flex}
 .desktop-passthrough-btn{height:30px;padding:0 11px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:rgba(255,255,255,.82);font:inherit;font-size:11px;font-weight:700;cursor:pointer}
 .desktop-passthrough-btn:hover,.desktop-passthrough-btn.on{background:rgba(var(--fc-accent-rgb),.14);border-color:rgba(var(--fc-accent-rgb),.38);color:#fff}
@@ -2180,8 +2168,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopPassthrough" onclick="toggleDesktopPassthroughMode()" title="主窗口近乎透明并鼠标穿透；按 Ctrl+Alt+T 退出"><span>透传模式</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-desktopPassthroughShelf" onclick="toggleFx('desktopPassthroughShelf')" title="开启后透传模式保留 3D 歌单架；关闭则只保留干净背景"><span>透传显示歌单架</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopPassthrough" onclick="toggleDesktopPassthroughMode()" title="背景透明，桌面可见且可操作；右下角可退出或开关歌单架"><span>透传模式</span><span class="dot"></span></div>
         <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
       </div>
       <div class="fx-section-label">桌面 / 壁纸</div>
@@ -2421,7 +2408,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
 </svg>
 <div id="desktop-passthrough-panel">
   <button class="desktop-passthrough-btn exit" type="button" onclick="setDesktopPassthroughMode(false, false)">退出透传</button>
-  <button class="desktop-passthrough-btn" id="desktop-passthrough-shelf-btn" type="button" onclick="toggleDesktopPassthroughShelf()">歌单架: 关</button>
+  <button class="desktop-passthrough-btn" id="desktop-passthrough-shelf-btn" type="button" onclick="toggleDesktopPassthroughShelf()" aria-pressed="true">歌单架: 开</button>
 </div>
 <button id="bottom-handle" type="button" aria-label="展开播放器控制台" title="播放器控制台"><span></span></button>
 <div id="bottom-bar">
@@ -3267,7 +3254,7 @@ var fxDefaults = {
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
   desktopLyricsFps: 60,
-  desktopPassthroughShelf: false,
+  desktopPassthroughShowShelf: true,
   wallpaperMode: false,
   wallpaperOpacity: 1,
   floatLayer: false, cinema: true, edge: false, aiDepth: false, bloom: false, lyricGlow: true,
@@ -3357,7 +3344,7 @@ var PACKAGED_DEFAULT_FX_SNAPSHOT = Object.freeze({
   desktopLyricsCinema: true,
   desktopLyricsHighlight: false,
   desktopLyricsFps: 60,
-  desktopPassthroughShelf: false,
+  desktopPassthroughShowShelf: true,
   performanceBackground: 'auto',
   performanceQuality: 'high',
   liveBackgroundKeep: false,
@@ -7635,7 +7622,7 @@ function readSavedLyricLayout() {
       desktopLyricsCinema: desktopLyricsSchemaReady ? raw.desktopLyricsCinema !== false : fxDefaults.desktopLyricsCinema,
       desktopLyricsHighlight: desktopLyricsSchemaReady ? raw.desktopLyricsHighlight === true : fxDefaults.desktopLyricsHighlight,
       desktopLyricsFps: desktopLyricsSchemaReady ? normalizeDesktopLyricsFps(raw.desktopLyricsFps) : fxDefaults.desktopLyricsFps,
-      desktopPassthroughShelf: raw.desktopPassthroughShelf === true,
+      desktopPassthroughShowShelf: raw.desktopPassthroughShowShelf !== false,
       performanceBackground: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true),
       performanceQuality: normalizePerformanceQuality(raw.performanceQuality),
       liveBackgroundKeep: normalizePerformanceBackgroundMode(raw.performanceBackground, raw.liveBackgroundKeep === true) === 'keep',
@@ -7726,7 +7713,7 @@ function saveLyricLayout() {
       desktopLyricsCinema: fx.desktopLyricsCinema !== false,
       desktopLyricsHighlight: fx.desktopLyricsHighlight === true,
       desktopLyricsFps: normalizeDesktopLyricsFps(fx.desktopLyricsFps),
-      desktopPassthroughShelf: fx.desktopPassthroughShelf === true,
+      desktopPassthroughShowShelf: fx.desktopPassthroughShowShelf !== false,
       performanceBackground: normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true),
       performanceQuality: normalizePerformanceQuality(fx.performanceQuality),
       liveBackgroundKeep: normalizePerformanceBackgroundMode(fx.performanceBackground, fx.liveBackgroundKeep === true) === 'keep',
@@ -13021,6 +13008,7 @@ function makeShelfManager() {
   var contentList = null;     // 二级 PSP 滚动列表 manager
   var connectorParticles = null;
   var floorMirror = null;
+  var passthroughVisible = true;
 
   // 一次性返回完整 items 数组 (不只 5 张, 全部参与 PSP 滚动)
   function splitPlaylists() {
@@ -13710,6 +13698,14 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       var asyncCards = mode === 'side' && document.body.classList.contains('splash-active');
       rebuild(asyncCards);
     },
+    setPassthroughVisible: function(visible) {
+      passthroughVisible = visible !== false;
+      if (!passthroughVisible) {
+        if (group) group.visible = false;
+        if (connectorParticles) connectorParticles.visible = false;
+        if (floorMirror) floorMirror.visible = false;
+      }
+    },
     getMode: function(){ return mode; },
     update: function(dt) {
       if (!group) return;
@@ -13732,7 +13728,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       }
       shelfVisibility += (targetVis - shelfVisibility) * (targetVis > shelfVisibility ? 0.22 : 0.18);
       if (shelfVisibility < 0.01 && targetVis === 0) shelfVisibility = 0;
-      group.visible = appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
+      group.visible = passthroughVisible && appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (floorMirror) floorMirror.visible = group.visible && mode === 'stage';
       if (mode === 'side') {
@@ -22405,16 +22401,12 @@ function toggleFx(key) {
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
   syncFxUniforms();
-  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'desktopPassthroughShelf' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
+  if (key === 'lyricCameraLock' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
   if (key === 'floatLayer') { if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer(); }
   if (key === 'desktopLyrics') applyDesktopLyricsState(true);
   if (key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight') pushDesktopLyricsState(true);
   if (key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles') pushDesktopLyricsState(true);
   if (key === 'wallpaperMode') applyWallpaperModeState(true);
-  if (key === 'desktopPassthroughShelf') {
-    syncDesktopPassthroughSceneState();
-    refreshDesktopPassthroughToggle();
-  }
   if (key === 'shelfShowPodcasts' || key === 'shelfMergeCollections') {
     if (shelfManager && shelfManager.rebuild) shelfManager.rebuild(true);
     if (shelfManager && shelfManager.refreshTheme) shelfManager.refreshTheme();
@@ -22438,7 +22430,6 @@ function toggleFx(key) {
   if (key === 'desktopLyricsClickThrough') showToast(fx.desktopLyricsClickThrough !== false ? '桌面歌词已锁定' : '桌面歌词可移动');
   if (key === 'desktopLyricsCinema') showToast(fx.desktopLyricsCinema !== false ? '桌面歌词电影震动已开启' : '桌面歌词电影震动已关闭，基础漂浮保留');
   if (key === 'desktopLyricsHighlight') showToast(fx.desktopLyricsHighlight === true ? '桌面歌词高亮跟随已开启' : '桌面歌词高亮跟随已关闭');
-  if (key === 'desktopPassthroughShelf') showToast(fx.desktopPassthroughShelf === true ? '透传模式会显示歌单架' : '透传模式会隐藏歌单架');
   if (key === 'wallpaperMode') showToast(fx.wallpaperMode ? '壁纸模式已开启' : '壁纸模式已关闭');
   if (key === 'shelfShowPodcasts') showToast(fx.shelfShowPodcasts !== false ? '3D歌单架已显示播客歌单' : '3D歌单架已隐藏播客歌单');
   if (key === 'shelfMergeCollections') showToast(fx.shelfMergeCollections === true ? '我的歌单与收藏歌单已合并滚动' : '收藏歌单恢复滚到底切页');
@@ -26415,42 +26406,31 @@ var desktopFullscreenActive = false;
 var documentFullscreenActive = false;
 var desktopWindowState = {};
 var desktopPassthroughActive = false;
-var desktopPassthroughShelfRestoreMode = null;
 
 function refreshDesktopPassthroughToggle() {
   var el = document.getElementById('t-desktopPassthrough');
   if (el) el.classList.toggle('on', !!desktopPassthroughActive);
-  var shelfToggle = document.getElementById('t-desktopPassthroughShelf');
-  if (shelfToggle) shelfToggle.classList.toggle('on', fx && fx.desktopPassthroughShelf === true);
   var shelfBtn = document.getElementById('desktop-passthrough-shelf-btn');
   if (shelfBtn) {
-    var on = !!(fx && fx.desktopPassthroughShelf === true);
+    var on = !fx || fx.desktopPassthroughShowShelf !== false;
     shelfBtn.classList.toggle('on', on);
+    shelfBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     shelfBtn.textContent = on ? '歌单架: 开' : '歌单架: 关';
   }
 }
 
 function syncDesktopPassthroughSceneState() {
-  if (!shelfManager || !shelfManager.setMode) return;
-  if (desktopPassthroughActive && !(fx && fx.desktopPassthroughShelf === true)) {
-    if (desktopPassthroughShelfRestoreMode === null) desktopPassthroughShelfRestoreMode = fx && fx.shelf ? fx.shelf : 'side';
-    if (shelfManager.hasOpenContent && shelfManager.hasOpenContent()) safeShelfCloseContent('passthrough-hide-shelf');
-    shelfManager.clearSelected && shelfManager.clearSelected();
-    shelfManager.setMode('off');
-    return;
-  }
-  if (desktopPassthroughShelfRestoreMode !== null || desktopPassthroughActive) {
-    shelfManager.setMode(fx && fx.shelf ? fx.shelf : 'side');
-    desktopPassthroughShelfRestoreMode = null;
-  }
+  if (!shelfManager || !shelfManager.setPassthroughVisible) return;
+  var showShelf = !desktopPassthroughActive || !fx || fx.desktopPassthroughShowShelf !== false;
+  shelfManager.setPassthroughVisible(showShelf);
 }
 
 function toggleDesktopPassthroughShelf() {
-  fx.desktopPassthroughShelf = fx.desktopPassthroughShelf !== true;
+  fx.desktopPassthroughShowShelf = fx.desktopPassthroughShowShelf === false;
   saveLyricLayout();
   syncDesktopPassthroughSceneState();
   refreshDesktopPassthroughToggle();
-  showToast(fx.desktopPassthroughShelf ? '透传模式会显示歌单架' : '透传模式会隐藏歌单架');
+  showToast(fx.desktopPassthroughShowShelf !== false ? '透传模式会显示歌单架' : '透传模式会隐藏歌单架');
 }
 
 function setDesktopPassthroughMode(enabled, silent) {
