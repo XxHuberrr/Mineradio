@@ -1160,7 +1160,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode{left:50%;width:min(1080px,cal
 .we-wallpaper-empty{text-align:center;padding:40px 12px;color:rgba(255,255,255,.42);font-size:13px;line-height:1.7}
 .we-wallpaper-empty small{color:rgba(255,255,255,.28);font-size:11px}
 .we-wallpaper-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;padding:2px}
-.we-wallpaper-card{border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);overflow:hidden;cursor:pointer;transition:border-color .18s,box-shadow .18s}
+.we-wallpaper-card{position:relative;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);overflow:hidden;cursor:pointer;transition:border-color .18s,box-shadow .18s}
 .we-wallpaper-card:hover,.we-wallpaper-card.current{border-color:rgba(var(--fc-accent-rgb),.44);box-shadow:0 0 0 1px rgba(var(--fc-accent-rgb),.18)}
 .we-wallpaper-card.current::after{content:'当前';position:absolute;top:6px;right:6px;padding:2px 7px;border-radius:6px;background:rgba(var(--fc-accent-rgb),.28);color:#fff;font-size:10px;font-weight:700;pointer-events:none}
 .we-wallpaper-thumb{position:relative;width:100%;aspect-ratio:16/9;background:rgba(0,0,0,.35);overflow:hidden}
@@ -21019,6 +21019,8 @@ function scanStaleWallpaperFolders() {
 function cleanupStaleWallpaperFolders() {
   if (!window.desktopWindow || !window.desktopWindow.weWallpaperCleanup) return;
   var staleHint = document.getElementById('we-stale-hint');
+  var staleText = staleHint ? staleHint.textContent : '';
+  if (!window.confirm((staleText || '这些残留文件夹') + '\n\n将移动到回收站，确定继续吗？')) return;
   if (staleHint) { staleHint.textContent = '正在清理…'; staleHint.onclick = null; }
   window.desktopWindow.weWallpaperCleanup().then(function(res) {
     if (res && res.ok) {
@@ -21072,11 +21074,17 @@ function renderWallpaperEngineGrid(wallpapers, currentId) {
     card.appendChild(thumb);
     var label = document.createElement('div');
     label.className = 'we-wallpaper-label';
-    var typeBadge = '';
-    if (wp.type === 'video') typeBadge = '<span class="we-wallpaper-badge">视频</span>';
-    else if (wp.type === 'web') typeBadge = '<span class="we-wallpaper-badge">网页</span>';
-    else if (wp.type === 'scene') typeBadge = '<span class="we-wallpaper-badge">场景</span>';
-    label.innerHTML = wp.title + typeBadge;
+    label.textContent = wp.title || wp.id || '';
+    var badgeText = '';
+    if (wp.type === 'video') badgeText = '视频';
+    else if (wp.type === 'web') badgeText = '网页';
+    else if (wp.type === 'scene') badgeText = '场景';
+    if (badgeText) {
+      var badge = document.createElement('span');
+      badge.className = 'we-wallpaper-badge';
+      badge.textContent = badgeText;
+      label.appendChild(badge);
+    }
     card.appendChild(label);
     grid.appendChild(card);
     // Lazy-load thumbnail

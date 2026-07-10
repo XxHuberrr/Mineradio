@@ -1306,6 +1306,19 @@ function findPreviewFile(folder) {
   return null;
 }
 
+function resolveChildFile(root, rel) {
+  if (!rel || path.isAbsolute(rel)) return null;
+  var normalized = String(rel).replace(/\\/g, '/');
+  var parts = normalized.split('/');
+  for (var pi = 0; pi < parts.length; pi++) {
+    if (!parts[pi] || parts[pi] === '.' || parts[pi] === '..') return null;
+  }
+  var rootPath = path.resolve(root);
+  var fullPath = path.resolve(rootPath, normalized);
+  if (fullPath === rootPath || fullPath.indexOf(rootPath + path.sep) !== 0) return null;
+  return fullPath;
+}
+
 // Parse Steam ACF (Valve KeyValues) to get subscribed workshop item IDs
 // ACF format: key and brace may be on same line (tab-separated) or separate lines
 function parseWorkshopAcfSubscribedIds(acfPath) {
@@ -1390,17 +1403,20 @@ function findWallpaperEngineWorkshopDirs() {
 function findAllSubscribedWeIds() {
   var workshopDirs = findWallpaperEngineWorkshopDirs();
   var allIds = [];
+  var hasAcf = false;
   for (var wi = 0; wi < workshopDirs.length; wi++) {
     // workshop/content/431960 → go up to workshop/ → appworkshop_431960.acf
     var workshopRoot = path.resolve(workshopDirs[wi], '..', '..');
     var acf = path.join(workshopRoot, 'appworkshop_431960.acf');
     if (fs.existsSync(acf)) {
+      hasAcf = true;
       var ids = parseWorkshopAcfSubscribedIds(acf);
       for (var ii = 0; ii < ids.length; ii++) {
         if (allIds.indexOf(ids[ii]) < 0) allIds.push(ids[ii]);
       }
     }
   }
+  allIds.hasAcf = hasAcf;
   return allIds;
 }
 
@@ -1408,7 +1424,7 @@ function partitionWorkshopFolders() {
   var subscribedIds = findAllSubscribedWeIds();
   var subscribedSet = {};
   for (var si = 0; si < subscribedIds.length; si++) subscribedSet[subscribedIds[si]] = true;
-  var hasAcf = subscribedIds.length > 0;
+  var hasAcf = !!subscribedIds.hasAcf;
   var subscribed = [];
   var unsubscribed = [];
   var seen = {};
@@ -1435,8 +1451,8 @@ function partitionWorkshopFolders() {
         var mediaFile = null;
         var wpType = meta.type || 'scene';
         if (wpType === 'video' && meta.file) {
-          var candidateVideo = path.join(fullPath, meta.file);
-          if (fs.existsSync(candidateVideo)) mediaFile = meta.file;
+          var candidateVideo = resolveChildFile(fullPath, meta.file);
+          if (candidateVideo && fs.existsSync(candidateVideo) && fs.statSync(candidateVideo).isFile()) mediaFile = String(meta.file).replace(/\\/g, '/');
         }
         var entry = {
           id: dir,
@@ -1581,7 +1597,7 @@ ipcMain.handle('mineradio-we-wallpaper-cleanup', async () => {
     var removed = 0;
     for (var si = 0; si < stale.length; si++) {
       try {
-        fs.rmSync(stale[si], { recursive: true, force: true });
+        await shell.trashItem(stale[si]);
         removed++;
       } catch (_) {}
     }
