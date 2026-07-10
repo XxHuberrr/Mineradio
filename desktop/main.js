@@ -22,6 +22,9 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowPassthroughActive = false;
+let mainWindowPassthroughMouseHot = false;
+let mainWindowPassthroughMousePoller = null;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -237,6 +240,7 @@ function getWindowState(win) {
     isMinimized: false,
     isVisible: false,
     isFocused: false,
+    isPassthrough: false,
     isPrimaryDisplay: true,
     hasDisplayOnLeft: false,
     hasDisplayOnRight: false,
@@ -251,6 +255,7 @@ function getWindowState(win) {
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
+    isPassthrough: mainWindowPassthroughActive,
     ...getDisplayState(win),
   };
 }
@@ -261,11 +266,83 @@ function getSenderWindow(event) {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindowPassthroughActive) setMainWindowPassthrough(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
   sendWindowState(mainWindow);
   return true;
+}
+
+function sendPassthroughState(win) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('desktop-window-passthrough-state', {
+    enabled: mainWindowPassthroughActive,
+  });
+  sendWindowState(win);
+}
+
+function updatePassthroughMouseMode() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || !mainWindowPassthroughActive) return;
+  const bounds = win.getBounds();
+  const point = screen.getCursorScreenPoint();
+  const hotWidth = Math.min(300, Math.max(230, Math.round(bounds.width * 0.22)));
+  const hotHeight = 120;
+  const hot = point.x >= bounds.x + bounds.width - hotWidth
+    && point.x <= bounds.x + bounds.width
+    && point.y >= bounds.y + bounds.height - hotHeight
+    && point.y <= bounds.y + bounds.height;
+  if (hot === mainWindowPassthroughMouseHot) return;
+  mainWindowPassthroughMouseHot = hot;
+  win.setIgnoreMouseEvents(!hot, { forward: true });
+}
+
+function startPassthroughMousePoller() {
+  if (mainWindowPassthroughMousePoller) return;
+  mainWindowPassthroughMousePoller = setInterval(updatePassthroughMouseMode, 32);
+  updatePassthroughMouseMode();
+}
+
+function stopPassthroughMousePoller(win) {
+  if (mainWindowPassthroughMousePoller) {
+    clearInterval(mainWindowPassthroughMousePoller);
+    mainWindowPassthroughMousePoller = null;
+  }
+  mainWindowPassthroughMouseHot = false;
+  if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(false);
+}
+
+function setMainWindowPassthrough(enabled) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win) return { ok: false, enabled: mainWindowPassthroughActive, error: 'NO_MAIN_WINDOW' };
+  const previous = mainWindowPassthroughActive;
+  mainWindowPassthroughActive = !!enabled;
+  try {
+    if (mainWindowPassthroughActive) {
+      mainWindowPassthroughMouseHot = false;
+      win.setIgnoreMouseEvents(true, { forward: true });
+      if (typeof win.setOpacity === 'function') win.setOpacity(1);
+      startPassthroughMousePoller();
+    } else {
+      stopPassthroughMousePoller(win);
+      if (typeof win.setOpacity === 'function') win.setOpacity(1);
+    }
+    if (!mainWindowPassthroughActive) {
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) win.show();
+      win.focus();
+    }
+    sendPassthroughState(win);
+    return { ok: true, enabled: mainWindowPassthroughActive };
+  } catch (e) {
+    mainWindowPassthroughActive = previous;
+    return { ok: false, enabled: previous, error: e.message || 'PASSTHROUGH_FAILED' };
+  }
+}
+
+function toggleMainWindowPassthrough() {
+  return setMainWindowPassthrough(!mainWindowPassthroughActive);
 }
 
 function getUpdateDownloadDir() {
@@ -1117,6 +1194,14 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('desktop-window-set-passthrough', (_event, enabled) => {
+  return setMainWindowPassthrough(!!enabled);
+});
+
+ipcMain.handle('desktop-window-toggle-passthrough', () => {
+  return toggleMainWindowPassthrough();
+});
+
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
@@ -1373,6 +1458,7 @@ async function createWindow() {
   });
 
   mainWindow.webContents.once('did-finish-load', () => {
+    sendPassthroughState(mainWindow);
     sendWindowState(mainWindow);
   });
 
@@ -1403,6 +1489,8 @@ async function createWindow() {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;
     }
+    mainWindowPassthroughActive = false;
+    stopPassthroughMousePoller(mainWindow);
     closeOverlayWindows();
     mainWindow = null;
   });
@@ -1459,6 +1547,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    if (mainWindowPassthroughActive) setMainWindowPassthrough(false);
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();
