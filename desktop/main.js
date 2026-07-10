@@ -22,6 +22,8 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowPassthroughActive = false;
+let passthroughShortcutRegistered = false;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -36,6 +38,7 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const PASSTHROUGH_TOGGLE_ACCELERATOR = 'Control+Alt+T';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -237,6 +240,7 @@ function getWindowState(win) {
     isMinimized: false,
     isVisible: false,
     isFocused: false,
+    isPassthrough: false,
     isPrimaryDisplay: true,
     hasDisplayOnLeft: false,
     hasDisplayOnRight: false,
@@ -251,6 +255,7 @@ function getWindowState(win) {
     isMinimized: win.isMinimized(),
     isVisible: win.isVisible(),
     isFocused: win.isFocused(),
+    isPassthrough: mainWindowPassthroughActive,
     ...getDisplayState(win),
   };
 }
@@ -261,11 +266,59 @@ function getSenderWindow(event) {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindowPassthroughActive) setMainWindowPassthrough(false);
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
   sendWindowState(mainWindow);
   return true;
+}
+
+function sendPassthroughState(win) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('desktop-window-passthrough-state', {
+    enabled: mainWindowPassthroughActive,
+    accelerator: PASSTHROUGH_TOGGLE_ACCELERATOR,
+  });
+  sendWindowState(win);
+}
+
+function setMainWindowPassthrough(enabled) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (enabled && !passthroughShortcutRegistered) registerPassthroughShortcut();
+  if (enabled && !passthroughShortcutRegistered) {
+    return { ok: false, enabled: mainWindowPassthroughActive, error: 'PASSTHROUGH_SHORTCUT_UNAVAILABLE' };
+  }
+  mainWindowPassthroughActive = !!enabled;
+  if (!win) return { ok: false, enabled: mainWindowPassthroughActive, error: 'NO_MAIN_WINDOW' };
+  try {
+    win.setIgnoreMouseEvents(mainWindowPassthroughActive, { forward: true });
+    if (typeof win.setOpacity === 'function') win.setOpacity(mainWindowPassthroughActive ? 0.02 : 1);
+    if (!mainWindowPassthroughActive) {
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) win.show();
+      win.focus();
+    }
+    sendPassthroughState(win);
+    return { ok: true, enabled: mainWindowPassthroughActive, accelerator: PASSTHROUGH_TOGGLE_ACCELERATOR };
+  } catch (e) {
+    return { ok: false, enabled: mainWindowPassthroughActive, error: e.message || 'PASSTHROUGH_FAILED' };
+  }
+}
+
+function toggleMainWindowPassthrough() {
+  return setMainWindowPassthrough(!mainWindowPassthroughActive);
+}
+
+function registerPassthroughShortcut() {
+  if (passthroughShortcutRegistered) return;
+  try {
+    passthroughShortcutRegistered = globalShortcut.register(PASSTHROUGH_TOGGLE_ACCELERATOR, () => {
+      toggleMainWindowPassthrough();
+    });
+  } catch (_) {
+    passthroughShortcutRegistered = false;
+  }
 }
 
 function getUpdateDownloadDir() {
@@ -1117,6 +1170,14 @@ ipcMain.handle('desktop-window-get-state', (event) => {
   return getWindowState(getSenderWindow(event));
 });
 
+ipcMain.handle('desktop-window-set-passthrough', (_event, enabled) => {
+  return setMainWindowPassthrough(!!enabled);
+});
+
+ipcMain.handle('desktop-window-toggle-passthrough', () => {
+  return toggleMainWindowPassthrough();
+});
+
 ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
@@ -1373,6 +1434,7 @@ async function createWindow() {
   });
 
   mainWindow.webContents.once('did-finish-load', () => {
+    sendPassthroughState(mainWindow);
     sendWindowState(mainWindow);
   });
 
@@ -1403,6 +1465,7 @@ async function createWindow() {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;
     }
+    mainWindowPassthroughActive = false;
     closeOverlayWindows();
     mainWindow = null;
   });
@@ -1439,6 +1502,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    registerPassthroughShortcut();
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
@@ -1459,6 +1523,11 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    if (mainWindowPassthroughActive) setMainWindowPassthrough(false);
+    if (passthroughShortcutRegistered) {
+      try { globalShortcut.unregister(PASSTHROUGH_TOGGLE_ACCELERATOR); } catch (_) {}
+      passthroughShortcutRegistered = false;
+    }
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
     if (localServer && localServer.close) localServer.close();

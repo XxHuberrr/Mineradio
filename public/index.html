@@ -2158,6 +2158,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-desktopLyricsClickThrough" onclick="toggleFx('desktopLyricsClickThrough')" title="锁定后防误触；鼠标移到桌面歌词上按中键可锁定/解锁"><span>桌面歌词锁定</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsCinema" onclick="toggleFx('desktopLyricsCinema')" title="桌面歌词绑定鼓点电影震动，基础漂浮始终保留"><span>桌面歌词电影震动</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyricsHighlight" onclick="toggleFx('desktopLyricsHighlight')" title="桌面歌词按播放进度高亮"><span>桌面歌词高亮跟随</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-desktopPassthrough" onclick="toggleDesktopPassthroughMode()" title="主窗口近乎透明并鼠标穿透；按 Ctrl+Alt+T 退出"><span>透传模式</span><span class="dot"></span></div>
         <div class="fx-toggle dev-locked" id="t-wallpaperMode" onclick="toggleFx('wallpaperMode')" title="开发中，暂不可用"><span>壁纸模式<em class="fx-dev-badge">开发中</em></span><span class="dot"></span></div>
       </div>
       <div class="fx-section-label">桌面 / 壁纸</div>
@@ -26375,6 +26376,36 @@ setInterval(function(){
 var desktopFullscreenActive = false;
 var documentFullscreenActive = false;
 var desktopWindowState = {};
+var desktopPassthroughActive = false;
+
+function refreshDesktopPassthroughToggle() {
+  var el = document.getElementById('t-desktopPassthrough');
+  if (el) el.classList.toggle('on', !!desktopPassthroughActive);
+}
+
+function setDesktopPassthroughMode(enabled, silent) {
+  var api = window.desktopWindow;
+  if (!api || !api.isDesktop || typeof api.setPassthroughMode !== 'function') {
+    if (!silent) showToast('桌面透传仅桌面版可用');
+    return;
+  }
+  api.setPassthroughMode(!!enabled).then(function(res){
+    if (!res || !res.ok) {
+      if (!silent) showToast('透传模式切换失败');
+      return;
+    }
+    desktopPassthroughActive = !!res.enabled;
+    document.body.classList.toggle('desktop-passthrough-mode', desktopPassthroughActive);
+    refreshDesktopPassthroughToggle();
+    if (!silent) showToast(desktopPassthroughActive ? '透传模式已开启，按 Ctrl+Alt+T 退出' : '透传模式已关闭');
+  }).catch(function(){
+    if (!silent) showToast('透传模式切换失败');
+  });
+}
+
+function toggleDesktopPassthroughMode() {
+  setDesktopPassthroughMode(!desktopPassthroughActive, false);
+}
 
 function toggleFullscreen() {
   var api = window.desktopWindow;
@@ -26419,6 +26450,11 @@ function toggleFullscreen() {
   var restoreIcon = maxBtn && maxBtn.querySelector('.icon-restore');
   function applyState(state) {
     desktopWindowState = Object.assign(desktopWindowState, state || {});
+    if (Object.prototype.hasOwnProperty.call(desktopWindowState, 'isPassthrough')) {
+      desktopPassthroughActive = !!desktopWindowState.isPassthrough;
+      document.body.classList.toggle('desktop-passthrough-mode', desktopPassthroughActive);
+      refreshDesktopPassthroughToggle();
+    }
     var isMaximized = !!desktopWindowState.isMaximized;
     var isFullScreen = !!desktopWindowState.isFullScreen || !!desktopWindowState.isNativeFullScreen || !!desktopWindowState.isHtmlFullScreen || !!desktopWindowState.isWindowFullScreen || !!document.fullscreenElement;
     var wasFullScreen = desktopFullscreenActive;
@@ -26473,6 +26509,15 @@ function toggleFullscreen() {
       updateFxInputs();
       saveLyricLayout();
       showToast(enabled ? '桌面歌词已开启' : '桌面歌词已关闭');
+    });
+  }
+  if (typeof api.onPassthroughModeState === 'function') {
+    api.onPassthroughModeState(function(payload){
+      var wasActive = desktopPassthroughActive;
+      desktopPassthroughActive = !!(payload && payload.enabled);
+      document.body.classList.toggle('desktop-passthrough-mode', desktopPassthroughActive);
+      refreshDesktopPassthroughToggle();
+      if (wasActive && !desktopPassthroughActive) showToast('透传模式已关闭');
     });
   }
 

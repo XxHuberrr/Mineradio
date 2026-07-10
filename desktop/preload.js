@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
   exitFullscreenWindowed: () => ipcRenderer.invoke('desktop-window-exit-fullscreen-windowed'),
   getState: () => ipcRenderer.invoke('desktop-window-get-state'),
+  setPassthroughMode: (enabled) => ipcRenderer.invoke('desktop-window-set-passthrough', !!enabled),
+  togglePassthroughMode: () => ipcRenderer.invoke('desktop-window-toggle-passthrough'),
   close: () => ipcRenderer.invoke('desktop-window-close'),
   openNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-open-login'),
   clearNeteaseMusicLogin: () => ipcRenderer.invoke('netease-music-clear-login'),
@@ -36,6 +38,12 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     const listener = (_event, payload) => callback(payload || {});
     ipcRenderer.on('mineradio-desktop-lyrics-enabled-state', listener);
     return () => ipcRenderer.removeListener('mineradio-desktop-lyrics-enabled-state', listener);
+  },
+  onPassthroughModeState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('desktop-window-passthrough-state', listener);
+    return () => ipcRenderer.removeListener('desktop-window-passthrough-state', listener);
   },
   setWallpaperMode: (enabled, payload) => ipcRenderer.invoke('mineradio-wallpaper-set-enabled', !!enabled, payload || {}),
   updateWallpaperMode: (payload) => ipcRenderer.invoke('mineradio-wallpaper-update', payload || {}),
