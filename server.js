@@ -117,7 +117,143 @@ const MIME = {
   '.jpg':  'image/jpeg',
   '.ico':  'image/x-icon',
   '.svg':  'image/svg+xml',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif':  'image/gif',
+  '.bmp':  'image/bmp',
+  '.mp4':  'video/mp4',
+  '.m4v':  'video/mp4',
+  '.webm': 'video/webm',
+  '.mov':  'video/quicktime',
 };
+
+function addUniquePath(list, item) {
+  if (!item) return;
+  try {
+    var resolved = path.resolve(item);
+    if (fs.existsSync(resolved) && list.indexOf(resolved) < 0) list.push(resolved);
+  } catch (_) {}
+}
+
+const WE_WORKSHOP_DIRS_CACHE_MS = 30000;
+let weWorkshopDirsForServerCache = null;
+let weWorkshopDirsForServerCacheAt = 0;
+
+function findWallpaperEngineWorkshopDirsForServer() {
+  var now = Date.now();
+  if (weWorkshopDirsForServerCache && now - weWorkshopDirsForServerCacheAt < WE_WORKSHOP_DIRS_CACHE_MS) {
+    return weWorkshopDirsForServerCache.slice();
+  }
+  var dirs = [];
+  if (process.env.MINERADIO_WE_WORKSHOP) {
+    addUniquePath(dirs, process.env.MINERADIO_WE_WORKSHOP.trim());
+  }
+  var patterns = [
+    ':\\Steam\\steamapps\\workshop\\content\\431960',
+    ':\\SteamLibrary\\steamapps\\workshop\\content\\431960',
+    ':\\Program Files (x86)\\Steam\\steamapps\\workshop\\content\\431960',
+  ];
+  for (var di = 0; di < 26; di++) {
+    var drive = String.fromCharCode('A'.charCodeAt(0) + di);
+    for (var pi = 0; pi < patterns.length; pi++) addUniquePath(dirs, drive + patterns[pi]);
+  }
+  for (var vi = 0; vi < 26; vi++) {
+    var vDrive = String.fromCharCode('A'.charCodeAt(0) + vi);
+    var vdfPaths = [
+      vDrive + ':\\Steam\\steamapps\\libraryfolders.vdf',
+      vDrive + ':\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf',
+    ];
+    for (var vpi = 0; vpi < vdfPaths.length; vpi++) {
+      try {
+        if (!fs.existsSync(vdfPaths[vpi])) continue;
+        var vdf = fs.readFileSync(vdfPaths[vpi], 'utf8');
+        var re = /"path"\s+"([^"]+)"/gi;
+        var m;
+        while ((m = re.exec(vdf)) !== null) {
+          addUniquePath(dirs, path.join(m[1].replace(/\\\\/g, '\\'), 'steamapps', 'workshop', 'content', '431960'));
+        }
+      } catch (_) {}
+    }
+  }
+  weWorkshopDirsForServerCache = dirs;
+  weWorkshopDirsForServerCacheAt = now;
+  return dirs.slice();
+}
+
+function resolveWallpaperEngineMediaPath(urlPathname) {
+  var raw = String(urlPathname || '').replace(/^\/we-media\//, '');
+  var decoded;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch (_) {
+    return null;
+  }
+  var slash = decoded.indexOf('/');
+  if (slash < 0) slash = decoded.indexOf('\\');
+  if (slash < 0) return null;
+  var wallpaperId = decoded.slice(0, slash);
+  var rel = decoded.slice(slash + 1).replace(/\\/g, '/');
+  if (!/^\d+$/.test(wallpaperId) || !rel || path.isAbsolute(rel)) return null;
+  var parts = rel.split('/');
+  for (var pi = 0; pi < parts.length; pi++) {
+    if (!parts[pi] || parts[pi] === '.' || parts[pi] === '..') return null;
+  }
+  var dirs = findWallpaperEngineWorkshopDirsForServer();
+  for (var di = 0; di < dirs.length; di++) {
+    var wallpaperRoot = path.resolve(dirs[di], wallpaperId);
+    var fullPath = path.resolve(wallpaperRoot, rel);
+    if (fullPath === wallpaperRoot || fullPath.indexOf(wallpaperRoot + path.sep) !== 0) continue;
+    try {
+      if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) return fullPath;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function streamFileWithRange(req, res, filePath) {
+  var st = fs.statSync(filePath);
+  var ext = path.extname(filePath).toLowerCase();
+  var mime = MIME[ext] || 'application/octet-stream';
+  var range = req.headers.range;
+  var start = 0;
+  var end = st.size - 1;
+  var status = 200;
+  if (range) {
+    var m = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!m) {
+      res.writeHead(416, { 'Content-Range': 'bytes */' + st.size });
+      res.end();
+      return;
+    }
+    if (m[1]) start = parseInt(m[1], 10);
+    if (m[2]) end = parseInt(m[2], 10);
+    if (!m[1] && m[2]) {
+      var suffix = parseInt(m[2], 10);
+      start = Math.max(0, st.size - suffix);
+      end = st.size - 1;
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= st.size) {
+      res.writeHead(416, { 'Content-Range': 'bytes */' + st.size });
+      res.end();
+      return;
+    }
+    end = Math.min(end, st.size - 1);
+    status = 206;
+  }
+  var headers = {
+    'Content-Type': mime,
+    'Content-Length': end - start + 1,
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'public, max-age=86400',
+  };
+  if (status === 206) headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+  res.writeHead(status, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  fs.createReadStream(filePath, { start: start, end: end }).pipe(res);
+}
 
 // ---------- Cookie 持久化 ----------
 const COOKIE_ATTRIBUTE_NAMES = new Set(['path', 'domain', 'expires', 'max-age', 'samesite', 'secure', 'httponly']);
@@ -4183,6 +4319,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---------- 静态资源 ----------
+  // === Wallpaper Engine 媒体代理 (stream from disk, no memory copy) ===
+  if (pn.startsWith('/we-media/')) {
+    var weMediaPath = resolveWallpaperEngineMediaPath(pn);
+    if (!weMediaPath) {
+      res.writeHead(404);
+      res.end('Not Found');
+      return;
+    }
+    try {
+      streamFileWithRange(req, res, weMediaPath);
+    } catch (_) {
+      res.writeHead(500);
+      res.end('Media stream failed');
+    }
+    return;
+  }
+
   if (pn === '/favicon.ico') {
     serveStatic(res, path.join(__dirname, 'build', 'icon.ico'));
     return;
