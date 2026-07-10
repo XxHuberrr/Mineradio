@@ -23,6 +23,8 @@ let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
 let mainWindowPassthroughActive = false;
+let mainWindowPassthroughMouseHot = false;
+let mainWindowPassthroughMousePoller = null;
 let passthroughShortcutRegistered = false;
 const registeredGlobalHotkeys = new Map();
 
@@ -283,6 +285,37 @@ function sendPassthroughState(win) {
   sendWindowState(win);
 }
 
+function updatePassthroughMouseMode() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win || !mainWindowPassthroughActive) return;
+  const bounds = win.getBounds();
+  const point = screen.getCursorScreenPoint();
+  const hotWidth = Math.min(260, Math.max(190, Math.round(bounds.width * 0.18)));
+  const hotHeight = 96;
+  const hot = point.x >= bounds.x + bounds.width - hotWidth
+    && point.x <= bounds.x + bounds.width
+    && point.y >= bounds.y + bounds.height - hotHeight
+    && point.y <= bounds.y + bounds.height;
+  if (hot === mainWindowPassthroughMouseHot) return;
+  mainWindowPassthroughMouseHot = hot;
+  win.setIgnoreMouseEvents(!hot, { forward: true });
+}
+
+function startPassthroughMousePoller() {
+  if (mainWindowPassthroughMousePoller) return;
+  mainWindowPassthroughMousePoller = setInterval(updatePassthroughMouseMode, 80);
+  updatePassthroughMouseMode();
+}
+
+function stopPassthroughMousePoller(win) {
+  if (mainWindowPassthroughMousePoller) {
+    clearInterval(mainWindowPassthroughMousePoller);
+    mainWindowPassthroughMousePoller = null;
+  }
+  mainWindowPassthroughMouseHot = false;
+  if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(false);
+}
+
 function setMainWindowPassthrough(enabled) {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (enabled && !passthroughShortcutRegistered) registerPassthroughShortcut();
@@ -292,8 +325,15 @@ function setMainWindowPassthrough(enabled) {
   mainWindowPassthroughActive = !!enabled;
   if (!win) return { ok: false, enabled: mainWindowPassthroughActive, error: 'NO_MAIN_WINDOW' };
   try {
-    win.setIgnoreMouseEvents(mainWindowPassthroughActive, { forward: true });
-    if (typeof win.setOpacity === 'function') win.setOpacity(mainWindowPassthroughActive ? 0.02 : 1);
+    if (mainWindowPassthroughActive) {
+      mainWindowPassthroughMouseHot = false;
+      win.setIgnoreMouseEvents(true, { forward: true });
+      if (typeof win.setOpacity === 'function') win.setOpacity(1);
+      startPassthroughMousePoller();
+    } else {
+      stopPassthroughMousePoller(win);
+      if (typeof win.setOpacity === 'function') win.setOpacity(1);
+    }
     if (!mainWindowPassthroughActive) {
       if (win.isMinimized()) win.restore();
       if (!win.isVisible()) win.show();
@@ -1466,6 +1506,7 @@ async function createWindow() {
       mainWindowStateTimer = null;
     }
     mainWindowPassthroughActive = false;
+    stopPassthroughMousePoller(mainWindow);
     closeOverlayWindows();
     mainWindow = null;
   });
