@@ -22,6 +22,7 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowStateSaveTimer = null;
 const registeredGlobalHotkeys = new Map();
 
 const WINDOWED_ASPECT = 16 / 9;
@@ -36,6 +37,7 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const MAIN_WINDOW_STATE_FILE = 'window-state.json';
 
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
@@ -180,6 +182,78 @@ function scheduleWindowStateSend(win, delay = 80) {
   mainWindowStateTimer = setTimeout(() => {
     mainWindowStateTimer = null;
     sendWindowState(win);
+  }, delay);
+}
+
+function getMainWindowStatePath() {
+  return path.join(app.getPath('userData'), MAIN_WINDOW_STATE_FILE);
+}
+
+function normalizeSavedBounds(bounds) {
+  if (!bounds || typeof bounds !== 'object') return null;
+  const width = Math.round(Number(bounds.width));
+  const height = Math.round(Number(bounds.height));
+  const x = Math.round(Number(bounds.x));
+  const y = Math.round(Number(bounds.y));
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width < MIN_WINDOWED_WIDTH || height < MIN_WINDOWED_HEIGHT) return null;
+  return { x, y, width, height };
+}
+
+function rectsOverlap(a, b) {
+  if (!a || !b) return false;
+  const ax = Number(a.x) || 0;
+  const ay = Number(a.y) || 0;
+  const aw = Number(a.width) || 0;
+  const ah = Number(a.height) || 0;
+  const bx = Number(b.x) || 0;
+  const by = Number(b.y) || 0;
+  const bw = Number(b.width) || 0;
+  const bh = Number(b.height) || 0;
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function savedBoundsVisible(bounds) {
+  const normalized = normalizeSavedBounds(bounds);
+  if (!normalized) return false;
+  return screen.getAllDisplays().some((display) => rectsOverlap(normalized, display.workArea || display.bounds));
+}
+
+function readMainWindowState() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(getMainWindowStatePath(), 'utf8'));
+    const bounds = normalizeSavedBounds(raw && raw.bounds);
+    if (!bounds || !savedBoundsVisible(bounds)) return null;
+    return { bounds, isMaximized: !!raw.isMaximized };
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeMainWindowState(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized() || win.isFullScreen() || htmlFullscreenActive || windowFullscreenActive) return;
+  try {
+    const isMaximized = win.isMaximized();
+    const bounds = normalizeSavedBounds(isMaximized && typeof win.getNormalBounds === 'function'
+      ? win.getNormalBounds()
+      : win.getBounds());
+    if (!bounds || !savedBoundsVisible(bounds)) return;
+    fs.mkdirSync(app.getPath('userData'), { recursive: true });
+    fs.writeFileSync(getMainWindowStatePath(), JSON.stringify({
+      bounds,
+      isMaximized,
+      savedAt: Date.now(),
+    }, null, 2));
+  } catch (_) {}
+}
+
+function scheduleMainWindowStateSave(win, delay = 360) {
+  if (!win || win.isDestroyed()) return;
+  if (mainWindowStateSaveTimer) clearTimeout(mainWindowStateSaveTimer);
+  mainWindowStateSaveTimer = setTimeout(() => {
+    mainWindowStateSaveTimer = null;
+    writeMainWindowState(win);
   }, delay);
 }
 
@@ -663,7 +737,8 @@ function applyWindowedBounds(win) {
   if (!win || win.isDestroyed()) return;
   if (win.isMaximized()) win.unmaximize();
   win.setMinimumSize(MIN_WINDOWED_WIDTH, MIN_WINDOWED_HEIGHT);
-  win.setBounds(getWindowedBounds(win), false);
+  const savedState = readMainWindowState();
+  win.setBounds(savedState && savedState.bounds ? savedState.bounds : getWindowedBounds(win), false);
   sendWindowState(win);
 }
 
@@ -1343,7 +1418,8 @@ async function createWindow() {
   localServer = require(path.join(__dirname, '..', 'server.js'));
   await waitForServer(localServer);
 
-  const initialBounds = getWindowedBounds();
+  const savedWindowState = readMainWindowState();
+  const initialBounds = savedWindowState && savedWindowState.bounds ? savedWindowState.bounds : getWindowedBounds();
 
   mainWindow = new BrowserWindow({
     ...initialBounds,
@@ -1385,23 +1461,41 @@ async function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    if (savedWindowState && savedWindowState.isMaximized && !mainWindow.isFullScreen()) mainWindow.maximize();
     sendWindowState(mainWindow);
   });
 
-  mainWindow.on('maximize', () => sendWindowState(mainWindow));
-  mainWindow.on('unmaximize', () => sendWindowState(mainWindow));
+  mainWindow.on('maximize', () => {
+    writeMainWindowState(mainWindow);
+    sendWindowState(mainWindow);
+  });
+  mainWindow.on('unmaximize', () => {
+    writeMainWindowState(mainWindow);
+    sendWindowState(mainWindow);
+  });
   mainWindow.on('minimize', () => sendWindowState(mainWindow));
   mainWindow.on('restore', () => sendWindowState(mainWindow));
   mainWindow.on('show', () => sendWindowState(mainWindow));
   mainWindow.on('hide', () => sendWindowState(mainWindow));
   mainWindow.on('focus', () => sendWindowState(mainWindow));
   mainWindow.on('blur', () => sendWindowState(mainWindow));
-  mainWindow.on('move', () => scheduleWindowStateSend(mainWindow));
-  mainWindow.on('resize', () => scheduleWindowStateSend(mainWindow));
+  mainWindow.on('move', () => {
+    scheduleWindowStateSend(mainWindow);
+    scheduleMainWindowStateSave(mainWindow);
+  });
+  mainWindow.on('resize', () => {
+    scheduleWindowStateSend(mainWindow);
+    scheduleMainWindowStateSave(mainWindow);
+  });
+  mainWindow.on('close', () => writeMainWindowState(mainWindow));
   mainWindow.on('closed', () => {
     if (mainWindowStateTimer) {
       clearTimeout(mainWindowStateTimer);
       mainWindowStateTimer = null;
+    }
+    if (mainWindowStateSaveTimer) {
+      clearTimeout(mainWindowStateSaveTimer);
+      mainWindowStateSaveTimer = null;
     }
     closeOverlayWindows();
     mainWindow = null;
