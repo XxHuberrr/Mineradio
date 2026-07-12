@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
   exportJsonFile: (payload) => ipcRenderer.invoke('mineradio-export-json-file', payload || {}),
   importJsonFile: () => ipcRenderer.invoke('mineradio-import-json-file'),
+  pickLocalMusicFolder: () => ipcRenderer.invoke('mineradio-pick-local-music-folder'),
+  getLocalLibrary: () => ipcRenderer.invoke('mineradio-local-library-get'),
+  refreshLocalLibrary: () => ipcRenderer.invoke('mineradio-local-library-refresh'),
+  createLocalPlaylist: (name) => ipcRenderer.invoke('mineradio-local-playlist-create', { name }),
+  renameLocalPlaylist: (id, name) => ipcRenderer.invoke('mineradio-local-playlist-rename', { id, name }),
+  deleteLocalPlaylist: (id) => ipcRenderer.invoke('mineradio-local-playlist-delete', { id }),
+  addLocalPlaylistItems: (id, items) => ipcRenderer.invoke('mineradio-local-playlist-add-items', { id, items: items || [] }),
+  removeLocalPlaylistItems: (id, refs) => ipcRenderer.invoke('mineradio-local-playlist-remove-items', { id, refs: refs || [] }),
   onGlobalHotkey: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, payload) => callback(payload || {});
