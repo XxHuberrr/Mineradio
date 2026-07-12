@@ -53,6 +53,7 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const { lookupLocalAudioToken, localAudioContentType, isSupportedAudioFile } = require('./desktop/local-music-library');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -204,6 +205,45 @@ function sendJSON(res, data, status) {
     'Expires': '0',
   });
   res.end(JSON.stringify(data));
+}
+function streamLocalAudioFile(req, res, filePath) {
+  if (!filePath || !isSupportedAudioFile(filePath) || !fs.existsSync(filePath)) {
+    res.writeHead(404, { 'Access-Control-Allow-Origin': '*' });
+    res.end('Local audio not found');
+    return;
+  }
+  const stat = fs.statSync(filePath);
+  const total = stat.size;
+  const range = req.headers.range || '';
+  const headers = {
+    'Content-Type': localAudioContentType(filePath),
+    'Access-Control-Allow-Origin': '*',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'no-store',
+  };
+  if (range) {
+    const match = String(range).match(/bytes=(\d*)-(\d*)/);
+    if (match) {
+      const start = match[1] ? parseInt(match[1], 10) : 0;
+      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+      if (start >= total || end >= total || start > end) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${total}`,
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end();
+        return;
+      }
+      headers['Content-Length'] = end - start + 1;
+      headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
+      res.writeHead(206, headers);
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+  }
+  headers['Content-Length'] = total;
+  res.writeHead(200, headers);
+  fs.createReadStream(filePath).pipe(res);
 }
 function readPackageInfo() {
   try {
@@ -4156,6 +4196,20 @@ const server = http.createServer(async (req, res) => {
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
     } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+    return;
+  }
+
+  // ---------- 本地音频代理 (用户选择文件夹后按 token 读取, 支持 Range) ----------
+  if (pn === '/api/local/audio') {
+    try {
+      const token = url.searchParams.get('token');
+      const filePath = lookupLocalAudioToken(token);
+      streamLocalAudioFile(req, res, filePath);
+    } catch (err) {
+      console.error('[LocalAudio]', err);
+      res.writeHead(500, { 'Access-Control-Allow-Origin': '*' });
+      res.end();
+    }
     return;
   }
 

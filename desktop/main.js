@@ -3,6 +3,8 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const { scanLocalMusicDirectory } = require('./local-music-library');
+const { createLocalLibraryStore } = require('./local-library-store');
 
 let mainWindow = null;
 let localServer = null;
@@ -23,6 +25,7 @@ let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
 const registeredGlobalHotkeys = new Map();
+let localLibraryStore = null;
 
 const WINDOWED_ASPECT = 16 / 9;
 const WINDOWED_SCALE = 3 / 4;
@@ -32,6 +35,16 @@ const MIN_WINDOWED_HEIGHT = 540;
 const APP_NAME = 'Mineradio';
 const APP_USER_MODEL_ID = 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+
+function ensureLocalLibraryStore() {
+  if (!localLibraryStore) {
+    localLibraryStore = createLocalLibraryStore({
+      dataFile: path.join(app.getPath('userData'), 'local-library-v1.json'),
+      scanDirectory: scanLocalMusicDirectory,
+    });
+  }
+  return localLibraryStore;
+}
 const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
@@ -1160,6 +1173,62 @@ ipcMain.handle('mineradio-import-json-file', async (event) => {
   }
 });
 
+ipcMain.handle('mineradio-pick-local-music-folder', async (event) => {
+  try {
+    const owner = getSenderWindow(event);
+    const result = await dialog.showOpenDialog(owner, {
+      title: '选择本地音乐文件夹',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { ok: false, canceled: true };
+    const library = ensureLocalLibraryStore().addFolder(result.filePaths[0]);
+    return Object.assign({ ok: true, importedFolderPath: result.filePaths[0] }, library);
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_MUSIC_SCAN_FAILED', tracks: [] };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-get', async () => {
+  try {
+    return Object.assign({ ok: true }, ensureLocalLibraryStore().getLibrary());
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_READ_FAILED', folders: [], tracks: [], playlists: [] };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-refresh', async () => {
+  try {
+    return Object.assign({ ok: true }, ensureLocalLibraryStore().refreshAllFolders());
+  } catch (e) {
+    return { ok: false, error: e.message || 'LOCAL_LIBRARY_REFRESH_FAILED', folders: [], tracks: [], playlists: [] };
+  }
+});
+
+ipcMain.handle('mineradio-local-playlist-create', async (_event, payload = {}) => {
+  try { return { ok: true, playlist: ensureLocalLibraryStore().createPlaylist(payload.name) }; }
+  catch (e) { return { ok: false, error: e.message || 'LOCAL_PLAYLIST_CREATE_FAILED' }; }
+});
+
+ipcMain.handle('mineradio-local-playlist-rename', async (_event, payload = {}) => {
+  try { return { ok: true, playlist: ensureLocalLibraryStore().renamePlaylist(payload.id, payload.name) }; }
+  catch (e) { return { ok: false, error: e.message || 'LOCAL_PLAYLIST_RENAME_FAILED' }; }
+});
+
+ipcMain.handle('mineradio-local-playlist-delete', async (_event, payload = {}) => {
+  try { return { ok: ensureLocalLibraryStore().deletePlaylist(payload.id) }; }
+  catch (e) { return { ok: false, error: e.message || 'LOCAL_PLAYLIST_DELETE_FAILED' }; }
+});
+
+ipcMain.handle('mineradio-local-playlist-add-items', async (_event, payload = {}) => {
+  try { return Object.assign({ ok: true }, ensureLocalLibraryStore().addPlaylistItems(payload.id, payload.items)); }
+  catch (e) { return { ok: false, error: e.message || 'LOCAL_PLAYLIST_ADD_FAILED' }; }
+});
+
+ipcMain.handle('mineradio-local-playlist-remove-items', async (_event, payload = {}) => {
+  try { return Object.assign({ ok: true }, ensureLocalLibraryStore().removePlaylistItems(payload.id, payload.refs)); }
+  catch (e) { return { ok: false, error: e.message || 'LOCAL_PLAYLIST_REMOVE_FAILED' }; }
+});
+
 ipcMain.handle('netease-music-open-login', async (event) => {
   return openNeteaseMusicLoginWindow(getSenderWindow(event));
 });
@@ -1439,6 +1508,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    ensureLocalLibraryStore();
     screen.on('display-metrics-changed', () => {
       positionDesktopLyricsWindow();
       positionWallpaperWindow();
@@ -1447,6 +1517,10 @@ if (!gotSingleInstanceLock) {
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
+    setTimeout(() => {
+      try { ensureLocalLibraryStore().refreshAllFolders(); }
+      catch (e) { console.warn('[LocalLibraryStartupRefresh]', e.message); }
+    }, 250);
   });
 
   app.on('activate', () => {
