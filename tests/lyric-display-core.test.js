@@ -16,6 +16,8 @@ const lines = Array.from({ length: 10 }, (_, index) => ({ t: index * 4, text: `l
 assert.deepStrictEqual(lyricWindow(lines, 3, 7).map((item) => item.index), [0, 1, 2, 3, 4, 5, 6]);
 assert.deepStrictEqual(lyricWindow(lines, 0, 7).map((item) => item.index), [0, 1, 2, 3, 4, 5, 6]);
 assert.deepStrictEqual(lyricWindow(lines, 9, 7).map((item) => item.index), [3, 4, 5, 6, 7, 8, 9]);
+assert.deepStrictEqual(lyricWindow(lines, 3, 2).map((item) => item.index), [3, 4]);
+assert.deepStrictEqual(lyricWindow(lines, 9, 2).map((item) => item.index), [8, 9]);
 
 const original = [
   { t: 1, text: 'One' },

@@ -2183,7 +2183,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
         <div class="fx-toggle" id="t-lyricGlowBeat" onclick="toggleFx('lyricGlowBeat')"><span>鼓点溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-lyricGlowParticles" onclick="toggleFx('lyricGlowParticles')"><span>歌词光粒</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-lyricCameraLock" onclick="toggleFx('lyricCameraLock')"><span>歌词镜头绑定</span><span class="dot"></span></div>
-        <div class="fx-toggle" id="t-lyricShowTranslation" onclick="toggleFx('lyricShowTranslation')"><span>显示译文</span><span class="dot"></span></div>
+        <div class="fx-toggle" id="t-lyricDoubleLine" onclick="toggleFx('lyricDoubleLine')"><span>歌词双行显示</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-bloom" onclick="toggleFx('bloom')"><span>粒子溢光</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-edge" onclick="toggleFx('edge')"><span>轮廓高亮</span><span class="dot"></span></div>
         <div class="fx-toggle" id="t-desktopLyrics" onclick="toggleFx('desktopLyrics')" title="全屏幕置顶歌词"><span>桌面歌词</span><span class="dot"></span></div>
@@ -3284,7 +3284,7 @@ var fxDefaults = {
   lyricLineHeight: 1.0,
   lyricWeight: 900,
   lyricDisplayMode: 'single',
-  lyricShowTranslation: false,
+  lyricDoubleLine: false,
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
@@ -7276,6 +7276,7 @@ var stageLyrics = {
   outgoing: [],
   scrollMeshes: [],
   scrollSignature: '',
+  scrollStats: { created: 0, reused: 0, replaced: 0 },
   currentIdx: -1,
   currentText: '',
   highBloom: 0,
@@ -7650,7 +7651,7 @@ function readSavedLyricLayout() {
       lyricLineHeight: clampRange(Number(raw.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(raw.lyricWeight) || 900, 500, 900),
       lyricDisplayMode: /^(off|single|scroll)$/.test(String(raw.lyricDisplayMode || '')) ? raw.lyricDisplayMode : (raw.particleLyrics === false ? 'off' : 'single'),
-      lyricShowTranslation: raw.lyricShowTranslation === true || (raw.lyricShowTranslation == null && raw.lyricDoubleLine === true),
+      lyricDoubleLine: raw.lyricDoubleLine === true,
       lyricGlow: raw.lyricGlow !== false,
       lyricGlowBeat: raw.lyricGlowBeat !== false,
       lyricGlowParticles: !!raw.lyricGlowParticles,
@@ -7742,7 +7743,7 @@ function saveLyricLayout() {
       lyricLineHeight: clampRange(Number(fx.lyricLineHeight) || 1, 0.86, 1.35),
       lyricWeight: clampRange(Number(fx.lyricWeight) || 900, 500, 900),
       lyricDisplayMode: /^(off|single|scroll)$/.test(String(fx.lyricDisplayMode || '')) ? fx.lyricDisplayMode : 'single',
-      lyricShowTranslation: !!fx.lyricShowTranslation,
+      lyricDoubleLine: !!fx.lyricDoubleLine,
       lyricGlow: !!fx.lyricGlow,
       lyricGlowBeat: !!fx.lyricGlowBeat,
       lyricGlowParticles: !!fx.lyricGlowParticles,
@@ -9023,12 +9024,13 @@ function updateLyricMeshProgress(mesh, progress) {
   mesh.userData.lastLyricProgress = progress;
 }
 
-function composeStageLyricText(lines, index) {
+function composeStageLyricText(lines, index, allowDouble) {
   lines = Array.isArray(lines) ? lines : [];
   var current = lines[index] && String(lines[index].text || '').trim();
   if (!current) return '';
-  var translation = fx.lyricShowTranslation && lines[index] && String(lines[index].translation || '').trim();
-  return translation && translation !== current ? current + '\n' + translation : current;
+  if (!allowDouble || !fx.lyricDoubleLine) return current;
+  var next = lines[index + 1] && String(lines[index + 1].text || '').trim();
+  return next && next !== current ? current + '\n' + next : current;
 }
 
 function showStageLine(text, redrawOnly) {
@@ -9055,32 +9057,62 @@ function clearStageScrollMeshes() {
   stageLyrics.scrollSignature = '';
 }
 
+function updateStageScrollSlots(windowItems, lines, currentIndex) {
+  var previous = (stageLyrics.scrollMeshes || []).slice();
+  var desiredIndexes = new Set(windowItems.map(function(item){ return item.index; }));
+  var consumed = new Set();
+  var nextMeshes = [];
+  windowItems.forEach(function(item){
+    var text = composeStageLyricText(lines, item.index, false);
+    if (!text) return;
+    var mesh = previous.find(function(candidate){
+      return !consumed.has(candidate) && candidate.userData && candidate.userData.scrollIndex === item.index && candidate.userData.scrollText === text;
+    });
+    if (mesh) {
+      consumed.add(mesh);
+      stageLyrics.scrollStats.reused++;
+    } else {
+      var replacement = previous.find(function(candidate){
+        return !consumed.has(candidate) && (!candidate.userData || !desiredIndexes.has(candidate.userData.scrollIndex));
+      }) || previous.find(function(candidate){ return !consumed.has(candidate); });
+      if (replacement) {
+        consumed.add(replacement);
+        disposeLyricMesh(replacement);
+        stageLyrics.scrollStats.replaced++;
+      } else {
+        stageLyrics.scrollStats.created++;
+      }
+      mesh = buildLyricMesh(text);
+      mesh.userData.scrollText = text;
+      mesh.position.set(0, item.offset === 0 ? 0 : -1.08, 1.42 - Math.abs(item.offset) * 0.055);
+      stageLyrics.group.add(mesh);
+    }
+    mesh.userData.scrollMode = true;
+    mesh.userData.scrollOffset = item.offset;
+    mesh.userData.scrollIndex = item.index;
+    mesh.userData.scrollCurrent = item.index === currentIndex;
+    nextMeshes.push(mesh);
+  });
+  previous.forEach(function(mesh){
+    if (!consumed.has(mesh)) disposeLyricMesh(mesh);
+  });
+  stageLyrics.scrollMeshes = nextMeshes;
+}
+
 function showStageScroll(lines, currentIndex) {
   createLyricsParticles();
   if (!stageLyrics.group) return;
-  var windowItems = window.MineradioLyricCore.lyricWindow(lines, currentIndex, 7);
+  var windowItems = window.MineradioLyricCore.lyricWindow(lines, currentIndex, 2);
   var signature = windowItems.map(function(item){
-    return item.index + ':' + composeStageLyricText(lines, item.index);
+    return item.index + ':' + composeStageLyricText(lines, item.index, false);
   }).join('|');
   if (signature === stageLyrics.scrollSignature && stageLyrics.scrollMeshes.length) return;
   disposeLyricMesh(stageLyrics.current);
   stageLyrics.current = null;
   stageLyrics.currentText = '';
   while (stageLyrics.outgoing.length) disposeLyricMesh(stageLyrics.outgoing.pop());
-  clearStageScrollMeshes();
+  updateStageScrollSlots(windowItems, lines, currentIndex);
   stageLyrics.scrollSignature = signature;
-  windowItems.forEach(function(item){
-    var text = composeStageLyricText(lines, item.index);
-    if (!text) return;
-    var mesh = buildLyricMesh(text);
-    mesh.userData.scrollMode = true;
-    mesh.userData.scrollOffset = item.offset;
-    mesh.userData.scrollIndex = item.index;
-    mesh.userData.scrollCurrent = item.index === currentIndex;
-    mesh.position.set(0, 0.18 - item.offset * 0.38, 1.48 - Math.abs(item.offset) * 0.06);
-    stageLyrics.group.add(mesh);
-    stageLyrics.scrollMeshes.push(mesh);
-  });
 }
 
 function refreshCurrentLyricStyle() {
@@ -9505,7 +9537,7 @@ function tickLyricsParticles() {
     });
     return;
   }
-  var stageText = composeStageLyricText(lyricsLines, newIdx);
+  var stageText = composeStageLyricText(lyricsLines, newIdx, true);
   if (newIdx !== stageLyrics.currentIdx || stageLyrics.currentText !== stageText) {
     stageLyrics.currentIdx = newIdx;
     showStageLine(stageText);
@@ -20619,7 +20651,7 @@ function normalizeFxArchiveSnapshot(raw) {
     lyricLineHeight: archiveNumber(raw, 'lyricLineHeight', fxDefaults.lyricLineHeight, 0.86, 1.35),
     lyricWeight: archiveNumber(raw, 'lyricWeight', fxDefaults.lyricWeight, 500, 900),
     lyricDisplayMode: /^(off|single|scroll)$/.test(String(raw.lyricDisplayMode || '')) ? raw.lyricDisplayMode : (raw.particleLyrics === false ? 'off' : 'single'),
-    lyricShowTranslation: raw.lyricShowTranslation === true || (raw.lyricShowTranslation == null && raw.lyricDoubleLine === true),
+    lyricDoubleLine: raw.lyricDoubleLine === true,
     visualTintMode: raw.visualTintMode === 'custom' ? 'custom' : 'auto',
     visualTintColor: normalizeHexColor(raw.visualTintColor || fxDefaults.visualTintColor),
     uiAccentColor: normalizeHexColor(raw.uiAccentColor || fxDefaults.uiAccentColor, fxDefaults.uiAccentColor),
@@ -21932,8 +21964,8 @@ function updateFxInputs() {
   if (lyricGlowParticlesToggle) lyricGlowParticlesToggle.classList.toggle('on', fx.lyricGlowParticles);
   var lyricCameraLockToggle = document.getElementById('t-lyricCameraLock');
   if (lyricCameraLockToggle) lyricCameraLockToggle.classList.toggle('on', fx.lyricCameraLock);
-  var lyricTranslationToggle = document.getElementById('t-lyricShowTranslation');
-  if (lyricTranslationToggle) lyricTranslationToggle.classList.toggle('on', fx.lyricShowTranslation);
+  var lyricDoubleLineToggle = document.getElementById('t-lyricDoubleLine');
+  if (lyricDoubleLineToggle) lyricDoubleLineToggle.classList.toggle('on', fx.lyricDoubleLine);
   syncLyricsModeButton();
   document.getElementById('t-bloom').classList.toggle('on', fx.bloom);
   document.getElementById('t-edge').classList.toggle('on', fx.edge);
@@ -22167,7 +22199,7 @@ function ensureLyricPrimaryControls() {
     't-desktopLyricsCinema',
     't-desktopLyricsHighlight',
     't-lyricCameraLock',
-    't-lyricShowTranslation',
+    't-lyricDoubleLine',
     't-lyricGlow',
     't-lyricGlowBeat',
     't-lyricGlowParticles'
@@ -22820,7 +22852,7 @@ function toggleFx(key) {
   var toggle = document.getElementById(toggleId);
   if (toggle) toggle.classList.toggle('on', fx[key]);
   syncFxUniforms();
-  if (key === 'lyricCameraLock' || key === 'lyricShowTranslation' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
+  if (key === 'lyricCameraLock' || key === 'lyricDoubleLine' || key === 'lyricGlow' || key === 'lyricGlowBeat' || key === 'lyricGlowParticles' || key === 'bloom' || key === 'edge' || key === 'cinema' || key === 'desktopLyrics' || key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight' || key === 'wallpaperMode' || key === 'shelfShowPodcasts' || key === 'shelfMergeCollections' || key === 'liveBackgroundKeep') saveLyricLayout();
   if (key === 'floatLayer') { if (fx.floatLayer) createFloatLayer(); else destroyFloatLayer(); }
   if (key === 'desktopLyrics') applyDesktopLyricsState(true);
   if (key === 'desktopLyricsClickThrough' || key === 'desktopLyricsCinema' || key === 'desktopLyricsHighlight') pushDesktopLyricsState(true);
@@ -22845,9 +22877,9 @@ function toggleFx(key) {
   if (key === 'lyricGlow') showToast(fx.lyricGlow ? '歌词溢光已开启' : '歌词溢光已关闭');
   if (key === 'lyricGlowBeat') showToast(fx.lyricGlowBeat ? '歌词溢光跟随鼓点' : '歌词溢光已脱离鼓点');
   if (key === 'lyricGlowParticles') showToast(fx.lyricGlowParticles ? '歌词光粒已开启' : '歌词光粒已关闭');
-  if (key === 'lyricShowTranslation') {
+  if (key === 'lyricDoubleLine') {
     refreshCurrentLyricStyle();
-    showToast(fx.lyricShowTranslation ? '歌词译文已开启' : '歌词译文已关闭');
+    showToast(fx.lyricDoubleLine ? '歌词双行显示已开启' : '歌词双行显示已关闭');
   }
   if (key === 'desktopLyrics') showToast(fx.desktopLyrics ? '桌面歌词已开启' : '桌面歌词已关闭');
   if (key === 'desktopLyricsClickThrough') showToast(fx.desktopLyricsClickThrough !== false ? '桌面歌词已锁定' : '桌面歌词可移动');

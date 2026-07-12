@@ -16,7 +16,7 @@
     size = Math.max(1, Number(size) || 7);
     currentIndex = Math.max(0, Math.min(lines.length - 1, Number(currentIndex) || 0));
     if (!lines.length) return [];
-    var before = Math.floor(size / 2);
+    var before = size === 2 ? 0 : Math.floor(size / 2);
     var start = Math.max(0, currentIndex - before);
     var end = Math.min(lines.length, start + size);
     start = Math.max(0, end - size);
