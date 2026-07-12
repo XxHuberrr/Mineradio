@@ -27,5 +27,7 @@ assert.ok(/function\s+createLocalPlaylist\s*\(/.test(html), 'users should be abl
 assert.ok(/function\s+renameLocalPlaylist\s*\(/.test(html), 'users should be able to rename local playlists');
 assert.ok(/function\s+deleteLocalPlaylist\s*\(/.test(html), 'users should be able to delete local playlists');
 assert.ok(/function\s+playLocalPlaylist\s*\(/.test(html), 'users should be able to play a local playlist');
+assert.ok(/function\s+addCollectTargetToLocalPlaylist\s*\(/.test(html), 'collect modal should add any song to a local playlist');
+assert.ok(html.includes('data-local-collect-pid'), 'collect modal should render local playlist targets');
 
 console.log('local-music-ui static tests passed');
