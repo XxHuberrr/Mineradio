@@ -46,6 +46,21 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   },
 });
 
+contextBridge.exposeInMainWorld('appleMusicWeb', {
+  open: () => ipcRenderer.invoke('mineradio-apple-music-web-open'),
+  command: (command, payload) => ipcRenderer.invoke(
+    'mineradio-apple-music-web-command',
+    command,
+    payload || {}
+  ),
+  onEvent: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-apple-music-web-event', listener);
+    return () => ipcRenderer.removeListener('mineradio-apple-music-web-event', listener);
+  },
+});
+
 window.addEventListener('DOMContentLoaded', () => {
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');

@@ -8,8 +8,12 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win nsis",
-    "build:win:dir": "electron-builder --win dir"
+    "start:apple-music": "node desktop/start-apple-music-poc.js",
+    "test": "node --test test/*.test.js",
+    "build:win": "node desktop/run-electron-builder.js --win nsis",
+    "build:win:dir": "node desktop/run-electron-builder.js --win dir",
+    "build:mac": "node desktop/run-electron-builder.js --mac dmg --arm64",
+    "build:mac:dir": "node desktop/run-electron-builder.js --mac dir --arm64"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -19,6 +23,9 @@
       "buildResources": "build"
     },
     "afterPack": "build/after-pack.js",
+    "electronDownload": {
+      "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+    },
     "toolsets": {
       "winCodeSign": "1.1.0"
     },
@@ -45,6 +52,21 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "artifactName": "Mineradio-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -89,7 +111,7 @@
     "NeteaseCloudMusicApi": "^4.32.0"
   },
   "devDependencies": {
-    "electron": "^42.4.1",
+    "electron": "https://codeload.github.com/castlabs/electron-releases/tar.gz/757659211440519e3550b8aca3012d1b8ac53a4e",
     "electron-builder": "^26.15.3",
     "rcedit": "^5.0.2"
   }

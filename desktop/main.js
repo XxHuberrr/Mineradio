@@ -1,8 +1,14 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, components, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const { createAppleMusicWebController } = require('./apple-music-web-controller');
+const { createWidevineComponentsInitializer } = require('./widevine-components');
+const {
+  closeAppleMusicWithMainWindow,
+  shouldCreateMainWindow,
+} = require('./window-lifecycle');
 
 let mainWindow = null;
 let localServer = null;
@@ -22,7 +28,10 @@ let wallpaperState = {};
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
+let mainWindowCreationPromise = null;
+let appleMusicWebController = null;
 const registeredGlobalHotkeys = new Map();
+const ensureWidevineComponentsReady = createWidevineComponentsInitializer(components);
 
 const WINDOWED_ASPECT = 16 / 9;
 const WINDOWED_SCALE = 3 / 4;
@@ -48,8 +57,9 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
+else if (process.platform === 'darwin') CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'metal']);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -1121,6 +1131,29 @@ ipcMain.handle('desktop-window-close', (event) => {
   getSenderWindow(event)?.close();
 });
 
+ipcMain.on('mineradio-apple-music-web-page-event', (event, payload) => {
+  if (!appleMusicWebController) return;
+  appleMusicWebController.handlePageEvent(event.sender, payload);
+});
+
+ipcMain.handle('mineradio-apple-music-web-open', async () => {
+  if (!appleMusicWebController) return { ok: false, error: 'APPLE_MUSIC_CONTROLLER_NOT_READY' };
+  try {
+    return await appleMusicWebController.open();
+  } catch (_) {
+    return { ok: false, error: 'APPLE_MUSIC_WINDOW_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-apple-music-web-command', async (_event, command, payload) => {
+  if (!appleMusicWebController) return { ok: false, error: 'APPLE_MUSIC_CONTROLLER_NOT_READY' };
+  try {
+    return await appleMusicWebController.command(command, payload || {});
+  } catch (_) {
+    return { ok: false, error: 'APPLE_MUSIC_COMMAND_FAILED' };
+  }
+});
+
 ipcMain.handle('mineradio-hotkeys-configure-global', (_event, bindings) => {
   return configureMineradioGlobalHotkeys(bindings);
 });
@@ -1317,7 +1350,7 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
   }
 });
 
-async function createWindow() {
+async function createWindowOnce() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
   const port = await findOpenPort(3000);
@@ -1367,6 +1400,16 @@ async function createWindow() {
     },
   });
 
+  if (!appleMusicWebController) {
+    appleMusicWebController = createAppleMusicWebController({
+      BrowserWindow,
+      session,
+      shell,
+      getMainWindow: () => mainWindow,
+      ensureWidevineReady: ensureWidevineComponentsReady,
+    });
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -1404,6 +1447,7 @@ async function createWindow() {
       mainWindowStateTimer = null;
     }
     closeOverlayWindows();
+    closeAppleMusicWithMainWindow(appleMusicWebController);
     mainWindow = null;
   });
   mainWindow.on('enter-full-screen', () => {
@@ -1423,7 +1467,19 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  const initialPath = process.env.MINERADIO_APPLE_MUSIC_POC === '1'
+    ? '/apple-music-web-poc.html'
+    : '/';
+  await mainWindow.loadURL(`http://127.0.0.1:${port}${initialPath}`);
+}
+
+function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve(mainWindow);
+  if (mainWindowCreationPromise) return mainWindowCreationPromise;
+  mainWindowCreationPromise = createWindowOnce().finally(() => {
+    mainWindowCreationPromise = null;
+  });
+  return mainWindowCreationPromise;
 }
 
 app.setName(APP_NAME);
@@ -1450,7 +1506,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (shouldCreateMainWindow(mainWindow)) createWindow();
     else focusMainWindow();
   });
 
@@ -1461,6 +1517,7 @@ if (!gotSingleInstanceLock) {
   app.on('before-quit', () => {
     unregisterMineradioGlobalHotkeys();
     closeOverlayWindows();
+    if (appleMusicWebController) appleMusicWebController.close();
     if (localServer && localServer.close) localServer.close();
   });
 }

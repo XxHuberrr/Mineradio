@@ -25,6 +25,9 @@ backups/
 *.cache
 .env
 .env.*
+*.p8
+.apple-music-token
+browser_state.json
 
 # Local development noise
 .DS_Store

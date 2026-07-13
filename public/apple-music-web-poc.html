@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mineradio · Apple Music POC</title>
+  <style>
+    :root{color-scheme:dark;font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#08090c;color:#f7f7f8}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 70% 10%,#40203d 0,transparent 35%),linear-gradient(145deg,#11141c,#08090c 60%)}
+    main{width:min(1040px,calc(100% - 40px));margin:0 auto;padding:38px 0 64px}
+    h1{font-size:34px;margin:0 0 6px;letter-spacing:-.04em} .sub{color:#a7abb8;margin:0 0 26px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:rgba(20,22,29,.82);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:20px;box-shadow:0 18px 60px rgba(0,0,0,.25)}
+    .wide{grid-column:1/-1}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,input{font:inherit;border-radius:12px;border:1px solid rgba(255,255,255,.12);color:inherit}button{padding:10px 15px;background:#2b2e39;cursor:pointer}button.primary{background:#fa315d;border-color:#ff6080}button:disabled{opacity:.45;cursor:not-allowed}input{flex:1;min-width:220px;padding:11px 14px;background:#0d0f14}
+    .pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;background:#242732;color:#c7cad3}.dot{width:8px;height:8px;border-radius:50%;background:#727786}.dot.ok{background:#51d88a;box-shadow:0 0 15px #51d88a}
+    .notice{margin:14px 0 0;padding:11px 13px;border-radius:12px;background:#251d16;border:1px solid #5b4127;color:#f2cf9f}
+    canvas{display:block;width:100%;height:210px;border-radius:14px;background:linear-gradient(180deg,#111520,#090b10)}
+    .meter{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.meter div{background:#0d0f14;border-radius:10px;padding:8px 10px;color:#a7abb8}.meter b{display:block;color:#fff;font-size:18px}
+    #results{display:grid;gap:9px;margin-top:14px}.song{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:9px;border-radius:13px;background:#10131a}.song img{width:48px;height:48px;border-radius:9px;object-fit:cover;background:#252832}.song strong,.song span{display:block}.song span{color:#9297a5;font-size:13px}.now{display:grid;grid-template-columns:84px 1fr;gap:16px;align-items:center}.now img{width:84px;height:84px;border-radius:14px;background:#252832;object-fit:cover}.muted{color:#9297a5}.error{color:#ff8da4;white-space:pre-wrap}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}.meter{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Apple Music Web POC</h1>
+  <p class="sub">用户在 Apple 页面自行登录；Mineradio 不要求、读取或保存任何 MusicKit token。</p>
+  <div class="grid">
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">会话</h2>
+        <span class="pill"><i id="status-dot" class="dot"></i><span id="status-text">未打开</span></span>
+      </div>
+      <p class="muted">先打开中国区 Apple Music 播放器，登录订阅账号并在该窗口确认能播放。窗口使用独立的持久化浏览器分区。</p>
+      <div class="row"><button id="open" class="primary">打开 / 聚焦中国区播放器</button><button id="refresh">刷新状态</button><button id="china-info">Apple Music 中国官网</button></div>
+      <p class="notice">登录提示：请在内嵌 Apple 页面中使用密码和双重认证。Chrome 的跨设备“通行钥匙”二维码属于浏览器界面，Electron 当前不会显示该二维码选择器。</p>
+      <p id="error" class="error"></p>
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">正在播放</h2>
+      <div class="now"><img id="artwork" alt=""><div><strong id="track">尚未播放</strong><div id="artist" class="muted">—</div><div id="time" class="muted">0:00 / 0:00</div></div></div>
+      <div class="row" style="margin-top:15px"><button data-command="previous">上一首</button><button data-command="toggle" class="primary">播放 / 暂停</button><button data-command="next">下一首</button></div>
+    </section>
+    <section class="card wide">
+      <h2 style="margin-top:0">Apple Music 目录搜索</h2>
+      <form id="search-form" class="row"><input id="query" placeholder="歌曲、歌手或专辑" value="Massive Attack"><button class="primary">搜索</button></form>
+      <div id="results"></div>
+    </section>
+    <section class="card wide">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0 0 12px">实时频谱</h2><span id="audio-state" class="muted">等待 Apple 播放器</span></div>
+      <canvas id="spectrum" width="1000" height="210"></canvas>
+      <div class="meter"><div>Energy<b id="energy">0.000</b></div><div>Bass<b id="bass">0.000</b></div><div>Mid<b id="mid">0.000</b></div><div>Treble<b id="treble">0.000</b></div></div>
+    </section>
+  </div>
+</main>
+<script>
+  'use strict';
+  const bridge = window.appleMusicWeb;
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const errorEl = document.getElementById('error');
+  const resultsEl = document.getElementById('results');
+  const canvas = document.getElementById('spectrum');
+  const ctx = canvas.getContext('2d');
+  let bins = new Array(64).fill(0);
+  let playback = { currentTime: 0, duration: 0 };
+
+  function formatTime(value) {
+    value = Math.max(0, Number(value) || 0);
+    return Math.floor(value / 60) + ':' + String(Math.floor(value % 60)).padStart(2, '0');
+  }
+  function setError(message) { errorEl.textContent = message || ''; }
+  function setStatus(status) {
+    const active = status && status.authorized;
+    statusDot.classList.toggle('ok', !!active);
+    statusText.textContent = !status ? '未打开' : active ? '已登录 · ' + (status.storefrontId || '') : 'Apple 页面已打开，等待登录';
+    document.getElementById('audio-state').textContent = status && status.spectrumActive
+      ? 'AnalyserNode · ' + (status.audioContextState || 'created')
+      : '等待 #apple-music-player';
+  }
+  function draw() {
+    requestAnimationFrame(draw);
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const gradient = ctx.createLinearGradient(0, h, 0, 0);
+    gradient.addColorStop(0, '#fa315d'); gradient.addColorStop(.55, '#f98ec2'); gradient.addColorStop(1, '#8be9ff');
+    const gap = 4, barWidth = (w - gap * (bins.length - 1)) / bins.length;
+    bins.forEach((value, index) => {
+      const height = Math.max(2, value / 255 * (h - 16));
+      ctx.fillStyle = gradient;
+      ctx.fillRect(index * (barWidth + gap), h - height, barWidth, height);
+    });
+  }
+  draw();
+
+  document.getElementById('open').addEventListener('click', async () => {
+    setError('');
+    const button = document.getElementById('open');
+    button.disabled = true;
+    button.textContent = '正在准备 Widevine…';
+    try {
+      const result = await bridge.open();
+      if (!result.ok) setError(result.error);
+    } finally {
+      button.disabled = false;
+      button.textContent = '打开 / 聚焦中国区播放器';
+    }
+  });
+  document.getElementById('refresh').addEventListener('click', async () => {
+    const result = await bridge.command('status');
+    if (result.ok) setStatus(result.status);
+    else setError(result.error);
+  });
+  document.getElementById('china-info').addEventListener('click', () => {
+    window.open('https://www.apple.com.cn/apple-music/', '_blank', 'noopener');
+  });
+  document.querySelectorAll('[data-command]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const result = await bridge.command(button.dataset.command);
+      if (!result.ok) setError(result.error);
+    });
+  });
+  document.getElementById('search-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); setError(''); resultsEl.textContent = '搜索中…';
+    const result = await bridge.command('search', { query: document.getElementById('query').value, limit: 12 });
+    if (!result.ok) { resultsEl.textContent = ''; setError(result.error); return; }
+    resultsEl.textContent = '';
+    result.songs.forEach((song) => {
+      const row = document.createElement('div'); row.className = 'song';
+      const image = document.createElement('img'); image.alt = ''; image.src = song.artwork || '';
+      const copy = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = song.name;
+      const detail = document.createElement('span'); detail.textContent = song.artist + (song.album ? ' · ' + song.album : '');
+      copy.append(title, detail);
+      const play = document.createElement('button'); play.textContent = '播放';
+      play.addEventListener('click', async () => { const reply = await bridge.command('playSong', { id: song.id }); if (!reply.ok) setError(reply.error); });
+      row.append(image, copy, play); resultsEl.append(row);
+    });
+  });
+
+  if (bridge) bridge.onEvent((event) => {
+    if (event.type === 'status') setStatus(event);
+    else if (event.type === 'now-playing') {
+      document.getElementById('track').textContent = event.name || '尚未播放';
+      document.getElementById('artist').textContent = [event.artist, event.album].filter(Boolean).join(' · ') || '—';
+      document.getElementById('artwork').src = event.artwork || '';
+      playback.duration = event.duration || playback.duration;
+    } else if (event.type === 'playback') {
+      playback = event;
+      document.getElementById('time').textContent = formatTime(event.currentTime) + ' / ' + formatTime(event.duration);
+    } else if (event.type === 'spectrum') {
+      bins = event.bins.length ? event.bins : bins;
+      ['energy','bass','mid','treble'].forEach((key) => { document.getElementById(key).textContent = Number(event[key] || 0).toFixed(3); });
+    } else if (event.type === 'error') setError(event.code + ': ' + event.message);
+  });
+  else {
+    setError('此页面必须从 Mineradio Electron 桌面壳运行。');
+    document.querySelectorAll('button,input').forEach((element) => { element.disabled = true; });
+  }
+</script>
+</body>
+</html>

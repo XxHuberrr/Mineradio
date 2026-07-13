@@ -41,26 +41,41 @@ function resolveRcedit(projectDir) {
 }
 
 module.exports = async function afterPack(context) {
-  if (context.electronPlatformName !== 'win32') return;
+  if (context.electronPlatformName === 'win32') {
+    const appName = context.packager.appInfo.productFilename || 'Mineradio';
+    const exePath = path.join(context.appOutDir, `${appName}.exe`);
+    const iconPath = path.join(context.packager.info.buildResourcesDir, 'icon.ico');
+    const rceditPath = resolveRcedit(context.packager.projectDir);
 
-  const appName = context.packager.appInfo.productFilename || 'Mineradio';
-  const exePath = path.join(context.appOutDir, `${appName}.exe`);
-  const iconPath = path.join(context.packager.info.buildResourcesDir, 'icon.ico');
-  const rceditPath = resolveRcedit(context.packager.projectDir);
+    if (!fs.existsSync(exePath)) throw new Error(`Mineradio executable was not found: ${exePath}`);
+    if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
 
-  if (!fs.existsSync(exePath)) throw new Error(`Mineradio executable was not found: ${exePath}`);
-  if (!fs.existsSync(iconPath)) throw new Error(`Mineradio icon was not found: ${iconPath}`);
+    const version = context.packager.appInfo.version;
+    console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
+    execFileSync(rceditPath, [
+      exePath,
+      '--set-icon', iconPath,
+      '--set-version-string', 'FileDescription', 'Mineradio',
+      '--set-version-string', 'ProductName', 'Mineradio',
+      '--set-version-string', 'CompanyName', 'Mineradio',
+      '--set-version-string', 'OriginalFilename', `${appName}.exe`,
+      '--set-file-version', version,
+      '--set-product-version', version
+    ], { stdio: 'inherit' });
+  }
 
-  const version = context.packager.appInfo.version;
-  console.log(`  • injecting Mineradio resources  rcedit=${rceditPath}`);
-  execFileSync(rceditPath, [
-    exePath,
-    '--set-icon', iconPath,
-    '--set-version-string', 'FileDescription', 'Mineradio',
-    '--set-version-string', 'ProductName', 'Mineradio',
-    '--set-version-string', 'CompanyName', 'Mineradio',
-    '--set-version-string', 'OriginalFilename', `${appName}.exe`,
-    '--set-file-version', version,
-    '--set-product-version', version
+  const shouldVmpSign = context.electronPlatformName === 'darwin'
+    || context.electronPlatformName === 'win32';
+  const hasEvsCredentials = !!(process.env.EVS_ACCOUNT_NAME && process.env.EVS_PASSWD);
+  const explicitlyRequested = process.env.MINERADIO_EVS_SIGN === '1';
+  if (!shouldVmpSign || (!hasEvsCredentials && !explicitlyRequested)) {
+    if (shouldVmpSign) console.log('  • EVS production VMP signing skipped (credentials not configured)');
+    return;
+  }
+
+  console.log('  • signing CastLabs package with EVS production VMP keys');
+  execFileSync('uvx', [
+    '--from', 'castlabs-evs',
+    'evs-vmp', 'sign-pkg', context.appOutDir
   ], { stdio: 'inherit' });
 };
