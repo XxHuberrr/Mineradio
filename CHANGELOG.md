@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- 修复非 Windows 平台仍强制使用 Direct3D 11 ANGLE 后端的问题：Windows 保持 D3D11，macOS 改用 Metal，避免启动页因 GPU 初始化失败而无法进入。
 - 修复 standalone Node 服务在安装 Electron 依赖后误加载 Electron 包的问题，避免服务启动时触发无关的 Electron 二进制下载。
 - 新增真实签名补丁端到端测试，覆盖 HTTP 下载、篡改签名拒绝、备份、事务应用和服务重启后的资源持久化。
 - 新增 Windows Electron `safeStorage`/DPAPI 集成测试，覆盖加密写入、解密读取、旧明文迁移和登出删除。

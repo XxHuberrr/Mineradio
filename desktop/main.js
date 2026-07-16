@@ -3,6 +3,7 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const { getChromiumPerformanceSwitches } = require('./chromium-switches');
 
 let mainWindow = null;
 let localServer = null;
@@ -37,20 +38,7 @@ const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
-const CHROMIUM_PERFORMANCE_SWITCHES = [
-  ['autoplay-policy', 'no-user-gesture-required'],
-  ['ignore-gpu-blocklist'],
-  ['enable-gpu-rasterization'],
-  ['enable-oop-rasterization'],
-  ['enable-zero-copy'],
-  ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
-];
-for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
+for (const [name, value] of getChromiumPerformanceSwitches()) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
