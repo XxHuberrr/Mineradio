@@ -18,7 +18,7 @@
 - GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
 - 统一备份目录：`E:\桌面\播放器软件\工作区备份`
 - 当前源码检查点：`v1.1.1`
-- 2026-07-16 维护检查点：本地 API 已限制为回环同源请求；封面/音频代理新增公网目标与重定向校验；主窗口阻止外站导航；网易云与 QQ 登录会话使用系统 `safeStorage`；快速补丁强制 Ed25519 签名；统一检查命令为 `npm run check`。
+- 2026-07-16 维护检查点：本地 API 已限制为回环同源请求；封面/音频代理新增公网目标与重定向校验；主窗口阻止外站导航；网易云与 QQ 登录会话使用系统 `safeStorage`；快速补丁强制 Ed25519 签名；统一检查命令为 `npm run check`；`.github/workflows/security-check.yml` 会在 Linux 和 Windows 的 Node.js 22 环境执行该检查。
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
 - 更新包命名规则：从 `v1.0.10` 起，快速补丁本地文件名和 GitHub Release label 使用 `Mineradio-旧版本→新版本.patch.json` 这种右箭头格式；GitHub 资产底层 `name` 可能会把 `→` 净化成点号，但更新解析仍可识别 from/to 版本。

@@ -38,7 +38,7 @@ Get-Content RELEASE.md
 - 新增 `server-security.js`，集中处理本地 API 同源限制、代理目标 IP 校验和重定向逐跳校验。
 - `server.js` 的封面代理只接受常用栅格图片，音频代理不再透传 HTML 内容类型，媒体响应启用 `nosniff`。
 - `desktop/main.js` 阻止主窗口离开本地应用源，HTTP(S) 外链交给系统浏览器。
-- 新增 `npm run check` 和安全边界测试；当前 macOS 源码快照没有 `node_modules`，未执行 Electron 实机和 Windows 构建。
+- 新增 `npm run check` 和安全边界测试；`.github/workflows/security-check.yml` 会在 Linux 和 Windows 的 Node.js 22 环境执行检查，其中 Windows runner 覆盖真实目录联接（junction）路径；这不等同于 Electron 实机或 Windows 安装包构建。
 - 新增 `cookie-storage.js`：Electron 中使用系统 `safeStorage` 加密网易云/QQ Cookie，旧明文文件首次读取后自动迁移，登出删除文件。
 - Electron 安全存储不可用时拒绝明文落盘，登录接口返回 `saved: false`，前端提示本次会话未持久化；standalone Node 启动仍保留明文兼容。
 - `.cookie` 与 `.qq-cookie` 都会从旧 app 目录迁移到 Electron `userData`；`cookie-storage.js` 已加入安装包文件列表和快速补丁允许列表。

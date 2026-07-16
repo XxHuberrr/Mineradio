@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- 新增 GitHub Actions 跨平台检查，在 Linux 和 Windows 的 Node.js 22 环境运行 `npm run check`，让 Windows runner 实际覆盖目录联接（junction）安全回归。
 - 收紧本地 HTTP API 边界：仅接受回环地址上的同源请求，拒绝跨站页面调用，并移除 API/媒体代理的全开放 CORS 响应头。
 - 加固封面和音频代理：阻止 localhost、内网、链路本地、IPv4-mapped IPv6 等目标，逐跳校验重定向，避免代理跳转绕过。
 - 防止同源内容注入：封面代理只返回常用栅格图片类型，音频代理不再透传 HTML 等可执行内容类型，并统一启用 `nosniff`。
