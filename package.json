@@ -8,6 +8,10 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "check": "node scripts/check-syntax.js && node scripts/test-chromium-switches.js && node scripts/test-server-security.js && node scripts/test-cookie-storage.js && node scripts/test-update-signature.js && node scripts/test-update-patch.js",
+    "check:patch-e2e": "node scripts/test-update-patch-e2e.js",
+    "check:electron-safe-storage": "electron scripts/test-electron-safe-storage.js",
+    "sign:patch": "node scripts/sign-update-patch.js",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"
   },
@@ -27,6 +31,10 @@
       "public/**/*",
       "build/**/*",
       "server.js",
+      "server-security.js",
+      "cookie-storage.js",
+      "update-signature.js",
+      "update-patch.js",
       "dj-analyzer.js",
       "package.json",
       "!public/index.*.html",
@@ -76,6 +84,7 @@
       "repo": "Mineradio",
       "preview": true,
       "preferMirrors": true,
+      "patchSigningKeys": {},
       "mirrors": [
         "https://gh.llkk.cc/",
         "https://ghfast.top/",

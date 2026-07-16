@@ -8,7 +8,7 @@ Mineradio 是 Windows Electron 桌面音乐播放器，核心体验包括搜索�
 - 当前运行版主目录：`E:\桌面\播放器软件\Mineradio`
 - 当前真实代码/Git 仓库：`E:\桌面\播放器软件\Mineradio\resources\app`
 - GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
-- 当前源码版本：`v1.1.0`
+- 当前源码版本：`v1.1.1`
 - 统一备份区：`E:\桌面\播放器软件\工作区备份`
 
 ## Start Every New Codex Thread Here
@@ -46,6 +46,10 @@ Mineradio/resources/app/
 
 ```powershell
 npm start
+npm run check
+npm run check:patch-e2e
+npm run check:electron-safe-storage  # 仅 Windows Electron 环境
+npm run sign:patch -- --input <unsigned.json> --output <signed.patch.json> --key <private.pem> --key-id <key-id>
 node --check server.js
 npm run build:win:dir
 npm run build:win
@@ -60,7 +64,7 @@ git diff --check
 node --check server.js
 ```
 
-并用实际 Electron 或浏览器检查关键交互。
+优先执行 `npm run check`，并用实际 Electron 或浏览器检查关键交互。
 
 ## Release Workflow
 
@@ -70,7 +74,8 @@ node --check server.js
 2. 更新 `CHANGELOG.md` 顶部中文说明。
 3. 运行语法/空白检查。
 4. 执行 `npm run build:win`。
-5. 上传 GitHub Release 资产：
+5. 如发布快速补丁，先读取 `docs/UPDATE_PATCH_SIGNING.md`，使用仓库签名脚本生成 Ed25519 签名信封；私钥不得进入仓库或 Release。
+6. 上传 GitHub Release 资产：
    - `dist/Mineradio-x.y.z-Setup.exe`
    - `dist/Mineradio-x.y.z-Setup.exe.blockmap`
    - `dist/latest.yml`

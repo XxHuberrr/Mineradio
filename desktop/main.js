@@ -3,6 +3,7 @@ const net = require('net');
 const path = require('path');
 const fs = require('fs');
 const { execFile, spawn } = require('child_process');
+const { getChromiumPerformanceSwitches } = require('./chromium-switches');
 
 let mainWindow = null;
 let localServer = null;
@@ -37,20 +38,7 @@ const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
-const CHROMIUM_PERFORMANCE_SWITCHES = [
-  ['autoplay-policy', 'no-user-gesture-required'],
-  ['ignore-gpu-blocklist'],
-  ['enable-gpu-rasterization'],
-  ['enable-oop-rasterization'],
-  ['enable-zero-copy'],
-  ['enable-accelerated-2d-canvas'],
-  ['disable-background-timer-throttling'],
-  ['disable-renderer-backgrounding'],
-  ['disable-backgrounding-occluded-windows'],
-  ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
-];
-for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
+for (const [name, value] of getChromiumPerformanceSwitches()) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
@@ -1328,16 +1316,18 @@ async function createWindow() {
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
-  try {
-    const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
-    if (fs.existsSync(legacyQQCookie)) {
-      if (!fs.existsSync(process.env.QQ_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQQCookie, process.env.QQ_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQQCookie);
+  for (const [label, legacyName, targetPath] of [
+    ['Netease', '.cookie', process.env.COOKIE_FILE],
+    ['QQ Music', '.qq-cookie', process.env.QQ_COOKIE_FILE],
+  ]) {
+    try {
+      const legacyPath = path.join(__dirname, '..', legacyName);
+      if (!fs.existsSync(legacyPath)) continue;
+      if (!fs.existsSync(targetPath)) fs.copyFileSync(legacyPath, targetPath);
+      fs.unlinkSync(legacyPath);
+    } catch (e) {
+      console.warn(`${label} cookie migration skipped:`, e.message);
     }
-  } catch (e) {
-    console.warn('QQ cookie migration skipped:', e.message);
   }
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
@@ -1367,9 +1357,27 @@ async function createWindow() {
     },
   });
 
+  const mainAppOrigin = `http://127.0.0.1:${port}`;
+  const openExternalHttpUrl = (targetUrl) => {
+    try {
+      const parsed = new URL(targetUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(parsed.toString()).catch(() => {});
+      }
+    } catch (_) {}
+  };
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalHttpUrl(url);
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    try {
+      if (new URL(targetUrl).origin === mainAppOrigin) return;
+    } catch (_) {}
+    event.preventDefault();
+    openExternalHttpUrl(targetUrl);
   });
 
   mainWindow.webContents.once('did-finish-load', () => {

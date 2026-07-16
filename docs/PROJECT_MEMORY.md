@@ -17,7 +17,8 @@
 - 真实代码/Git 仓库：`E:\桌面\播放器软件\Mineradio\resources\app`
 - GitHub 仓库：`https://github.com/XxHuberrr/Mineradio.git`
 - 统一备份目录：`E:\桌面\播放器软件\工作区备份`
-- 当前源码检查点：`v1.1.0`
+- 当前源码检查点：`v1.1.1`
+- 2026-07-16 维护检查点：本地 API 已限制为回环同源请求；封面/音频代理新增公网目标与重定向校验；主窗口阻止外站导航；网易云与 QQ 登录会话使用系统 `safeStorage`；快速补丁强制 Ed25519 签名；统一检查命令为 `npm run check`；CI 还会执行签名补丁下载/应用/重启端到端测试和 Windows Electron `safeStorage`/DPAPI 集成测试。
 - 最近正式安装包 Release 基线：`v1.1.0` 纯净安装版；`v1.0.10` 及更早安装包需隔离，不再建议安装或传播。
 - 发布入口：GitHub Releases，更新检查依赖 `latest.yml` 和可选轻量补丁 JSON。
 - 更新包命名规则：从 `v1.0.10` 起，快速补丁本地文件名和 GitHub Release label 使用 `Mineradio-旧版本→新版本.patch.json` 这种右箭头格式；GitHub 资产底层 `name` 可能会把 `→` 净化成点号，但更新解析仍可识别 from/to 版本。
@@ -175,6 +176,31 @@
 ```
 
 ## Memory Entries
+
+### 2026-07-16 - 快速补丁事务应用边界
+
+- 维护结论：签名通过不代表可以边解析边覆盖文件；必须先完成全部文件的路径、编码、大小、重复目标和哈希预检，再开始任何写入。
+- 涉及文件：`update-patch.js`、`server.js`、`scripts/test-update-patch.js`、`scripts/test-update-signature.js`、`package.json`、`docs/UPDATE_PATCH_SIGNING.md`。
+- 回滚边界：写入过程中失败时，恢复本轮已经覆盖的旧文件、删除本轮新建文件，并从深到浅删除本任务创建且仍为空的目录；如果文件或目录回滚失败，返回 `PATCH_ROLLBACK_FAILED`，要求停止快速补丁并使用完整安装包修复。
+- Windows 路径边界：拒绝绝对路径、路径穿越、危险扩展名、Windows 保留名、尾随点/空格，以及大小写不同但实际碰撞的重复目标。初始化时记录应用根目录真实路径，预检和逐文件写入前都逐级拒绝符号链接/目录联接，并确认真实路径仍在应用根目录内。
+- 并发修改边界：预检时记录目标文件的存在状态和文件系统身份；目标在实际应用前被新增、删除或替换时返回 `PATCH_TARGET_CHANGED`，保留并发产生的本地文件。`.mineradio-patch` 和 `.mineradio-restore` 后缀仅供内部事务文件使用，补丁不得将其作为目标。
+- 回归证据：文件系统测试覆盖成功备份、预检零写入、重复路径拒绝、运行时失败回滚、非法路径和编码拒绝、应用目录外符号链接逃逸、预检后符号链接/普通文件替换、内部事务文件名拒绝、空目录回滚和目录回滚失败。
+
+### 2026-07-16 - 快速补丁签名信任边界
+
+- 维护结论：快速补丁可以直接修改应用代码，因此必须使用 `mineradio-resource-patch-envelope-v1` Ed25519 签名信封；签名验证必须发生在版本校验和任何文件写入之前。
+- 涉及文件：`update-signature.js`、`server.js`、`scripts/sign-update-patch.js`、`scripts/test-update-signature.js`、`package.json`、`docs/UPDATE_PATCH_SIGNING.md`。
+- 兼容边界：旧未签名补丁不再应用；未配置可信公钥时 `patchAvailable` 为 false，补丁 API 返回 `PATCH_SIGNING_KEY_UNAVAILABLE`，用户继续使用完整安装包更新。
+- 密钥边界：客户端和仓库只保存公钥；私钥必须位于仓库外的受控发布环境。密钥轮换时先让旧客户端获得新公钥，再用新密钥签名。
+- 当前状态：`package.json` 的 `mineradio.update.patchSigningKeys` 仍为空，尚未建立正式生产密钥，因此快速补丁保持关闭；不要为了恢复入口而接受未签名补丁。
+
+### 2026-07-16 - 登录 Cookie 安全存储边界
+
+- 维护结论：Electron 运行时的网易云 `.cookie` 和 QQ 音乐 `.qq-cookie` 必须通过 `electron.safeStorage` 加密后保存到 `userData`；旧明文文件首次读取后自动迁移。
+- 涉及文件：`cookie-storage.js`、`server.js`、`desktop/main.js`、`public/index.html`、`scripts/test-cookie-storage.js`、`package.json`。
+- 兼容边界：单独用 Node 启动 `server.js` 时保留明文文件兼容；Electron 中若系统安全存储不可用，只保留当前进程内会话并向用户提示重启后需重新登录，禁止静默回退为明文。
+- 失败边界：加密文件损坏、系统凭据变化或解密不可用时按未登录处理，不自动删除原文件；登出应删除对应 Cookie 文件。
+- 验证边界：`npm run check` 必须覆盖加密读写、旧明文迁移、`0600` 权限（支持的平台）、登出删除、损坏内容和 safeStorage 不可用路径；正式发布前仍需在 Windows 实机验证 DPAPI/safeStorage 迁移与重启后的登录持久化。
 
 ### 2026-06-25 - 安装器路径与卸载防误删 P0 规则
 

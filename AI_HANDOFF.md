@@ -2,10 +2,10 @@
 
 这个文件是给后续接管本工作区的 AI 看的。每次完成一个任务后，都要更新本文件的「工作日志」和「未完成事项」，让下一位接手者能快速知道用户偏好、当前状态和最近做过什么。
 
-## 当前权威入口（2026-06-24）
+## 当前权威入口（2026-07-16）
 
 - 当前真实代码/Git 仓库仍是 `E:\桌面\播放器软件\Mineradio\resources\app`。
-- 当前版本是 `v1.1.0` 纯净安装发布线；本轮已从当前可信源码重新生成并发布 `dist/Mineradio-1.1.0-Setup.exe`。
+- 当前源码版本是 `v1.1.1`；正式发布状态和 Windows 构建结果以 `docs/HANDOFF_NEXT_CHAT.md`、`RELEASE.md` 和实际发布环境为准。
 - GitHub 仓库已公开：`https://github.com/XxHuberrr/Mineradio`
 - `v1.1.0` Release：`https://github.com/XxHuberrr/Mineradio/releases/tag/v1.1.0`
 - GitHub `/releases/latest` 仍返回 `v1.0.10`，这是刻意设置，避免旧版软件内更新到 1.1.0。
@@ -74,6 +74,18 @@
 这个目录是人工归档区，不参与软件更新流程。
 
 ## 已完成工作日志
+
+### 2026-07-16
+
+- 快速补丁已在 Ed25519 签名验证之后增加事务化文件应用：全部文件先完成路径、编码、大小、重复目标和哈希预检，再开始写入。
+- 新增 `update-patch.js` 和 `scripts/test-update-patch.js`；应用途中失败会恢复已覆盖文件、删除本轮新文件并清理本任务创建的空目录，回滚不完整会返回 `PATCH_ROLLBACK_FAILED`。
+- 补丁器现在记录应用根目录真实路径，逐级拒绝符号链接/Windows 目录联接和真实路径越界，并在每个文件写入前复检；测试覆盖预检后路径被替换的情况。
+- 预检同时记录目标文件身份，预检后新增、删除或替换目标会返回 `PATCH_TARGET_CHANGED`；`.mineradio-patch/.mineradio-restore` 内部事务后缀禁止作为补丁目标。
+- `update-patch.js` 已加入安装包文件列表和快速补丁允许列表；本轮未修改播放、歌词、玻璃质感、粒子视觉或 3D 歌单架。
+- 当前生产 `patchSigningKeys` 仍为空，快速补丁保持关闭；尚未运行 Electron 实机和 Windows 构建。
+- `.github/workflows/security-check.yml` 在 Linux/Windows 运行 `npm run check`，并新增签名补丁 HTTP 下载/应用/重启端到端 job 与 Windows Electron `safeStorage`/DPAPI 集成 job；Windows 安装包构建仍需发布环境验证。
+- 修复 standalone Node 模式误加载 Electron 包的问题，避免安装了 devDependencies 后启动服务触发 Electron 二进制下载。
+- `npm audit` 当前仍报告 `NeteaseCloudMusicApi -> music-metadata -> file-type` 的 1 中危/2 高危 ASF 解析 DoS；npm 只提供不兼容的 Netease 3.x 降级方案，未使用 `npm audit fix --force`，后续应等待 4.x 上游修复或单独做兼容替换验证。
 
 ### 2026-06-24
 
