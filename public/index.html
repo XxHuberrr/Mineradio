@@ -23561,15 +23561,16 @@ async function openNeteaseWebLogin() {
       body: JSON.stringify({ cookie: result.cookie })
     });
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || '网易云会话不可用');
+    var neteasePersistenceWarning = info.saved === false;
     loginStatus = info;
     activeAccountProvider = 'netease';
     renderUserBtn();
     refreshUserPlaylists(true);
     loadHomeDiscover(true);
-    if (statusEl) { statusEl.textContent = '网易云会话已保存'; statusEl.className = 'scan'; }
+    if (statusEl) { statusEl.textContent = neteasePersistenceWarning ? '网易云已登录，但系统安全存储不可用，重启后需重新登录' : '网易云会话已安全保存'; statusEl.className = neteasePersistenceWarning ? 'fail' : 'scan'; }
     setTimeout(function(){
       closeLoginModal();
-      showToast('网易云已登录: ' + (info.nickname || info.userId || ''));
+      showToast(neteasePersistenceWarning ? '网易云已登录，本次会话未持久化' : ('网易云已登录: ' + (info.nickname || info.userId || '')));
     }, 420);
   } catch (e) {
     neteaseWebLoginBusy = false;
@@ -23608,16 +23609,17 @@ async function openQQWebLogin() {
       body: JSON.stringify({ cookie: result.cookie })
     });
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'QQ 会话不可用');
+    var qqPersistenceWarning = info.saved === false;
     qqLoginStatus = info;
     activeAccountProvider = 'qq';
     qqManualCookieOpen = false;
     renderUserBtn();
     refreshUserPlaylists(true);
     var qqPlaybackReady = !!info.playbackKeyReady && !result.partial;
-    if (statusEl) { statusEl.textContent = qqPlaybackReady ? 'QQ 音乐会话已保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源'; statusEl.className = 'scan'; }
+    if (statusEl) { statusEl.textContent = qqPersistenceWarning ? 'QQ 已登录，但系统安全存储不可用，重启后需重新登录' : (qqPlaybackReady ? 'QQ 音乐会话已安全保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源'); statusEl.className = qqPersistenceWarning ? 'fail' : 'scan'; }
     setTimeout(function(){
       closeLoginModal();
-      showToast((qqPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || ''));
+      showToast(qqPersistenceWarning ? 'QQ 已登录，本次会话未持久化' : ((qqPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || '')));
     }, 420);
   } catch (e) {
     qqWebLoginBusy = false;
@@ -23650,16 +23652,17 @@ async function submitQQCookieLogin() {
       body: JSON.stringify({ cookie: cookie })
     });
     if (!info || !info.loggedIn) throw new Error((info && (info.message || info.error)) || 'QQ 会话不可用');
+    var manualQQPersistenceWarning = info.saved === false;
     qqLoginStatus = info;
     activeAccountProvider = 'qq';
     if (input) input.value = '';
     renderUserBtn();
     refreshUserPlaylists(true);
     var manualQQPlaybackReady = !!info.playbackKeyReady;
-    if (statusEl) { statusEl.textContent = manualQQPlaybackReady ? 'QQ 音乐会话已保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源'; statusEl.className = 'scan'; }
+    if (statusEl) { statusEl.textContent = manualQQPersistenceWarning ? 'QQ 已登录，但系统安全存储不可用，重启后需重新登录' : (manualQQPlaybackReady ? 'QQ 音乐会话已安全保存' : 'QQ 账号已同步，播放授权不完整，部分歌曲会自动换源'); statusEl.className = manualQQPersistenceWarning ? 'fail' : 'scan'; }
     setTimeout(function(){
       closeLoginModal();
-      showToast((manualQQPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || ''));
+      showToast(manualQQPersistenceWarning ? 'QQ 已登录，本次会话未持久化' : ((manualQQPlaybackReady ? 'QQ 音乐已登录: ' : 'QQ 账号已同步: ') + (info.nickname || info.userId || '')));
     }, 420);
   } catch (e) {
     if (statusEl) { statusEl.textContent = e && e.message ? e.message : 'QQ 会话保存失败'; statusEl.className = 'fail'; }
@@ -23677,7 +23680,8 @@ async function checkQr() {
     else if (r.code === 801) { $st.textContent = '请在 App 中扫码'; $st.className = ''; }
     else if (r.code === 802) { $st.textContent = '已扫码, 请在手机确认…'; $st.className = 'scan'; }
     else if (r.code === 803 && (r.loggedIn || r.hasCookie)) {
-      $st.textContent = r.pendingProfile ? '登录成功，正在同步账号资料…' : '登录成功！'; $st.className = 'scan';
+      var qrPersistenceWarning = r.saved === false;
+      $st.textContent = qrPersistenceWarning ? '登录成功，但系统安全存储不可用，重启后需重新登录' : (r.pendingProfile ? '登录成功，正在同步账号资料…' : '登录成功！'); $st.className = qrPersistenceWarning ? 'fail' : 'scan';
       stopQrPoll();
       loginStatus = r.loggedIn ? r : Object.assign({}, r, { loggedIn: true, pendingProfile: true, nickname: r.nickname || '网易云用户' });
       activeAccountProvider = 'netease';
@@ -23690,7 +23694,7 @@ async function checkQr() {
           fresh = loginStatus;
         }
         closeLoginModal();
-        showToast('欢迎 ' + (fresh && fresh.nickname ? fresh.nickname : ''));
+        showToast(qrPersistenceWarning ? '网易云已登录，本次会话未持久化' : ('欢迎 ' + (fresh && fresh.nickname ? fresh.nickname : '')));
       }, r.pendingProfile ? 1200 : 500);
     } else if (r.code === 803) {
       $st.textContent = '扫码已确认，但没有拿到登录凭证，请刷新二维码重试'; $st.className = 'fail';

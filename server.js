@@ -53,6 +53,10 @@ const tls = require('tls');
 const { once } = require('events');
 const { fileURLToPath } = require('url');
 const { analyzePodcastDjStream, analyzePodcastDjIntro } = require('./dj-analyzer');
+const { SAFE_COVER_CONTENT_TYPES, fetchPublicResource, isTrustedLocalApiRequest } = require('./server-security');
+const { createCookieStore } = require('./cookie-storage');
+const { createPatchSignatureVerifier } = require('./update-signature');
+const { createPatchFileApplier } = require('./update-patch');
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -66,9 +70,17 @@ const BEATMAP_CACHE_DIR = process.env.MINERADIO_BEAT_CACHE_DIR || 'D:\\Mineradio
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '0.9.11';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
+const PATCH_SIGNATURE_VERIFIER = createConfiguredPatchSignatureVerifier(UPDATE_CONFIG.patchSigningKeys);
 const PATCH_MAX_BYTES = 12 * 1024 * 1024;
 const PATCH_ALLOWED_ROOTS = new Set(['public', 'desktop', 'build']);
-const PATCH_ALLOWED_FILES = new Set(['server.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
+const PATCH_ALLOWED_FILES = new Set(['server.js', 'server-security.js', 'cookie-storage.js', 'update-signature.js', 'update-patch.js', 'dj-analyzer.js', 'package.json', 'package-lock.json']);
+const PATCH_FILE_APPLIER = createPatchFileApplier({
+  rootDir: __dirname,
+  backupRoot: UPDATE_PATCH_BACKUP_DIR,
+  maxFileBytes: PATCH_MAX_BYTES,
+  allowedRoots: PATCH_ALLOWED_ROOTS,
+  allowedFiles: PATCH_ALLOWED_FILES,
+});
 const UPDATE_FALLBACK_NOTES = [
   '电影镜头节奏更松',
   '音源失败自动换源',
@@ -170,20 +182,30 @@ function rawCookieFallback(input) {
   if (Array.isArray(input) && input.every(item => typeof item === 'string')) return input.join('; ').trim();
   return '';
 }
-let userCookie = '';
-try { if (fs.existsSync(COOKIE_FILE)) userCookie = fs.readFileSync(COOKIE_FILE, 'utf8').trim(); }
-catch (e) { userCookie = ''; }
+const userCookieStore = createCookieStore(COOKIE_FILE, { label: 'Netease' });
+let userCookie = userCookieStore.read();
 function saveCookie(c) {
   userCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
-  try { fs.writeFileSync(COOKIE_FILE, userCookie); } catch (e) {}
+  try {
+    userCookieStore.write(userCookie);
+    return true;
+  } catch (e) {
+    console.warn('[CookieStorage] Netease persist failed:', e.message);
+    return false;
+  }
 }
 
-let qqCookie = '';
-try { if (fs.existsSync(QQ_COOKIE_FILE)) qqCookie = fs.readFileSync(QQ_COOKIE_FILE, 'utf8').trim(); }
-catch (e) { qqCookie = ''; }
+const qqCookieStore = createCookieStore(QQ_COOKIE_FILE, { label: 'QQ Music' });
+let qqCookie = qqCookieStore.read();
 function saveQQCookie(c) {
   qqCookie = normalizeCookieHeader(c) || rawCookieFallback(c);
-  try { fs.writeFileSync(QQ_COOKIE_FILE, qqCookie); } catch (e) {}
+  try {
+    qqCookieStore.write(qqCookie);
+    return true;
+  } catch (e) {
+    console.warn('[CookieStorage] QQ Music persist failed:', e.message);
+    return false;
+  }
 }
 
 // ---------- 工具 ----------
@@ -191,20 +213,27 @@ function serveStatic(res, filePath) {
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not Found'); return; }
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'text/plain',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+    });
     res.end(data);
   });
 }
 function sendJSON(res, data, status) {
   res.writeHead(status || 200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
   });
   res.end(JSON.stringify(data));
 }
+
 function readPackageInfo() {
   try {
     const raw = fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8');
@@ -221,6 +250,33 @@ function parseGitHubRepository(input) {
   const github = raw.match(/github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:[#/?].*)?$/i);
   if (github) return { owner: github[1], repo: github[2].replace(/\.git$/i, '') };
   return null;
+}
+function readUpdatePatchSigningKeys(local) {
+  const jsonValue = String(process.env.MINERADIO_UPDATE_PATCH_SIGNING_KEYS || '').trim();
+  if (jsonValue) {
+    try {
+      const parsed = JSON.parse(jsonValue);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+      console.warn('[UpdateSecurity] invalid MINERADIO_UPDATE_PATCH_SIGNING_KEYS:', error.message);
+      return {};
+    }
+  }
+  const singleKey = String(process.env.MINERADIO_UPDATE_PATCH_PUBLIC_KEY || '').trim();
+  if (singleKey) {
+    const keyId = String(process.env.MINERADIO_UPDATE_PATCH_KEY_ID || 'default').trim() || 'default';
+    return { [keyId]: singleKey };
+  }
+  const configured = local.patchSigningKeys || local.patchSigningPublicKeys || {};
+  return configured && typeof configured === 'object' && !Array.isArray(configured) ? configured : {};
+}
+function createConfiguredPatchSignatureVerifier(configuredKeys) {
+  try {
+    return createPatchSignatureVerifier(configuredKeys);
+  } catch (error) {
+    console.warn('[UpdateSecurity] patch signing configuration disabled:', error.message);
+    return createPatchSignatureVerifier({});
+  }
 }
 function readUpdateConfig(pkg) {
   const local = (pkg && pkg.mineradio && pkg.mineradio.update) || {};
@@ -241,6 +297,7 @@ function readUpdateConfig(pkg) {
     preview: local.preview !== false,
     preferMirrors: local.preferMirrors !== false,
     mirrors: readUpdateMirrors(local),
+    patchSigningKeys: readUpdatePatchSigningKeys(local),
     manifest: process.env.MINERADIO_UPDATE_MANIFEST
       || process.env.MINERADIO_UPDATE_MANIFEST_URL
       || process.env.MINERADIO_UPDATE_MANIFEST_FILE
@@ -476,7 +533,9 @@ function normalizeManifestUpdateInfo(data) {
       downloadUrl,
       asset: assetInfo,
       patch: patchInfo,
-      patchAvailable: !!(patchInfo && patchInfo.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
+      patchAvailable: !!(PATCH_SIGNATURE_VERIFIER.configured && patchInfo && patchInfo.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
+      patchSignatureRequired: true,
+      patchSigningConfigured: PATCH_SIGNATURE_VERIFIER.configured,
       summary: release.summary || data.summary || notes[0] || '发现新版本，建议更新。',
       notes,
     },
@@ -600,6 +659,15 @@ function classifyUpdateError(err) {
   const code = String(err && err.code || '').trim();
   const message = String(err && err.message || err || '').trim();
   const detail = message || code || '未知错误';
+  if (code === 'PATCH_ROLLBACK_FAILED') {
+    return { code, reason: '快速补丁应用失败且自动回滚不完整，请停止使用当前程序并改用完整安装包修复。', detail };
+  }
+  if (err && err.patchRolledBack) {
+    return { code: code || 'PATCH_APPLY_ROLLED_BACK', reason: '快速补丁应用失败，已自动恢复原文件，可改用完整安装包。', detail };
+  }
+  if (/PATCH_SIGNATURE|PATCH_SIGNING_KEY/i.test(code + ' ' + message)) {
+    return { code: code || 'PATCH_SIGNATURE_INVALID', reason: '快速补丁签名无效或签名密钥未受信任，已阻止应用。', detail };
+  }
   if (/HASH|DIGEST|CHECKSUM/i.test(code + ' ' + message)) {
     return { code: code || 'UPDATE_HASH_MISMATCH', reason: '文件校验失败，可能是线路缓存异常，已拦截该安装包。', detail };
   }
@@ -750,7 +818,9 @@ async function fetchLatestUpdateInfo() {
         downloadUrl: asset ? asset.downloadUrl : '',
         asset,
         patch,
-        patchAvailable: !!(patch && patch.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
+        patchAvailable: !!(PATCH_SIGNATURE_VERIFIER.configured && patch && patch.downloadUrl && compareVersions(latestVersion, APP_VERSION) > 0),
+        patchSignatureRequired: true,
+        patchSigningConfigured: PATCH_SIGNATURE_VERIFIER.configured,
         summary: notes[0] || '发现新版本，建议更新。',
         notes,
       },
@@ -1132,53 +1202,15 @@ function startUpdateDownloadJob(info) {
 function sha256Hex(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
-function safePatchRelativePath(value) {
-  const rel = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').trim();
-  if (!rel || rel.includes('\0')) return '';
-  const parts = rel.split('/').filter(Boolean);
-  if (!parts.length || parts.some(part => part === '..' || part === '.')) return '';
-  const root = parts[0];
-  if (PATCH_ALLOWED_FILES.has(rel)) return rel;
-  if (!PATCH_ALLOWED_ROOTS.has(root)) return '';
-  if (/\.(exe|dll|node|msi|bat|cmd|ps1|pfx|pem|key)$/i.test(rel)) return '';
-  return parts.join('/');
-}
-function patchTargetPath(rel) {
-  const safeRel = safePatchRelativePath(rel);
-  if (!safeRel) return null;
-  const target = path.resolve(__dirname, safeRel);
-  const root = path.resolve(__dirname);
-  if (target !== root && !target.startsWith(root + path.sep)) return null;
-  return target;
-}
-function decodePatchFile(file) {
-  if (!file || typeof file !== 'object') return null;
-  if (typeof file.contentBase64 === 'string') return Buffer.from(file.contentBase64, 'base64');
-  if (typeof file.content === 'string') return Buffer.from(file.content, file.encoding === 'base64' ? 'base64' : 'utf8');
-  return null;
-}
-function backupPatchTarget(job, rel, target) {
-  if (!fs.existsSync(target)) return;
-  const backup = path.join(UPDATE_PATCH_BACKUP_DIR, job.id, rel);
-  fs.mkdirSync(path.dirname(backup), { recursive: true });
-  fs.copyFileSync(target, backup);
-}
-function writePatchFile(job, file) {
-  const rel = safePatchRelativePath(file.path || file.name);
-  const target = rel ? patchTargetPath(rel) : null;
-  const content = decodePatchFile(file);
-  if (!rel || !target || !content) throw new Error('INVALID_PATCH_FILE');
-  if (content.length > PATCH_MAX_BYTES) throw new Error('PATCH_FILE_TOO_LARGE');
-  const expected = String(file.sha256 || '').trim().toLowerCase();
-  const actual = sha256Hex(content);
-  if (expected && expected !== actual) throw new Error('PATCH_HASH_MISMATCH:' + rel);
-  backupPatchTarget(job, rel, target);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = target + '.mineradio-patch';
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, target);
-  if (expected && sha256Hex(fs.readFileSync(target)) !== expected) throw new Error('PATCH_WRITE_VERIFY_FAILED:' + rel);
-  return rel;
+function verifyAndNormalizePatchPackage(raw) {
+  let envelope;
+  try {
+    envelope = JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, ''));
+  } catch (error) {
+    throw updateError('INVALID_PATCH_PAYLOAD', 'Patch package is not valid JSON', error);
+  }
+  const verified = PATCH_SIGNATURE_VERIFIER.verifyEnvelope(envelope);
+  return normalizePatchPayload(verified.payload);
 }
 function normalizePatchPayload(payload) {
   if (!payload || typeof payload !== 'object') throw new Error('INVALID_PATCH_PAYLOAD');
@@ -1226,24 +1258,19 @@ async function downloadAndApplyPatch(job) {
     const raw = Buffer.concat(chunks);
     const expectedPatchHash = String(job.sha256 || '').trim().toLowerCase();
     if (expectedPatchHash && sha256Hex(raw) !== expectedPatchHash) throw new Error('PATCH_PACKAGE_HASH_MISMATCH');
-    const patch = normalizePatchPayload(JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')));
+    const patch = verifyAndNormalizePatchPackage(raw);
     job.version = patch.to;
     job.message = '正在应用快速补丁';
     job.progress = 88;
     job.updatedAt = Date.now();
-    const changed = [];
-    patch.files.forEach(file => changed.push(writePatchFile(job, file)));
-    job.changedFiles = changed;
+    job.changedFiles = PATCH_FILE_APPLIER.applyFiles(job.id, patch.files);
     job.status = 'ready';
     job.progress = 100;
     job.restartRequired = patch.restartRequired;
     job.message = patch.restartRequired ? '快速补丁已应用，重启后生效' : '快速补丁已应用';
     job.updatedAt = Date.now();
   } catch (e) {
-    job.status = 'error';
-    job.error = e.message || 'PATCH_APPLY_FAILED';
-    job.message = '快速补丁失败，可改用完整安装包';
-    job.updatedAt = Date.now();
+    setUpdateJobError(job, e);
   }
 }
 async function downloadPatchBufferFromCandidate(job, candidate, index, total) {
@@ -1299,15 +1326,13 @@ async function downloadAndApplyPatchWithMirrors(job) {
     const candidate = candidates[i];
     try {
       const raw = await downloadPatchBufferFromCandidate(job, candidate, i, candidates.length);
-      const patch = normalizePatchPayload(JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, '')));
+      const patch = verifyAndNormalizePatchPackage(raw);
       job.version = patch.to;
       job.message = '正在应用快速补丁';
       job.progress = 88;
       job.etaSeconds = 0;
       job.updatedAt = Date.now();
-      const changed = [];
-      patch.files.forEach(file => changed.push(writePatchFile(job, file)));
-      job.changedFiles = changed;
+      job.changedFiles = PATCH_FILE_APPLIER.applyFiles(job.id, patch.files);
       job.status = 'ready';
       job.progress = 100;
       job.restartRequired = patch.restartRequired;
@@ -1330,6 +1355,7 @@ function startUpdatePatchJob(info) {
   const downloadUrl = patch.downloadUrl || '';
   if (!info || !info.configured) return { ok: false, error: 'UPDATE_REPOSITORY_NOT_CONFIGURED' };
   if (!info.updateAvailable) return { ok: false, error: 'NO_UPDATE_AVAILABLE' };
+  if (!PATCH_SIGNATURE_VERIFIER.configured) return { ok: false, error: 'PATCH_SIGNING_KEY_UNAVAILABLE' };
   if (!release.patchAvailable || !/^https?:\/\//i.test(downloadUrl)) return { ok: false, error: 'PATCH_ASSET_MISSING' };
 
   const version = info.latestVersion || release.version || patch.to || '';
@@ -2357,7 +2383,8 @@ function audioContentTypeForUrl(audioUrl, upstreamType) {
   if (/\.(m4a|mp4)$/.test(pathname)) return 'audio/mp4';
   if (/\.ogg$/.test(pathname)) return 'audio/ogg';
   if (/\.wav$/.test(pathname)) return 'audio/wav';
-  return upstreamType || 'audio/mpeg';
+  const normalizedUpstreamType = String(upstreamType || '').split(';')[0].trim().toLowerCase();
+  return normalizedUpstreamType.startsWith('audio/') ? normalizedUpstreamType : 'application/octet-stream';
 }
 
 function mapQQPlaylist(pl, kind) {
@@ -3244,6 +3271,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  if (pn.startsWith('/api/') && !isTrustedLocalApiRequest(req)) {
+    sendJSON(res, { error: 'LOCAL_API_REQUEST_REJECTED' }, 403);
+    return;
+  }
+
   if (pn === '/api/app/version') {
     sendJSON(res, {
       name: APP_PACKAGE.name || 'mineradio',
@@ -3256,6 +3288,8 @@ const server = http.createServer(async (req, res) => {
         repo: UPDATE_CONFIG.repo,
         preview: UPDATE_CONFIG.preview,
         manifestOverride: !!UPDATE_CONFIG.manifest,
+        patchSignatureRequired: true,
+        patchSigningConfigured: PATCH_SIGNATURE_VERIFIER.configured,
       },
     });
     return;
@@ -3486,9 +3520,9 @@ const server = http.createServer(async (req, res) => {
         sendJSON(res, { provider: 'qq', loggedIn: false, error: 'INVALID_QQ_COOKIE', message: 'QQ cookie 缺少 uin 或有效登录票据' }, 400);
         return;
       }
-      saveQQCookie(normalized);
+      const saved = saveQQCookie(normalized);
       const info = await getQQLoginInfo();
-      sendJSON(res, { ...info, saved: true });
+      sendJSON(res, { ...info, saved });
     } catch (err) {
       console.error('[QQLoginCookie]', err);
       sendJSON(res, { provider: 'qq', loggedIn: false, error: err.message }, 500);
@@ -3697,7 +3731,7 @@ const server = http.createServer(async (req, res) => {
         sendJSON(res, { loggedIn: false, error: 'INVALID_NETEASE_COOKIE', message: '网易云 cookie 缺少 MUSIC_U' }, 400);
         return;
       }
-      saveCookie(normalized);
+      const saved = saveCookie(normalized);
       let info = await getLoginInfo();
       if (!info.loggedIn && userCookie) {
         info = {
@@ -3712,7 +3746,7 @@ const server = http.createServer(async (req, res) => {
           vipLabel: '无VIP',
         };
       }
-      sendJSON(res, { ...info, saved: true, hasCookie: !!userCookie });
+      sendJSON(res, { ...info, saved, hasCookie: !!userCookie });
     } catch (err) {
       console.error('[LoginCookie]', err);
       sendJSON(res, { loggedIn: false, error: err.message }, 500);
@@ -3791,7 +3825,7 @@ const server = http.createServer(async (req, res) => {
       }
       // 803 = 授权成功, 802 = 已扫待确认, 801 = 等待扫码, 800 = 二维码过期
       if (code === 803) {
-        if (cookie) saveCookie(cookie);
+        const saved = cookie ? saveCookie(cookie) : false;
         let info = await getLoginInfo();
         if (!info.loggedIn) {
           const profile = body.profile || (body.data && body.data.profile) || {};
@@ -3810,7 +3844,7 @@ const server = http.createServer(async (req, res) => {
             vipLabel: '无VIP',
           };
         }
-        sendJSON(res, { code, message: msg, ...info, hasCookie: !!cookie });
+        sendJSON(res, { code, message: msg, ...info, saved, hasCookie: !!cookie });
         return;
       }
       sendJSON(res, { code, message: msg, nickname: body.nickname, avatar: body.avatarUrl });
@@ -4131,46 +4165,52 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ---------- 封面代理 (带 CORS 头, 给 canvas 提取像素用) ----------
+  // ---------- 封面代理（仅允许公网栅格图片，给 canvas 提取像素用） ----------
   if (pn === '/api/cover') {
     try {
       const coverUrl = url.searchParams.get('url');
-      // URL 校验: 必须是 http(s) 开头, 否则直接 404 (不要让 fetch 抛错)
-      if (!coverUrl || !/^https?:\/\//i.test(coverUrl)) {
-        res.writeHead(400, { 'Access-Control-Allow-Origin': '*' });
-        res.end('Invalid cover url');
+      if (!coverUrl) { res.writeHead(400); res.end('Missing url'); return; }
+      const resp = await fetchPublicResource(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } });
+      const ct = String(resp.headers.get('content-type') || 'image/jpeg').split(';')[0].trim().toLowerCase();
+      if (!SAFE_COVER_CONTENT_TYPES.has(ct)) {
+        if (resp.body && typeof resp.body.cancel === 'function') await resp.body.cancel().catch(() => {});
+        res.writeHead(415, { 'X-Content-Type-Options': 'nosniff' });
+        res.end('Unsupported cover type');
         return;
       }
-      const resp = await fetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } });
-      const ct  = resp.headers.get('content-type') || 'image/jpeg';
-      const cl  = resp.headers.get('content-length');
+      const cl = resp.headers.get('content-length');
       const hdr = {
         'Content-Type': ct,
-        'Access-Control-Allow-Origin': '*',
-        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
         'Cache-Control': 'public, max-age=86400',
+        'X-Content-Type-Options': 'nosniff',
       };
       if (cl) hdr['Content-Length'] = cl;
       res.writeHead(resp.status, hdr);
       const reader = resp.body.getReader();
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
-    } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Cover]', err);
+      res.writeHead(['INVALID_PROXY_URL', 'UNSAFE_PROXY_URL', 'PROXY_DNS_FAILED'].includes(err.code) ? 400 : 502);
+      res.end('Cover proxy failed');
+    }
     return;
   }
 
-  // ---------- 音频代理 (支持 Range) ----------
+  // ---------- 音频代理（支持 Range，仅允许公网目标） ----------
   if (pn === '/api/audio') {
     try {
       const audioUrl = url.searchParams.get('url');
       if (!audioUrl) { res.writeHead(400); res.end('Missing url'); return; }
       const range = req.headers.range || '';
       const hdr = audioProxyHeadersFor(audioUrl, range);
-      const up = await fetch(audioUrl, { headers: hdr });
+      const up = await fetchPublicResource(audioUrl, { headers: hdr });
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
-        'Access-Control-Allow-Origin': '*',
         'Accept-Ranges': 'bytes',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'X-Content-Type-Options': 'nosniff',
       };
       const cl = up.headers.get('content-length'); if (cl) out['Content-Length'] = cl;
       const cr = up.headers.get('content-range');  if (cr) out['Content-Range']  = cr;
@@ -4178,7 +4218,11 @@ const server = http.createServer(async (req, res) => {
       const reader = up.body.getReader();
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
-    } catch (err) { console.error('[Audio]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Audio]', err);
+      res.writeHead(['INVALID_PROXY_URL', 'UNSAFE_PROXY_URL', 'PROXY_DNS_FAILED'].includes(err.code) ? 400 : 502);
+      res.end('Audio proxy failed');
+    }
     return;
   }
 

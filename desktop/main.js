@@ -1328,16 +1328,18 @@ async function createWindow() {
   process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
   process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
   process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
-  try {
-    const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
-    if (fs.existsSync(legacyQQCookie)) {
-      if (!fs.existsSync(process.env.QQ_COOKIE_FILE)) {
-        fs.copyFileSync(legacyQQCookie, process.env.QQ_COOKIE_FILE);
-      }
-      fs.unlinkSync(legacyQQCookie);
+  for (const [label, legacyName, targetPath] of [
+    ['Netease', '.cookie', process.env.COOKIE_FILE],
+    ['QQ Music', '.qq-cookie', process.env.QQ_COOKIE_FILE],
+  ]) {
+    try {
+      const legacyPath = path.join(__dirname, '..', legacyName);
+      if (!fs.existsSync(legacyPath)) continue;
+      if (!fs.existsSync(targetPath)) fs.copyFileSync(legacyPath, targetPath);
+      fs.unlinkSync(legacyPath);
+    } catch (e) {
+      console.warn(`${label} cookie migration skipped:`, e.message);
     }
-  } catch (e) {
-    console.warn('QQ cookie migration skipped:', e.message);
   }
 
   localServer = require(path.join(__dirname, '..', 'server.js'));
@@ -1367,9 +1369,27 @@ async function createWindow() {
     },
   });
 
+  const mainAppOrigin = `http://127.0.0.1:${port}`;
+  const openExternalHttpUrl = (targetUrl) => {
+    try {
+      const parsed = new URL(targetUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        shell.openExternal(parsed.toString()).catch(() => {});
+      }
+    } catch (_) {}
+  };
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalHttpUrl(url);
     return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    try {
+      if (new URL(targetUrl).origin === mainAppOrigin) return;
+    } catch (_) {}
+    event.preventDefault();
+    openExternalHttpUrl(targetUrl);
   });
 
   mainWindow.webContents.once('did-finish-load', () => {
