@@ -83,7 +83,9 @@
 - 预检同时记录目标文件身份，预检后新增、删除或替换目标会返回 `PATCH_TARGET_CHANGED`；`.mineradio-patch/.mineradio-restore` 内部事务后缀禁止作为补丁目标。
 - `update-patch.js` 已加入安装包文件列表和快速补丁允许列表；本轮未修改播放、歌词、玻璃质感、粒子视觉或 3D 歌单架。
 - 当前生产 `patchSigningKeys` 仍为空，快速补丁保持关闭；尚未运行 Electron 实机和 Windows 构建。
-- 新增 `.github/workflows/security-check.yml`，在 Linux/Windows 的 Node.js 22 环境运行 `npm run check`；Windows job 用于实际覆盖目录联接（junction）测试，但不替代 Electron 实机和安装包构建验证。
+- `.github/workflows/security-check.yml` 在 Linux/Windows 运行 `npm run check`，并新增签名补丁 HTTP 下载/应用/重启端到端 job 与 Windows Electron `safeStorage`/DPAPI 集成 job；Windows 安装包构建仍需发布环境验证。
+- 修复 standalone Node 模式误加载 Electron 包的问题，避免安装了 devDependencies 后启动服务触发 Electron 二进制下载。
+- `npm audit` 当前仍报告 `NeteaseCloudMusicApi -> music-metadata -> file-type` 的 1 中危/2 高危 ASF 解析 DoS；npm 只提供不兼容的 Netease 3.x 降级方案，未使用 `npm audit fix --force`，后续应等待 4.x 上游修复或单独做兼容替换验证。
 
 ### 2026-06-24
 

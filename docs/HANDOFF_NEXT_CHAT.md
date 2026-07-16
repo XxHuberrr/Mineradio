@@ -38,7 +38,7 @@ Get-Content RELEASE.md
 - 新增 `server-security.js`，集中处理本地 API 同源限制、代理目标 IP 校验和重定向逐跳校验。
 - `server.js` 的封面代理只接受常用栅格图片，音频代理不再透传 HTML 内容类型，媒体响应启用 `nosniff`。
 - `desktop/main.js` 阻止主窗口离开本地应用源，HTTP(S) 外链交给系统浏览器。
-- 新增 `npm run check` 和安全边界测试；`.github/workflows/security-check.yml` 会在 Linux 和 Windows 的 Node.js 22 环境执行检查，其中 Windows runner 覆盖真实目录联接（junction）路径；这不等同于 Electron 实机或 Windows 安装包构建。
+- 新增 `npm run check` 和安全边界测试；`.github/workflows/security-check.yml` 在 Linux/Windows 运行基础检查，并分别执行真实签名补丁端到端测试和 Windows Electron `safeStorage`/DPAPI 集成测试；Windows 安装包构建仍需发布环境验证。
 - 新增 `cookie-storage.js`：Electron 中使用系统 `safeStorage` 加密网易云/QQ Cookie，旧明文文件首次读取后自动迁移，登出删除文件。
 - Electron 安全存储不可用时拒绝明文落盘，登录接口返回 `saved: false`，前端提示本次会话未持久化；standalone Node 启动仍保留明文兼容。
 - `.cookie` 与 `.qq-cookie` 都会从旧 app 目录迁移到 Electron `userData`；`cookie-storage.js` 已加入安装包文件列表和快速补丁允许列表。
@@ -49,6 +49,7 @@ Get-Content RELEASE.md
 - 补丁预检会记录目标文件身份；预检后出现普通文件、目标被替换或删除时返回 `PATCH_TARGET_CHANGED`，并保留并发本地修改。内部 `.mineradio-patch/.mineradio-restore` 文件名已禁止作为补丁目标。
 - 新增文件系统回归测试，覆盖成功备份、预检零写入、Windows 路径冲突、符号链接逃逸、预检后符号链接/普通文件替换、内部事务文件名拒绝、失败回滚和目录清理；`update-patch.js` 已加入安装包与快速补丁允许列表。
 - 当前 `package.json` 的生产 `patchSigningKeys` 为空，快速补丁入口默认关闭；下一步需要在受控发布环境建立正式 Ed25519 密钥，只把公钥加入仓库。
+- 2026-07-16 安装依赖后的 `npm audit` 报告 1 个中危、2 个高危，均来自 `NeteaseCloudMusicApi@4.32.0 -> music-metadata@7.14.0 -> file-type@16.5.4` 的畸形 ASF 无限循环风险；npm 只建议不兼容降级到 `NeteaseCloudMusicApi@3.47.5`，因此未执行 `--force`，等待上游 4.x 兼容修复或单独验证依赖替换。
 - 本轮没有修改 `public/index.html` 的播放、视觉、歌词或 3D 歌单架逻辑。
 
 ## 本轮重点

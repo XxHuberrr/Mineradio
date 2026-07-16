@@ -22,6 +22,8 @@ const javascriptFiles = [
   'scripts/test-cookie-storage.js',
   'scripts/test-update-signature.js',
   'scripts/test-update-patch.js',
+  'scripts/test-update-patch-e2e.js',
+  'scripts/test-electron-safe-storage.js',
   'scripts/sign-update-patch.js',
 ];
 const htmlFiles = [

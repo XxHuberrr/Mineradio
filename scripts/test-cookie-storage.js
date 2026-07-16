@@ -59,6 +59,30 @@ try {
   assert.strictEqual(standaloneStore.read(), 'MUSIC_U=standalone');
   assert.strictEqual(fs.readFileSync(standalonePath, 'utf8').trim(), 'MUSIC_U=standalone');
 
+  const Module = require('module');
+  const originalModuleLoad = Module._load;
+  let standaloneElectronLoadAttempted = false;
+  Module._load = function(request, parent, isMain) {
+    if (request === 'electron') {
+      standaloneElectronLoadAttempted = true;
+      return { safeStorage: fakeSafeStorage };
+    }
+    return originalModuleLoad.call(this, request, parent, isMain);
+  };
+  try {
+    createCookieStore(path.join(tempRoot, '.auto-standalone-cookie'), {
+      electronRuntime: false,
+      logger: silentLogger,
+    });
+  } finally {
+    Module._load = originalModuleLoad;
+  }
+  assert.strictEqual(
+    standaloneElectronLoadAttempted,
+    false,
+    'Standalone Node mode must not load the Electron package'
+  );
+
   const unavailableStore = createCookieStore(path.join(tempRoot, '.unavailable-cookie'), {
     safeStorage: null,
     electronRuntime: true,

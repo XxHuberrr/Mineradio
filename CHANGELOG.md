@@ -2,6 +2,9 @@
 
 ## 未发布
 
+- 修复 standalone Node 服务在安装 Electron 依赖后误加载 Electron 包的问题，避免服务启动时触发无关的 Electron 二进制下载。
+- 新增真实签名补丁端到端测试，覆盖 HTTP 下载、篡改签名拒绝、备份、事务应用和服务重启后的资源持久化。
+- 新增 Windows Electron `safeStorage`/DPAPI 集成测试，覆盖加密写入、解密读取、旧明文迁移和登出删除。
 - 新增 GitHub Actions 跨平台检查，在 Linux 和 Windows 的 Node.js 22 环境运行 `npm run check`，让 Windows runner 实际覆盖目录联接（junction）安全回归。
 - 收紧本地 HTTP API 边界：仅接受回环地址上的同源请求，拒绝跨站页面调用，并移除 API/媒体代理的全开放 CORS 响应头。
 - 加固封面和音频代理：阻止 localhost、内网、链路本地、IPv4-mapped IPv6 等目标，逐跳校验重定向，避免代理跳转绕过。

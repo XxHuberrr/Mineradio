@@ -47,6 +47,8 @@ Mineradio/resources/app/
 ```powershell
 npm start
 npm run check
+npm run check:patch-e2e
+npm run check:electron-safe-storage  # 仅 Windows Electron 环境
 npm run sign:patch -- --input <unsigned.json> --output <signed.patch.json> --key <private.pem> --key-id <key-id>
 node --check server.js
 npm run build:win:dir

@@ -9,6 +9,8 @@
   "scripts": {
     "start": "electron .",
     "check": "node scripts/check-syntax.js && node scripts/test-server-security.js && node scripts/test-cookie-storage.js && node scripts/test-update-signature.js && node scripts/test-update-patch.js",
+    "check:patch-e2e": "node scripts/test-update-patch-e2e.js",
+    "check:electron-safe-storage": "electron scripts/test-electron-safe-storage.js",
     "sign:patch": "node scripts/sign-update-patch.js",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir"

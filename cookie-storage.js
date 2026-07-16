@@ -6,6 +6,7 @@ const path = require('path');
 const ENCRYPTED_COOKIE_PREFIX = 'MINERADIO_SAFE_STORAGE_V1:';
 
 function loadElectronSafeStorage() {
+  if (!process.versions.electron) return null;
   try {
     const electron = require('electron');
     return electron && electron.safeStorage ? electron.safeStorage : null;
