@@ -1840,6 +1840,35 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
   .fx-slider{grid-template-columns:74px minmax(0,1fr) 40px 28px;gap:8px;padding:8px}
   .lyric-color-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* Equalizer panel */
+#eq-panel{position:fixed;z-index:9;bottom:100px;left:50%;transform:translateX(-50%);width:580px;max-width:calc(100vw - 32px);padding:20px 18px 16px;border-radius:16px;background:var(--panel-glass-bg)!important;border-color:rgba(255,255,255,.075)!important;box-shadow:var(--panel-glass-shadow)!important;backdrop-filter:var(--panel-glass-filter)!important;-webkit-backdrop-filter:var(--panel-glass-filter)!important;display:none;flex-direction:column;gap:14px;user-select:none}
+#eq-panel.open{display:flex}
+#eq-panel .eq-header{display:flex;justify-content:space-between;align-items:center;padding:0 2px}
+#eq-panel .eq-header label{font-size:13px;font-weight:600;color:rgba(255,255,255,.85);letter-spacing:.3px}
+#eq-panel .eq-header select{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);color:#fff;padding:4px 10px;border-radius:8px;font-size:12px;cursor:pointer;outline:none}
+#eq-panel .eq-header select:hover{border-color:rgba(255,255,255,.28)}
+#eq-panel .eq-header select option{color:#111;background:#f0f0f0}
+#eq-panel .eq-header .eq-close{background:none;border:none;color:rgba(255,255,255,.5);font-size:22px;cursor:pointer;line-height:1;padding:0 4px}
+#eq-panel .eq-header .eq-close:hover{color:#fff}
+#eq-panel .eq-grid{display:flex;gap:6px;justify-content:center;align-items:flex-end;height:120px;padding:0 4px}
+#eq-panel .eq-band{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;position:relative}
+#eq-panel .eq-band .eq-label{font-size:9px;color:rgba(255,255,255,.45);text-align:center;line-height:1.1;white-space:nowrap}
+#eq-panel .eq-band input[type=range]{writing-mode:vertical-lr;direction:rtl;appearance:slider-vertical;width:4px;height:100px;margin:0;padding:0;cursor:pointer;background:transparent;accent-color:rgba(var(--fc-accent-rgb),.7)}
+#eq-panel .eq-band input[type=range]::-webkit-slider-runnable-track{background:rgba(255,255,255,.12);border-radius:3px;width:4px}
+#eq-panel .eq-band input[type=range]::-webkit-slider-thumb{appearance:none;width:16px;height:16px;border-radius:50%;background:rgba(var(--fc-accent-rgb),.8);border:2px solid rgba(255,255,255,.3);cursor:pointer;margin-left:-6px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+#eq-panel .eq-band input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15)}
+#eq-panel .eq-band .eq-val{font-size:9px;color:rgba(255,255,255,.55);text-align:center;min-width:28px;font-variant-numeric:tabular-nums}
+#eq-panel .eq-band.active .eq-val{color:rgba(var(--fc-accent-rgb),.8);font-weight:600}
+#eq-panel .eq-freq-canvas-wrap{position:relative;height:64px;border-radius:8px;background:rgba(0,0,0,.18);overflow:hidden}
+#eq-panel .eq-freq-canvas-wrap canvas{display:block;width:100%;height:100%}
+#eq-panel .eq-footer{display:flex;justify-content:center;gap:8px;padding:2px 0}
+#eq-panel .eq-footer button{padding:4px 14px;border-radius:8px;font-size:11px;font-weight:500;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:rgba(255,255,255,.7);cursor:pointer;transition:all .15s}
+#eq-panel .eq-footer button:hover{border-color:rgba(var(--fc-accent-rgb),.4);background:rgba(var(--fc-accent-rgb),.1);color:#fff}
+.ctrl-btn.eq-active{color:rgba(var(--fc-accent-rgb),.85)!important;text-shadow:0 0 12px rgba(var(--fc-accent-rgb),.25)!important}
+html.control-glass-svg-ok #eq-panel{backdrop-filter:var(--panel-glass-filter)!important;-webkit-backdrop-filter:var(--panel-glass-filter)!important}
+body.immersive-mode #eq-panel{bottom:118px}
+@media (max-width: 600px){#eq-panel{width:calc(100vw - 20px);padding:14px 10px 12px;bottom:92px}#eq-panel .eq-grid{height:90px;gap:4px}#eq-panel .eq-band input[type=range]{height:74px}#eq-panel .eq-freq-canvas-wrap{height:48px}}
 </style>
 </head>
 <body>
@@ -2447,10 +2476,37 @@ html.control-glass-svg-ok #visual-guide-btn:hover{
       </div>
     </div>
     <button id="controls-hide-btn" class="ctrl-btn active" onclick="toggleControlsAutoHide()" title="控制条自动隐藏"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 8h14"/><path d="M8 12h8"/><path d="M10 16h4"/></svg></button>
+    <button id="eq-btn" class="ctrl-btn" onclick="toggleEqPanel()" title="均衡器 (E)" aria-label="均衡器" aria-pressed="false"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" fill="none"/><line x1="8" y1="9" x2="8" y2="15" stroke="currentColor" stroke-linecap="round"/><line x1="12" y1="7" x2="12" y2="17" stroke="currentColor" stroke-linecap="round"/><line x1="16" y1="10" x2="16" y2="14" stroke="currentColor" stroke-linecap="round"/><circle cx="8" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="16" cy="12" r="1.2" fill="currentColor"/></svg></button>
     <button id="immersive-btn" class="ctrl-btn" onclick="toggleImmersiveMode()" title="全沉浸式" aria-label="全沉浸式" aria-pressed="false"><svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M15 4h4a1 1 0 0 1 1 1v4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><path d="M9 20H5a1 1 0 0 1-1-1v-4"/><circle cx="12" cy="12" r="2.2"/></svg></button>
     <button class="ctrl-btn fullscreen-toggle-btn" onclick="toggleFullscreen()" title="全屏 (F)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7V3h4"/><path d="M21 7V3h-4"/><path d="M3 17v4h4"/><path d="M21 17v4h-4"/></svg></button>
     <div id="time-display">0:00 / 0:00</div>
     </div>
+  </div>
+</div>
+
+<!-- Equalizer panel -->
+<div id="eq-panel">
+  <div class="eq-header">
+    <label>均衡器</label>
+    <select id="eq-preset" onchange="applyEqPreset(this.value)">
+      <option value="default">默认</option>
+      <option value="pop">流行</option>
+      <option value="rock">摇滚</option>
+      <option value="jazz">爵士</option>
+      <option value="classical">古典</option>
+      <option value="dance">舞曲</option>
+      <option value="vocal">人声</option>
+      <option value="bass">低音增强</option>
+      <option value="soft">柔和</option>
+      <option value="custom">自定义</option>
+    </select>
+    <button class="eq-close" onclick="toggleEqPanel()" title="关闭">✕</button>
+  </div>
+  <div class="eq-grid" id="eq-grid"></div>
+  <div class="eq-freq-canvas-wrap"><canvas id="eq-freq-canvas"></canvas></div>
+  <div class="eq-footer">
+    <button onclick="resetEqBands()">重置</button>
+    <button onclick="toggleEqPanel()">关闭</button>
   </div>
 </div>
 
@@ -17738,8 +17794,14 @@ function initAudio() {
   beatAnalyser.smoothingTimeConstant = 0.10;
   source.connect(analyser);
   source.connect(beatAnalyser);
+  initEqualizer();
   analyser.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
+  if (eqInput && eqOutput) {
+    gainNode.connect(eqInput);
+    eqOutput.connect(audioCtx.destination);
+  } else {
+    gainNode.connect(audioCtx.destination);
+  }
   applyVolumeToAudio();
   frequencyData.fill(0);
   beatFrequencyData.fill(0);
@@ -17955,6 +18017,108 @@ function applyVolumeToAudio() {
     gainNode.gain.setTargetAtTime(targetVolume, now, 0.025);
   }
 }
+
+/* ---- Equalizer ---- */
+var eqNodes=[],eqInput=null,eqOutput=null,eqActive=false;
+var eqFreqs=[31,62,125,250,500,1000,2000,4000,8000,16000];
+var eqBands=[0,0,0,0,0,0,0,0,0,0];
+var eqPresets={
+  default:[0,0,0,0,0,0,0,0,0,0],
+  pop:[-1.5,0.5,1.5,2.5,1.0,-0.5,-1.0,-0.5,0.5,1.0],
+  rock:[2.0,1.5,1.0,0.5,0.0,-0.5,0.0,1.0,1.5,2.0],
+  jazz:[1.5,1.0,0.5,0.0,0.5,1.0,1.5,0.5,0.0,-0.5],
+  classical:[2.0,1.5,0.5,-0.5,-1.0,-0.5,0.5,1.5,2.0,2.5],
+  dance:[2.0,2.0,1.5,1.0,-0.5,-1.0,-0.5,0.5,1.0,1.5],
+  vocal:[-1.0,-0.5,0.5,1.5,2.5,2.0,1.0,0.5,-0.5,-1.0],
+  bass:[3.0,3.0,2.5,2.0,1.0,0.0,-0.5,-0.5,-1.0,-1.0],
+  soft:[-1.5,-1.0,0.0,1.5,2.0,1.5,0.0,-1.0,-1.5,-2.0]
+};
+function initEqualizer(){
+  if(!audioCtx)return;
+  eqInput=audioCtx.createGain();eqOutput=audioCtx.createGain();
+  eqNodes=eqFreqs.map(function(f){
+    var n=audioCtx.createBiquadFilter();
+    n.type='peaking';n.frequency.value=f;n.Q.value=0.707;n.gain.value=0;
+    return n;
+  });
+  eqNodes.forEach(function(n,i){
+    if(i===0)eqInput.connect(n);else eqNodes[i-1].connect(n);
+    if(i===eqNodes.length-1)n.connect(eqOutput);
+  });
+  eqActive=true;
+  buildEqUI();
+}
+function buildEqUI(){
+  var g=document.getElementById('eq-grid');if(!g)return;g.innerHTML='';
+  eqFreqs.forEach(function(f,i){
+    var d=document.createElement('div');d.className='eq-band';
+    var l=document.createElement('div');l.className='eq-label';l.textContent=f>=1000?(f/1000)+'k':f+'Hz';
+    var inp=document.createElement('input');inp.type='range';inp.min=-12;inp.max=12;inp.step=0.5;inp.value=0;
+    inp.addEventListener('input',function(){setEqBand(i,parseFloat(this.value));});
+    var v=document.createElement('div');v.className='eq-val';v.textContent='0.0';
+    d.appendChild(l);d.appendChild(inp);d.appendChild(v);g.appendChild(d);
+  });
+  drawEqCurve();
+}
+function setEqBand(idx,val){
+  eqBands[idx]=val;
+  if(eqNodes&&eqNodes[idx])eqNodes[idx].gain.setTargetAtTime(val,audioCtx.currentTime,0.02);
+  var v=document.querySelectorAll('#eq-grid .eq-val');if(v[idx])v[idx].textContent=(val>0?'+':'')+val.toFixed(1);
+  var curPreset=document.getElementById('eq-preset').value;
+  if(curPreset!=='custom'){document.getElementById('eq-preset').value='custom';}
+  drawEqCurve();
+}
+function applyEqPreset(name){
+  if(name==='custom')return;
+  document.getElementById('eq-preset').value=name;
+  var p=eqPresets[name]||eqPresets.default;
+  p.forEach(function(v,i){
+    eqBands[i]=v;
+    if(eqNodes&&eqNodes[i])eqNodes[i].gain.setTargetAtTime(v,audioCtx.currentTime,0.02);
+    var vals=document.querySelectorAll('#eq-grid .eq-val');
+    if(vals[i])vals[i].textContent=(v>0?'+':'')+v.toFixed(1);
+  });
+  var sliders=document.querySelectorAll('#eq-grid input[type=range]');
+  sliders.forEach(function(s,i){if(s)s.value=p[i];});
+  drawEqCurve();
+}
+function resetEqBands(){
+  document.getElementById('eq-preset').value='default';
+  applyEqPreset('default');
+}
+function drawEqCurve(){
+  var c=document.getElementById('eq-freq-canvas');if(!c)return;
+  var ctx=c.getContext('2d');var rect=c.parentElement.getBoundingClientRect();
+  c.width=rect.width*(window.devicePixelRatio||1);c.height=rect.height*(window.devicePixelRatio||1);
+  ctx.scale(window.devicePixelRatio||1,window.devicePixelRatio||1);
+  var w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
+  var pad={t:6,b:8,l:10,r:10};var cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  if(cw<=0||ch<=0)return;
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=1;
+  [0,0.5,1].forEach(function(t){
+    var y=pad.t+ch*(1-t);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+  });
+  [-6,0,6].forEach(function(t){
+    var y=pad.t+ch*(1-(t+12)/24);ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(w-pad.r,y);ctx.stroke();
+  });
+  // curve
+  var pts=eqBands.map(function(v,i){return{x:pad.l+cw*(i/(eqBands.length-1)),y:pad.t+ch*(1-(v+12)/24)};});
+  ctx.beginPath();ctx.strokeStyle='rgba(var(--fc-accent-rgb),.8)';ctx.lineWidth=2.5;ctx.lineJoin='round';
+  pts.forEach(function(p,i){if(i===0)ctx.moveTo(p.x,p.y);else{var mx=(pts[i-1].x+p.x)/2;ctx.bezierCurveTo(mx,pts[i-1].y,mx,p.y,p.x,p.y);}});
+  ctx.stroke();
+  // dots
+  pts.forEach(function(p){ctx.beginPath();ctx.arc(p.x,p.y,3.5,0,Math.PI*2);ctx.fillStyle='rgba(var(--fc-accent-rgb),.9)';ctx.fill();ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=1.5;ctx.stroke();});
+  // 0dB line
+  var y0=pad.t+ch*0.5;ctx.strokeStyle='rgba(255,255,255,.12)';ctx.lineWidth=1;ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(pad.l,y0);ctx.lineTo(w-pad.r,y0);ctx.stroke();ctx.setLineDash([]);
+}
+function toggleEqPanel(){
+  var p=document.getElementById('eq-panel');if(!p)return;
+  p.classList.toggle('open');
+  var btn=document.getElementById('eq-btn');if(btn)btn.classList.toggle('eq-active',p.classList.contains('open'));
+  if(p.classList.contains('open'))setTimeout(function(){drawEqCurve();},50);
+}
+window.addEventListener('resize',function(){if(document.getElementById('eq-panel').classList.contains('open'))drawEqCurve();});
 
 function updateVolumeUi() {
   var slider = document.getElementById('volume-slider');
