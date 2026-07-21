@@ -39,11 +39,14 @@ body.desktop-shell{background:transparent}
 body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border-radius:34px;clip-path:inset(0 round 34px);background:transparent;box-shadow:0 24px 80px rgba(0,0,0,.46);transform:translateZ(0)}
 body.desktop-shell.desktop-maximized #desktop-window-shell,body.desktop-shell.desktop-fullscreen #desktop-window-shell,html:fullscreen body.desktop-shell #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
 body.desktop-shell #desktop-titlebar{position:fixed;z-index:500;top:0;left:0;right:0;height:44px;padding:0 12px 0 18px;display:flex;align-items:center;justify-content:space-between;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;-webkit-app-region:drag;pointer-events:none}
+body.desktop-shell.desktop-platform-mac #desktop-titlebar{padding-left:84px}
 body.desktop-shell #desktop-titlebar::after{content:none}
 .desktop-drag-region{height:100%;flex:1;display:flex;align-items:center;gap:9px;min-width:0;color:rgba(224,250,255,.74);font-size:12px;font-weight:600;letter-spacing:0;text-transform:uppercase;-webkit-app-region:drag;pointer-events:auto}
+body.desktop-shell.desktop-platform-mac .desktop-drag-region{min-width:84px}
 .desktop-app-mark{display:none}
 .desktop-app-title{display:none}
 .desktop-window-controls{display:flex;align-items:center;gap:6px;padding:0;border-radius:0;background:transparent;box-shadow:none;-webkit-app-region:no-drag;pointer-events:auto}
+body.desktop-shell.desktop-platform-mac .desktop-window-btn{display:none!important}
 .desktop-window-btn{width:38px;height:30px;border:0;border-radius:10px;background:rgba(4,8,10,.42);color:rgba(224,250,255,.72);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .18s,color .18s,transform .18s}
 .desktop-window-btn svg{width:14px;height:14px;stroke:currentColor;stroke-width:2;fill:none}
 .desktop-window-btn:hover{background:rgba(244,210,138,.14);color:#fff1bd;transform:translateY(-1px)}
@@ -74,12 +77,14 @@ body.desktop-shell #toast{top:60px}
 #fullscreen-diy-btn{min-width:108px;height:34px;opacity:0;pointer-events:none;transform:translateY(-18px) scale(.96);transition:opacity .2s cubic-bezier(.16,1,.3,1),transform .2s cubic-bezier(.16,1,.3,1),background .18s,color .18s,border-color .18s,box-shadow .18s}
 body.visual-guide-active #fullscreen-diy-zone{opacity:0;pointer-events:none!important;transition:opacity .18s cubic-bezier(.16,1,.3,1)}
 body.visual-guide-active #fullscreen-diy-btn{opacity:0!important;pointer-events:none!important;transform:translateY(-18px) scale(.96)!important}
-body.desktop-shell.desktop-fullscreen #desktop-titlebar,html:fullscreen body.desktop-shell #desktop-titlebar{display:none!important}
-body.desktop-shell.desktop-fullscreen #fullscreen-diy-zone,html:fullscreen body.desktop-shell #fullscreen-diy-zone{display:flex}
+body.desktop-shell.desktop-platform-win.desktop-fullscreen #desktop-titlebar,html:fullscreen body.desktop-shell.desktop-platform-win #desktop-titlebar{display:none!important}
+body.desktop-shell.desktop-platform-win.desktop-fullscreen #fullscreen-diy-zone,html:fullscreen body.desktop-shell.desktop-platform-win #fullscreen-diy-zone{display:flex}
+body.desktop-shell.desktop-platform-mac.desktop-fullscreen #desktop-titlebar,html:fullscreen body.desktop-shell.desktop-platform-mac #desktop-titlebar{display:flex!important}
+body.desktop-shell.desktop-platform-mac.desktop-fullscreen #fullscreen-diy-zone,html:fullscreen body.desktop-shell.desktop-platform-mac #fullscreen-diy-zone{display:none!important}
 body.fullscreen-diy-peek #fullscreen-diy-zone,#fullscreen-diy-zone:hover{pointer-events:auto}
 body.fullscreen-diy-peek #fullscreen-diy-btn,#fullscreen-diy-zone:hover #fullscreen-diy-btn{opacity:1;pointer-events:auto;transform:translateY(0) scale(1)}
-body.desktop-shell.desktop-fullscreen #search-area.peek{top:24px}
-body.desktop-shell.desktop-fullscreen #top-right{top:24px}
+body.desktop-shell.desktop-platform-win.desktop-fullscreen #search-area.peek,html:fullscreen body.desktop-shell.desktop-platform-win #search-area.peek{top:24px}
+body.desktop-shell.desktop-platform-win.desktop-fullscreen #top-right,html:fullscreen body.desktop-shell.desktop-platform-win #top-right{top:24px}
 @media (max-width:720px){body.desktop-shell #top-right{right:12px;top:58px}body.desktop-shell #search-area.peek{top:58px}}
 @media (max-width:720px){#fullscreen-diy-zone{height:48px}#fullscreen-diy-btn{min-width:96px;height:32px}}
 
@@ -3770,7 +3775,37 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+  function createMainRenderer() {
+    var attempts = [
+      { antialias: false, alpha: true, powerPreference: 'high-performance' },
+      { antialias: false, alpha: true, powerPreference: 'low-power' },
+    ];
+    var lastError = null;
+    for (var i = 0; i < attempts.length; i++) {
+      try {
+        if (i > 0) console.warn('Main renderer fallback attempt #' + (i + 1));
+        return new THREE.WebGLRenderer(attempts[i]);
+      } catch (err) {
+        lastError = err;
+        console.warn('Main renderer init failed:', err && err.message ? err.message : err);
+      }
+    }
+    var canvas = document.createElement('canvas');
+    var gl = null;
+    try {
+      gl = canvas.getContext('webgl', { alpha: true, antialias: false, powerPreference: 'default' })
+        || canvas.getContext('experimental-webgl', { alpha: true, antialias: false });
+      if (gl) {
+        console.warn('Main renderer fallback attempt #3');
+        return new THREE.WebGLRenderer({ canvas: canvas, context: gl, antialias: false, alpha: true });
+      }
+    } catch (err2) {
+      lastError = err2;
+      console.warn('Main renderer manual WebGL fallback failed:', err2 && err2.message ? err2.message : err2);
+    }
+    throw lastError || new Error('WEBGL_RENDERER_INIT_FAILED');
+  }
+  var renderer = createMainRenderer();
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);

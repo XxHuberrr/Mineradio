@@ -37,6 +37,25 @@ const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
 
+function isDevToolsShortcut(input) {
+  if (app.isPackaged) return false;
+  const key = String(input.key || '').toLowerCase();
+  const code = String(input.code || '').toLowerCase();
+  if (key === 'f12' || code === 'f12') return true;
+  if (key !== 'i' && code !== 'keyi') return false;
+  if (process.platform === 'darwin') return !!input.meta && !!input.alt;
+  return !!input.control && !!input.shift;
+}
+
+function toggleWindowDevTools(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win.webContents.isDevToolsOpened()) {
+    win.webContents.closeDevTools();
+    return;
+  }
+  win.webContents.openDevTools({ mode: 'detach', activate: true });
+}
+
 const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
   ['ignore-gpu-blocklist'],
@@ -48,8 +67,8 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
   ['disable-renderer-backgrounding'],
   ['disable-backgrounding-occluded-windows'],
   ['force_high_performance_gpu'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
 for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
   if (value == null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
@@ -121,6 +140,37 @@ function waitForServer(server) {
     server.once('listening', resolve);
     server.once('error', reject);
   });
+}
+
+async function ensureLocalServerStarted() {
+  if (localServer && localServer.listening) {
+    const address = localServer.address && localServer.address();
+    if (address && typeof address === 'object' && address.port) {
+      mainServerPort = Number(address.port) || mainServerPort;
+      process.env.PORT = String(mainServerPort);
+    }
+    return localServer;
+  }
+
+  const port = await findOpenPort(3000);
+  mainServerPort = port;
+  process.env.HOST = '127.0.0.1';
+  process.env.PORT = String(port);
+  process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
+  process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
+  process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+
+  const serverModulePath = path.join(__dirname, '..', 'server.js');
+  delete require.cache[require.resolve(serverModulePath)];
+  localServer = require(serverModulePath);
+  await waitForServer(localServer);
+
+  const address = localServer.address && localServer.address();
+  if (address && typeof address === 'object' && address.port) {
+    mainServerPort = Number(address.port) || mainServerPort;
+    process.env.PORT = String(mainServerPort);
+  }
+  return localServer;
 }
 
 function sendWindowState(win) {
@@ -688,15 +738,39 @@ function exitFullscreenToWindow(win) {
   setTimeout(applyOnce, 500);
 }
 
+function enterNativeFullscreen(win) {
+  if (!win || win.isDestroyed()) return;
+  windowFullscreenActive = true;
+
+  const applyFullscreen = () => {
+    if (!win || win.isDestroyed() || win.isFullScreen()) return;
+    win.setFullScreen(true);
+    sendWindowState(win);
+  };
+
+  if (process.platform === 'darwin' && win.isMaximized()) {
+    let applied = false;
+    const applyAfterUnmaximize = () => {
+      if (applied) return;
+      applied = true;
+      setTimeout(applyFullscreen, 30);
+    };
+    win.once('unmaximize', applyAfterUnmaximize);
+    win.unmaximize();
+    setTimeout(applyAfterUnmaximize, 240);
+    return;
+  }
+
+  applyFullscreen();
+}
+
 function toggleFullscreen(win) {
   if (!win || win.isDestroyed()) return;
   if (win.isFullScreen() || windowFullscreenActive) {
     exitFullscreenToWindow(win);
     return;
   }
-  windowFullscreenActive = true;
-  win.setFullScreen(true);
-  sendWindowState(win);
+  enterNativeFullscreen(win);
 }
 
 function overlayUrl(page) {
@@ -1118,7 +1192,9 @@ ipcMain.handle('desktop-window-get-state', (event) => {
 });
 
 ipcMain.handle('desktop-window-close', (event) => {
-  getSenderWindow(event)?.close();
+  const win = getSenderWindow(event);
+  if (win && !win.isDestroyed()) win.close();
+  if (BrowserWindow.getAllWindows().length <= 1) app.quit();
 });
 
 ipcMain.handle('mineradio-hotkeys-configure-global', (_event, bindings) => {
@@ -1320,14 +1396,9 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
 async function createWindow() {
   htmlFullscreenActive = false;
   windowFullscreenActive = false;
-  const port = await findOpenPort(3000);
-  mainServerPort = port;
-
-  process.env.HOST = '127.0.0.1';
-  process.env.PORT = String(port);
-  process.env.COOKIE_FILE = path.join(app.getPath('userData'), '.cookie');
-  process.env.QQ_COOKIE_FILE = path.join(app.getPath('userData'), '.qq-cookie');
-  process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
+  const isMac = process.platform === 'darwin';
+  await ensureLocalServerStarted();
+  const port = mainServerPort || Number(process.env.PORT) || 3000;
   try {
     const legacyQQCookie = path.join(__dirname, '..', '.qq-cookie');
     if (fs.existsSync(legacyQQCookie)) {
@@ -1340,9 +1411,6 @@ async function createWindow() {
     console.warn('QQ cookie migration skipped:', e.message);
   }
 
-  localServer = require(path.join(__dirname, '..', 'server.js'));
-  await waitForServer(localServer);
-
   const initialBounds = getWindowedBounds();
 
   mainWindow = new BrowserWindow({
@@ -1350,14 +1418,20 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 540,
     show: false,
-    frame: false,
+    frame: !isMac,
     fullscreen: false,
     transparent: true,
     backgroundColor: '#00000000',
     hasShadow: true,
-    autoHideMenuBar: true,
+    autoHideMenuBar: !isMac,
     title: APP_NAME,
     icon: APP_ICON_ICO,
+    ...(isMac ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 14 },
+      fullscreenable: true,
+      simpleFullscreen: false,
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1377,6 +1451,11 @@ async function createWindow() {
   });
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && isDevToolsShortcut(input)) {
+      event.preventDefault();
+      toggleWindowDevTools(mainWindow);
+      return;
+    }
     if (input.type === 'keyDown' && (input.key === 'Escape' || input.code === 'Escape') && mainWindow.isFullScreen()) {
       event.preventDefault();
       exitFullscreenToWindow(mainWindow);
@@ -1388,7 +1467,13 @@ async function createWindow() {
     sendWindowState(mainWindow);
   });
 
-  mainWindow.on('maximize', () => sendWindowState(mainWindow));
+  mainWindow.on('maximize', () => {
+    if (isMac && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFullScreen()) {
+        enterNativeFullscreen(mainWindow);
+      return;
+    }
+    sendWindowState(mainWindow);
+  });
   mainWindow.on('unmaximize', () => sendWindowState(mainWindow));
   mainWindow.on('minimize', () => sendWindowState(mainWindow));
   mainWindow.on('restore', () => sendWindowState(mainWindow));
@@ -1423,7 +1508,13 @@ async function createWindow() {
     setTimeout(() => applyWindowedBounds(mainWindow), 50);
   });
 
-  await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  try {
+    await mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  } catch (error) {
+    console.error(`Main window load failed: http://127.0.0.1:${port}`, error && error.message ? error.message : error);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    throw error;
+  }
 }
 
 app.setName(APP_NAME);
@@ -1447,6 +1538,9 @@ if (!gotSingleInstanceLock) {
     screen.on('display-added', () => scheduleWindowStateSend(mainWindow));
     screen.on('display-removed', () => scheduleWindowStateSend(mainWindow));
     await createWindow();
+  }).catch((e) => {
+    console.error('App startup failed:', e && e.message ? e.message : e);
+    app.quit();
   });
 
   app.on('activate', () => {
@@ -1455,7 +1549,7 @@ if (!gotSingleInstanceLock) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    app.quit();
   });
 
   app.on('before-quit', () => {
