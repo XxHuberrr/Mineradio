@@ -2,7 +2,6 @@ name: Sync Upstream
 
 on:
   schedule:
-    # 每小时检查一次上游
     - cron: '30 * * * *'
   workflow_dispatch:
 
@@ -28,7 +27,7 @@ jobs:
           if [ "$LOCAL" != "$UPSTREAM" ]; then
             echo "检测到上游有更新，正在同步..."
             git merge upstream/main --no-edit
-            git push origin main
+            git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/uloow/Mineradio.git main
             echo "synced=true" >> $GITHUB_OUTPUT
           else
             echo "已是最新，无需同步"
@@ -36,7 +35,6 @@ jobs:
           fi
         id: sync
 
-      # 如果有同步，触发构建
       - name: Trigger build
         if: steps.sync.outputs.synced == 'true'
         run: |
