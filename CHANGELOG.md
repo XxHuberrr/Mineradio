@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.0.2
+
+- 修复 QQ 会员状态识别与登录同步。
+- 修复无可用音源时反复切换导致的卡顿与闪退。
+- 提升连续播放、异常恢复与账号状态提示的稳定性。
+
+## v2.0.1
+
+- 修正部分账号状态识别。
+- 改进汽水音乐本地登录态检测。
+- 修正首次主题色与 3D 歌单架显示层级。
+- 提升播放与启动稳定性。
+
+## v2.0.0
+
+- 全面优化视觉层次与动态表现，整体观感更统一。
+- 桌面模式与全屏交互更自然，桌面使用体验更完整。
+- 重整主页与搜索体验，推荐、历史和长列表浏览更顺手。
+- 修复连续播放与切歌稳定性问题，并优化启动和后台性能。
+
 ## v1.1.1
 
 - P0 installer safety fix: installation now defaults to the first available non-C drive from `D:\Mineradio` through `Z:\Mineradio`; it falls back to `C:\Mineradio` only when no D-Z drive exists.

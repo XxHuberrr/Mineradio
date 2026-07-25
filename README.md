@@ -2,18 +2,18 @@
 
 ![Mineradio 暗场启动页](./docs/assets/readme/cinema-beat-smoke.png)
 
-Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、搜索播放、歌词舞台、粒子视觉和 3D 歌单架组合成一个更接近现场感的私人音乐空间。
+Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、歌词舞台、粒子视觉、3D 歌单架和完整桌面模式组合成一个更接近现场感的私人音乐空间。
 
 ## 立即下载 Windows 安装包
 
-> 国内 GitHub 小白用户：优先使用蓝奏云下载，打开链接后直接下载 `Mineradio-1.1.1-Setup.exe`，速度通常比 GitHub Release 更稳、更接近满速。
+> 国内 GitHub 用户可优先使用蓝奏云下载；其他用户可直接使用 GitHub Release。
 
 | 下载入口 | 推荐人群 | 链接 |
 | --- | --- | --- |
-| 蓝奏云满速下载 | 国内用户优先 | [下载 Mineradio 1.1.1 安装包](https://xxhuber.lanzout.com/s/Mineradio) |
-| GitHub Release 备用 | 能稳定访问 GitHub 的用户 | [v1.1.1 Release](https://github.com/XxHuberrr/Mineradio/releases/tag/v1.1.1) |
+| 蓝奏云满速下载 | 国内用户优先 | [下载 Mineradio 2.0.2 安装包](https://xxhuber.lanzout.com/s/Mineradio) |
+| GitHub Release | GitHub 用户 | [Mineradio 2.0.2 Release](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.0.2) |
 
-安装时只需要下载并运行 `Mineradio-1.1.1-Setup.exe`。不要下载 `Source code`、`.blockmap`、`latest.yml`，也不要把 `win-unpacked` 当成正式安装包。
+安装时只需要下载并运行 `Mineradio-2.0.2-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
 
 ## macOS 版本
 
@@ -29,7 +29,7 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、�
 
 ## 下载或安装被拦截怎么办
 
-小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的蓝奏云或 GitHub Release 官方入口，文件名是 `Mineradio-1.1.1-Setup.exe`。
+小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的蓝奏云或 GitHub Release 官方入口，文件名是 `Mineradio-2.0.2-Setup.exe`。
 
 1. 浏览器下载栏提示风险时，打开下载列表，点这条下载右侧的 `...` 三个点，选择 `保留` / `仍要保留` / `显示更多` 后继续保留。
 2. Windows SmartScreen 弹出蓝色拦截窗口时，点 `更多信息`，再点 `仍要运行`。
@@ -43,21 +43,21 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、�
 
 ![Mineradio 作者支持渠道](./docs/assets/support/mineradio-author-support-poster.png)
 
-1.1.1 的核心目标是把 Mineradio 重新整理成一份可公开下载的纯净安装版：默认视觉参数来自内置「默认测试」用户存档，首次启动就进入统一的视觉手感；3D 歌单架、歌词层级、用户存档和后台性能策略都在同一轮里收口。
+Mineradio 2.0 重新整理了视觉层次、桌面模式、主页与搜索体验，并收紧了连续播放、启动和后台性能表现。
 
 ## 当前版本
 
-当前版本：`1.1.1`
+当前版本：`2.0.2`
 
-状态：1.1.1 纯净安装发布版。
+状态：Mineradio 2.0.2 正式版。
 
-> 安全提示：`v1.0.10` 及更早旧安装包不再建议继续安装或传播，请先隔离旧安装包。请使用本页提供的 `Mineradio-1.1.1-Setup.exe` 进行纯净安装。
+> 安全提示：`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请使用本页提供的 `Mineradio-2.0.2-Setup.exe`。
 
 ## 核心特性
 
-- Open-Meteo 天气电台，根据当前位置、城市和天气 mood 生成更合适的播放队列
-- 首页包含天气电台、每日推荐、私人电台、继续听、听歌画像和我的歌单入口
-- Wallpaper 银河首页背景，未播放状态保持干净的星河氛围
+- 首页包含每日推荐、平台推荐、继续听、听歌画像和我的歌单入口
+- 完整桌面模式保留播放器、主页、歌单和桌面交互
+- 支持本地 MP4 与 Wallpaper Engine 视觉内容
 - 播放后切换到 Emily / 默认播放态视觉，歌词舞台与粒子舞台同步工作
 - 基于节奏的电影镜头视觉系统
 - 面向长播客和 DJ 曲目的专属视觉模式
@@ -73,9 +73,9 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、�
 
 Windows 用户可以在 GitHub Releases 中下载安装包。
 
-正式分发以 `Mineradio-1.1.1-Setup.exe` 为准，不建议直接下载 `win-unpacked` 目录作为正式分发包。安装包会创建桌面快捷方式；直接运行打包版 `Mineradio.exe` 时，应用也会在首次启动时补创建桌面快捷方式。
+正式分发以 `Mineradio-2.0.2-Setup.exe` 为准，不建议直接使用 `win-unpacked` 目录。安装包会创建桌面快捷方式。
 
-已经安装过旧版本的用户，建议卸载旧版本、隔离旧安装包后，再使用 `v1.1.1` 安装包纯净安装。
+已经安装过旧版本的用户可直接运行 `Mineradio-2.0.2-Setup.exe` 完成更新。
 
 ## 开发运行
 
