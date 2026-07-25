@@ -28,8 +28,7 @@ jobs:
           
           if [ "$LOCAL" != "$UPSTREAM" ]; then
             echo "检测到上游有更新，正在同步..."
-            git merge upstream/main --no-edit 2>/dev/null || \
-            git merge upstream/main --no-edit --strategy-option theirs
+            git merge upstream/main --strategy-option theirs --no-edit
             git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/uloow/Mineradio.git main
             echo "synced=true" >> $GITHUB_OUTPUT
           else
