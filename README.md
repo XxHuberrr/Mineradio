@@ -15,6 +15,34 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 安装时只需要下载并运行 `Mineradio-2.0.2-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
 
+## Linux 适配（Fork 分支 `linux-adapt`）
+
+本 fork 在原版基础上增加了 Linux 平台适配，分支 `linux-adapt` 包含以下改动：
+
+### 改动说明
+
+| 文件 | 改动 |
+| --- | --- |
+| `desktop/main.js` | `use-angle` 从 `d3d11` 改为 `gl`，修复 Linux 下 Three.js 粒子渲染异常 |
+| `public/js/index-loader.js` | 新增鼠标侧键拦截（button 3/4），防止 Electron 页面意外导航 |
+| `package.json` | 新增 `linux` 打包配置，支持 `.deb` 安装包生成；`executableArgs` 自动注入 `--no-sandbox --ozone-platform=x11` |
+
+### Linux 安装
+
+```bash
+npm install
+npm run build:linux
+sudo dpkg -i dist/mineradio_2.0.2_amd64.deb
+```
+
+### 适用平台
+
+- Ubuntu 24.04+ / Debian 12+ / 其他基于 Debian 的发行版
+- Wayland 会话（XWayland 兼容）
+- GNOME / KDE / XFCE 桌面环境
+
+
+
 ## 下载或安装被拦截怎么办
 
 小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的蓝奏云或 GitHub Release 官方入口，文件名是 `Mineradio-2.0.2-Setup.exe`。
@@ -35,7 +63,7 @@ Mineradio 2.0 重新整理了视觉层次、桌面模式、主页与搜索体验
 
 ## 当前版本
 
-当前版本：`2.0.2`
+当前版本：`2.0.2`（Linux 适配版基于此版本）
 
 状态：Mineradio 2.0.2 正式版。
 
@@ -71,6 +99,7 @@ Windows 用户可以在 GitHub Releases 中下载安装包。
 npm install
 npm start
 npm run build:win
+npm run build:linux    # 构建 .deb 安装包
 ```
 
 桌面版入口由 Electron 主进程加载本地服务。`npm run build:win` 会生成 Windows NSIS 安装包，产物位于 `dist/`。
@@ -102,6 +131,8 @@ Mineradio 由 XxHuberrr 主要设计与打造。emily 作为早期视觉底层�
 ## 版权与授权
 
 Copyright (C) 2026 XxHuberrr.
+
+Linux 适配分支维护：YannZhou · 2026
 
 本项目采用 GPL-3.0 授权。详见 [LICENSE](./LICENSE)。
 
