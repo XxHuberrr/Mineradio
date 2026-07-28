@@ -140,7 +140,12 @@ const QISHUI_OFFICIAL_CLIENT_DATA_DIRS = (process.env.QISHUI_OFFICIAL_CLIENT_DAT
 // user-selectable Chromium cache. app.setName() must run before the first
 // derived path lookup or Electron can recompute userData below the cache root.
 app.setName(APP_NAME);
-const STABLE_USER_DATA_PATH = path.join(app.getPath('appData'), APP_NAME);
+const STARTUP_QA_USER_DATA_PATH = (() => {
+  const value = String(process.env.MINERADIO_STARTUP_QA_USER_DATA || '').trim();
+  if (process.env.MINERADIO_STARTUP_QA_HIDDEN !== '1' || !value || !path.isAbsolute(value)) return '';
+  return path.resolve(value);
+})();
+const STABLE_USER_DATA_PATH = STARTUP_QA_USER_DATA_PATH || path.join(app.getPath('appData'), APP_NAME);
 fs.mkdirSync(STABLE_USER_DATA_PATH, { recursive: true });
 app.setPath('userData', STABLE_USER_DATA_PATH);
 const INITIAL_CACHE_SETTINGS = ensureCacheDirectories(readCacheSettings());
@@ -297,7 +302,6 @@ function normalizeCacheSettings(value) {
     lyricsPath: path.join(rootPath, 'lyrics'),
     chromiumPath: path.join(rootPath, 'chromium'),
     beatmapsPath: path.join(rootPath, 'beatmaps'),
-    updatesPath: path.join(rootPath, 'updates'),
     nativePath: path.join(rootPath, 'native-helper-temp'),
   };
 }
@@ -337,7 +341,6 @@ function ensureCacheDirectories(settings) {
     fs.mkdirSync(normalized.chromiumPath, { recursive: true });
     fs.mkdirSync(chromiumSessionDataPath(normalized), { recursive: true });
     fs.mkdirSync(normalized.beatmapsPath, { recursive: true });
-    fs.mkdirSync(normalized.updatesPath, { recursive: true });
     fs.mkdirSync(normalized.nativePath, { recursive: true });
     return normalized;
   } catch (error) {
@@ -350,7 +353,6 @@ function ensureCacheDirectories(settings) {
     fs.mkdirSync(fallback.chromiumPath, { recursive: true });
     fs.mkdirSync(chromiumSessionDataPath(fallback), { recursive: true });
     fs.mkdirSync(fallback.beatmapsPath, { recursive: true });
-    fs.mkdirSync(fallback.updatesPath, { recursive: true });
     fs.mkdirSync(fallback.nativePath, { recursive: true });
     return fallback;
   }
@@ -385,21 +387,18 @@ async function cacheSettingsSnapshot() {
   const currentChromiumPath = app.getPath('sessionData');
   const desiredChromiumPath = chromiumSessionDataPath(settings);
   const activeBeatmapsPath = process.env.MINERADIO_BEAT_CACHE_DIR || settings.beatmapsPath;
-  const activeUpdatesPath = process.env.MINERADIO_UPDATE_DIR || settings.updatesPath;
   const activeNativePath = NATIVE_HELPER_TEMP_PATH;
   const wallpaperEnginePath = path.join(settings.nativePath, 'wallpaper-engine-muted-package-cache');
   const activeWallpaperEnginePath = path.join(activeNativePath, 'wallpaper-engine-muted-package-cache');
-  const [lyricsBytes, chromiumBytes, beatmapsBytes, updatesBytes, wallpaperEngineBytes, userDataBytes] = await Promise.all([
+  const [lyricsBytes, chromiumBytes, beatmapsBytes, wallpaperEngineBytes, userDataBytes] = await Promise.all([
     directoryUsageBytes(settings.lyricsPath),
     directoryUsageBytes(currentChromiumPath),
     directoryUsageBytes(activeBeatmapsPath),
-    directoryUsageBytes(activeUpdatesPath),
     directoryUsageBytes(activeWallpaperEnginePath),
     directoryUsageBytes(app.getPath('userData')),
   ]);
   const chromiumRestartRequired = path.resolve(desiredChromiumPath) !== path.resolve(currentChromiumPath);
   const beatmapsRestartRequired = path.resolve(settings.beatmapsPath) !== path.resolve(activeBeatmapsPath);
-  const updatesRestartRequired = path.resolve(settings.updatesPath) !== path.resolve(activeUpdatesPath);
   const nativeRestartRequired = path.resolve(settings.nativePath) !== path.resolve(activeNativePath);
   return {
     ok: true,
@@ -410,23 +409,20 @@ async function cacheSettingsSnapshot() {
       activeChromiumPath: currentChromiumPath,
       beatmapsPath: settings.beatmapsPath,
       activeBeatmapsPath,
-      updatesPath: settings.updatesPath,
-      activeUpdatesPath,
       nativePath: settings.nativePath,
       activeNativePath,
       wallpaperEnginePath,
       activeWallpaperEnginePath,
       userDataPath: app.getPath('userData'),
-      restartRequired: chromiumRestartRequired || beatmapsRestartRequired || updatesRestartRequired || nativeRestartRequired,
+      restartRequired: chromiumRestartRequired || beatmapsRestartRequired || nativeRestartRequired,
     },
     usage: {
       lyricsBytes,
       chromiumBytes,
       beatmapsBytes,
-      updatesBytes,
       wallpaperEngineBytes,
       userDataBytes,
-      totalManagedBytes: lyricsBytes + chromiumBytes + beatmapsBytes + updatesBytes + wallpaperEngineBytes,
+      totalManagedBytes: lyricsBytes + chromiumBytes + beatmapsBytes + wallpaperEngineBytes,
     },
   };
 }
@@ -2244,12 +2240,6 @@ function bindStartupFailureHandlers() {
 }
 
 bindStartupFailureHandlers();
-
-function getUpdateDownloadDir() {
-  return cacheSettings && cacheSettings.updatesPath
-    ? cacheSettings.updatesPath
-    : path.join(app.getPath('userData'), 'updates');
-}
 
 function shouldEnsureDesktopShortcut() {
   if (process.platform !== 'win32') return false;
@@ -5309,18 +5299,17 @@ ipcMain.handle('spotify-music-clear-login', async () => {
   return clearSpotifyMusicLoginSession();
 });
 
-ipcMain.handle('mineradio-open-update-installer', async (_event, filePath) => {
+ipcMain.handle('mineradio-open-update-page', async (event, value) => {
   try {
-    const target = path.resolve(String(filePath || ''));
-    const updateDir = path.resolve(getUpdateDownloadDir());
-    if (!target || !target.startsWith(updateDir + path.sep)) {
-      return { ok: false, error: 'INVALID_UPDATE_PATH' };
-    }
-    if (!fs.existsSync(target)) return { ok: false, error: 'UPDATE_FILE_MISSING' };
-    const error = await shell.openPath(target);
-    return error ? { ok: false, error } : { ok: true };
+    if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+    const target = String(value || '').trim();
+    if (!target || target.length > 2048) return { ok: false, error: 'INVALID_UPDATE_URL' };
+    const parsed = new URL(target);
+    if (parsed.protocol !== 'https:') return { ok: false, error: 'INVALID_UPDATE_URL' };
+    await shell.openExternal(parsed.href);
+    return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.message || 'OPEN_UPDATE_FAILED' };
+    return { ok: false, error: e.message || 'OPEN_UPDATE_PAGE_FAILED' };
   }
 });
 
@@ -5474,7 +5463,6 @@ function configureLocalServerEnvironment(port) {
   if (!process.env.SPOTIFY_CONFIG_FILE && !process.env.MINERADIO_SPOTIFY_CONFIG_FILE) {
     process.env.SPOTIFY_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.spotify-credentials.json');
   }
-  process.env.MINERADIO_UPDATE_DIR = getUpdateDownloadDir();
 }
 
 const APP_OWNED_MIGRATION_FILES = [

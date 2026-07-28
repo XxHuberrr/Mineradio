@@ -185,6 +185,19 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-sonicfloatmin', '方块小值', '最小尺寸'),
         fxConsoleItem('fx-sonicfloatmax', '方块大值', '最大尺寸'),
         fxConsoleItem('fx-sonicfloatspeed', '方块速度', '浮空速度')
+      ] },
+      { key: 'sonic-we', title: '音域回响 · WE', hint: 'Wallpaper Engine 派生地形的响应与配色', items: [
+        fxConsoleItem('fx-sonicwegain', '输入压制', 'WE 输入增益'),
+        fxConsoleItem('fx-sonicweaudio', '音频响应', 'WE 音频强度'),
+        fxConsoleItem('fx-sonicwerange', '响应范围', 'WE 范围'),
+        fxConsoleItem('fx-sonicwepeak', '中心高光', 'WE 峰值'),
+        fxConsoleItem('sonic-workshop-cover-picker', 'WE 主题基色', '主题 封面取色'),
+        fxConsoleItem('sonic-workshop-base-picker', '地形底色', 'WE 底色'),
+        fxConsoleItem('sonic-workshop-warm-picker', '暖色主体', 'WE 暖色'),
+        fxConsoleItem('sonic-workshop-cool-picker', '上层高光', 'WE 冷色'),
+        fxConsoleItem('sonic-workshop-ripple-picker', '波纹亮区', 'WE 波纹'),
+        fxConsoleItem('sonic-workshop-peak-picker', '峰值高光', 'WE 高光'),
+        fxConsoleItem('sonic-workshop-theme-seg', 'WE 主题', '珊瑚 深海 冰蓝 翠绿 极简')
       ] }
     ]
   },

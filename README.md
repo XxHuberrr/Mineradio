@@ -6,14 +6,16 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 ## 立即下载 Windows 安装包
 
-> 国内 GitHub 用户可优先使用蓝奏云下载；其他用户可直接使用 GitHub Release。
+> 安装包通过夸克盘、百度云和蓝奏云分发；GitHub Release 用于版本说明与公开源码。
 
 | 下载入口 | 推荐人群 | 链接 |
 | --- | --- | --- |
-| 蓝奏云满速下载 | 国内用户优先 | [下载 Mineradio 2.0.2 安装包](https://xxhuber.lanzout.com/s/Mineradio) |
-| GitHub Release | GitHub 用户 | [Mineradio 2.0.2 Release](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.0.2) |
+| 夸克盘 | 夸克用户 | [下载 Mineradio 2.0.3](https://pan.quark.cn/s/f40289e1c5d3) |
+| 百度云 | 百度网盘用户（提取码 `sjhp`） | [下载 Mineradio 2.0.3](https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp) |
+| 蓝奏云 | 直接下载 | [下载 Mineradio 2.0.3](https://xxhuber.lanzout.com/mineradio2) |
+| GitHub Release | 版本说明与源码 | [Mineradio 2.0.3 Release](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.0.3) |
 
-安装时只需要下载并运行 `Mineradio-2.0.2-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
+安装时只需要下载并运行 `Mineradio-2.0.3-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
 
 ## macOS 版本
 
@@ -29,11 +31,11 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 ## 下载或安装被拦截怎么办
 
-小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的蓝奏云或 GitHub Release 官方入口，文件名是 `Mineradio-2.0.2-Setup.exe`。
+小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的三个网盘官方入口，文件名是 `Mineradio-2.0.3-Setup.exe`。
 
 1. 浏览器下载栏提示风险时，打开下载列表，点这条下载右侧的 `...` 三个点，选择 `保留` / `仍要保留` / `显示更多` 后继续保留。
 2. Windows SmartScreen 弹出蓝色拦截窗口时，点 `更多信息`，再点 `仍要运行`。
-3. 如果杀毒软件明确显示木马、高危或已经隔离，不要强行运行；删除该文件后重新从蓝奏云或 GitHub Release 下载，仍然异常请带截图反馈给作者。
+3. 如果杀毒软件明确显示木马、高危或已经隔离，不要强行运行；删除该文件后重新从上面的网盘入口下载，仍然异常请带截图反馈给作者。
 
 ## 作者支持
 
@@ -47,11 +49,11 @@ Mineradio 2.0 重新整理了视觉层次、桌面模式、主页与搜索体验
 
 ## 当前版本
 
-当前版本：`2.0.2`
+当前版本：`2.0.3`
 
-状态：Mineradio 2.0.2 正式版。
+状态：Mineradio 2.0.3 正式版。
 
-> 安全提示：`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请使用本页提供的 `Mineradio-2.0.2-Setup.exe`。
+> 安全提示：`v1.0.10` 及更早旧安装包不再建议继续安装或传播。请使用本页提供的 `Mineradio-2.0.3-Setup.exe`。
 
 ## 核心特性
 
@@ -71,11 +73,11 @@ Mineradio 2.0 重新整理了视觉层次、桌面模式、主页与搜索体验
 
 ## 使用说明
 
-Windows 用户可以在 GitHub Releases 中下载安装包。
+Windows 用户可以从本页列出的夸克盘、百度云或蓝奏云下载安装包。
 
-正式分发以 `Mineradio-2.0.2-Setup.exe` 为准，不建议直接使用 `win-unpacked` 目录。安装包会创建桌面快捷方式。
+正式分发以 `Mineradio-2.0.3-Setup.exe` 为准，不建议直接使用 `win-unpacked` 目录。安装包会创建桌面快捷方式。
 
-已经安装过旧版本的用户可直接运行 `Mineradio-2.0.2-Setup.exe` 完成更新。
+已经安装过旧版本的用户可直接运行 `Mineradio-2.0.3-Setup.exe` 完成更新。软件内更新入口只会打开浏览器下载页，不会在客户端内下载或应用补丁。
 
 ## 开发运行
 
@@ -89,7 +91,7 @@ npm run build:win
 
 ## 更新机制
 
-Mineradio 会请求 GitHub Releases latest 检测新版本。远端版本高于本地版本时，应用内更新入口会展示 Release 内容、下载安装包到本机用户数据目录，并通过系统打开安装包。
+Mineradio 会请求 GitHub Releases latest 检测新版本。远端版本高于本地版本时，应用内更新入口会展示 Release 内容，并通过系统浏览器打开可选网盘线路；客户端不会在本地下载、缓存或应用安装包与补丁。
 
 本地验证更新链路时，可以通过 `MINERADIO_UPDATE_MANIFEST` 指向一个本地 manifest JSON 或 HTTP 地址来模拟线上 Release。
 

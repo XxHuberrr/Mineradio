@@ -7,7 +7,7 @@ function normalizeWallpaperFps(value) {
 }
 
 var fxDefaults = {
-  preset: 0,            // 0=emily cover, 1=tunnel, 2=orbit, 3=void, 4=vinyl, 5=wallpaper, 6=skull, 7=sonic topography
+  preset: 0,            // 0=emily cover, 1=tunnel, 2=orbit, 3=void, 4=vinyl, 5=wallpaper, 6=skull, 7=sonic topography, 8=sonic workshop
   intensity: 0.85,
   cinemaShake: 0.5,
   depth: 0.2,

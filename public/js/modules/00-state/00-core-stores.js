@@ -98,15 +98,9 @@ var LYRIC_LAYOUT_STORE_KEY = 'mineradio-lyric-layout-v1';
 var CURRENT_FX_AUTOSAVE_STORE_KEY = 'mineradio-current-fx-autosave-v1';
 var CURRENT_FX_AUTOSAVE_SCHEMA = 'current-fx-autosave-v2';
 var VISUAL_PRESET_SCHEMA = 'skull-preset-v2';
-var MAX_VISUAL_PRESET_INDEX = 7;
+var MAX_VISUAL_PRESET_INDEX = 8;
 var SONIC_PRESET_INDEX = 7;
-var LEGACY_REMOVED_VISUAL_PRESET_INDEX = 8;
-function normalizeSavedVisualPresetIndex(value) {
-  var preset = Number(value);
-  if (!isFinite(preset)) preset = 0;
-  if (preset === LEGACY_REMOVED_VISUAL_PRESET_INDEX) return SONIC_PRESET_INDEX;
-  return Math.max(0, Math.min(MAX_VISUAL_PRESET_INDEX, preset));
-}
+var SONIC_WORKSHOP_PRESET_INDEX = 8;
 var PLAYBACK_QUALITY_STORE_KEY = 'mineradio-playback-quality-v1';
 var AUDIO_OUTPUT_DEVICE_STORE_KEY = 'mineradio-audio-output-device-v1';
 var AUDIO_OUTPUT_MIRROR_STORE_KEY = 'mineradio-audio-output-mirror-v1';

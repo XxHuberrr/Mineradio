@@ -361,3 +361,4 @@ async function startLocalBeatAnalysis(mode) {
     showToast('本地节奏分析失败');
   }
 }
+

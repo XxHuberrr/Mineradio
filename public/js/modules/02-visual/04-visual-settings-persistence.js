@@ -200,7 +200,7 @@ function readSavedLyricLayout() {
   var raw = null;
   try {
     raw = readCurrentFxAutosaveRaw();
-    var savedPreset = normalizeSavedVisualPresetIndex(raw.preset);
+    var savedPreset = clampRange(Number(raw.preset) || 0, 0, MAX_VISUAL_PRESET_INDEX);
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) {
       savedPreset = 5;
     }

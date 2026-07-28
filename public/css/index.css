@@ -1012,9 +1012,48 @@ body.custom-background-album-cover #custom-bg-video {
   opacity: var(--custom-bg-video-opacity, 0) !important
 }
 
+#sonic-workshop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none !important;
+  background: #000;
+  opacity: 0;
+  transition: opacity 520ms cubic-bezier(.16, 1, .3, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none
+}
+
+#sonic-workshop-layer iframe {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  pointer-events: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none
+}
+
+#sonic-workshop-layer,
+#sonic-workshop-layer * {
+  pointer-events: none !important
+}
+
+body.sonic-workshop-active #album-bg,
+body.sonic-workshop-active #album-bg-next,
+body.sonic-workshop-active #custom-bg {
+  opacity: 0 !important
+}
+
 /* In layered-colorkey desktop composition Explorer keys only its own icon
    surface. Mineradio keeps the same renderer-owned album, particle, custom,
-   Wallpaper Engine, and Sonic Topography backgrounds as the normal player. */
+   Wallpaper Engine, and Sonic Workshop backgrounds as the normal player. */
 
 #canvas-container {
   position: fixed;
@@ -4669,6 +4708,53 @@ body.desktop-shell.empty-home-active.controls-visible #empty-home {
   font-weight: 560;
   line-height: 1.45;
   color: rgba(255, 255, 255, .76)
+}
+
+.update-download-sources {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: -3px 0 13px
+}
+
+.update-download-sources[hidden] {
+  display: none
+}
+
+.update-download-source {
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  background: rgba(255, 255, 255, .035);
+  color: rgba(255, 255, 255, .62);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: transform .18s, color .18s, border-color .18s, background .18s, box-shadow .18s
+}
+
+.update-download-source:hover,
+.update-download-source.active {
+  color: rgba(255, 244, 214, .94);
+  border-color: rgba(244, 210, 138, .38);
+  background: rgba(244, 210, 138, .09);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08)
+}
+
+.update-download-source:hover {
+  transform: translateY(-1px)
+}
+
+.update-download-source:disabled {
+  cursor: default;
+  opacity: .56;
+  transform: none
 }
 
 .update-actions {
@@ -11746,6 +11832,14 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 
 .fx-sonic-hidden {
   display: none !important;
+}
+
+.sonic-workshop-theme-seg {
+  margin: 6px 0 10px;
+}
+
+.sonic-workshop-theme-seg button {
+  min-width: 0;
 }
 
 .sonic-audio-monitor {

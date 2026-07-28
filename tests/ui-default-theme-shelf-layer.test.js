@@ -91,6 +91,7 @@ test('persistent shelf stays behind lyrics until selection or detail raises it',
   const shelf = read('public/js/modules/04-shelf/01-manager-core.js');
   const detail = read('public/js/modules/04-shelf/03-content-list-manager.js');
   const lyrics = read('public/js/modules/02-visual/14-stage-lyrics-rendering.js');
+  const lyricRows = read('public/js/modules/02-visual/12-lyrics-row-layers.js');
 
   const lyricLayer = lyrics.match(
     /stageLyricRenderBase\s*=\s*shelfDetailOpen\s*\?\s*(\d+)\s*:\s*(\d+)/,
@@ -109,8 +110,21 @@ test('persistent shelf stays behind lyrics until selection or detail raises it',
   assert.ok(detailLayer, 'expected an explicit content-detail layer');
   assert.match(
     shelf,
-    /liftedCardActive\s*=\s*passiveAlwaysGroup\s*&&\s*cards\.some\([^]*?c\.selected\s*\|\|\s*\(c\.floatMix\s*\|\|\s*0\)\s*>\s*0\.025/,
+    /liftedCardActive\s*=\s*passiveAlwaysGroup\s*&&\s*cards\.some\([^]*?pointerSelectionForeground\s*&&\s*c\.selected[^]*?\(c\.floatMix\s*\|\|\s*0\)\s*>\s*0\.025/,
   );
+  assert.match(
+    shelf,
+    /function\s+shelfPointerSelectionForegroundActive\(\)\s*\{[^]*?selectedIdx\s*>=\s*0[^]*?cursor-hidden/,
+    'an inactive hidden pointer must stop keeping the passive shelf in front',
+  );
+  assert.match(
+    shelf,
+    /var\s+liftTarget\s*=\s*card\.selected\s*&&\s*shelfPointerSelectionForegroundActive\(\)/,
+    'card lift must require a live pointer selection, not only a centered index',
+  );
+  assert.match(lyricRows, /data\.rowLayerGroup\.renderOrder\s*=\s*renderBase/);
+  assert.match(lyricRows, /data\.contextGroup\.renderOrder\s*=\s*renderBase/);
+  assert.match(lyricRows, /data\.readabilityGroup\.renderOrder\s*=\s*renderBase/);
 
   const normalLyrics = Number(lyricLayer[2]);
   const sideRaised = Number(sideLayer[1]);

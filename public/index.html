@@ -570,6 +570,59 @@
       <div class="fx-slider"><label>方块速度</label><input id="fx-sonicfloatspeed" type="range" min="0" max="100"
           step="1"><output></output></div>
 
+      <div class="fx-section-label" id="fx-sonic-workshop-section">音域回响·WE</div>
+      <div class="fx-slider"><label>输入压制</label><input id="fx-sonicwegain" type="range" min="40" max="100"
+          step="1"><output></output></div>
+      <div class="fx-slider"><label>音频响应</label><input id="fx-sonicweaudio" type="range" min="0.3" max="2.5"
+          step="0.01"><output></output></div>
+      <div class="fx-slider"><label>响应范围</label><input id="fx-sonicwerange" type="range" min="0.3" max="2"
+          step="0.01"><output></output></div>
+      <div class="fx-slider"><label>中心高光</label><input id="fx-sonicwepeak" type="range" min="0" max="1.4"
+          step="0.01"><output></output></div>
+      <div class="lyric-color-row" id="sonic-workshop-color-row">
+        <input id="sonic-workshop-cover-picker" class="lyric-color-picker" type="color" value="#cb6c89" title="WE theme color">
+        <div class="fx-color-row-label">WE&#x4e3b;&#x9898;&#x57fa;&#x8272;<small id="sonic-workshop-theme-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-cover-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('theme','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="lyric-color-row" id="sonic-workshop-base-row">
+        <input id="sonic-workshop-base-picker" class="lyric-color-picker" type="color" value="#16060f" title="WE terrain base">
+        <div class="fx-color-row-label">&#x5730;&#x5f62;&#x5e95;&#x8272;<small id="sonic-workshop-base-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-base-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('base','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="lyric-color-row" id="sonic-workshop-warm-row">
+        <input id="sonic-workshop-warm-picker" class="lyric-color-picker" type="color" value="#cb6c89" title="WE warm body">
+        <div class="fx-color-row-label">&#x6696;&#x8272;&#x4e3b;&#x4f53;<small id="sonic-workshop-warm-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-warm-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('warm','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="lyric-color-row" id="sonic-workshop-cool-row">
+        <input id="sonic-workshop-cool-picker" class="lyric-color-picker" type="color" value="#99c4ff" title="WE upper highlight">
+        <div class="fx-color-row-label">&#x4e0a;&#x5c42;&#x9ad8;&#x5149;<small id="sonic-workshop-cool-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-cool-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('cool','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="lyric-color-row" id="sonic-workshop-ripple-row">
+        <input id="sonic-workshop-ripple-picker" class="lyric-color-picker" type="color" value="#f8d8ff" title="WE ripple light">
+        <div class="fx-color-row-label">&#x6ce2;&#x7eb9;&#x4eae;&#x533a;<small id="sonic-workshop-ripple-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-ripple-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('ripple','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="lyric-color-row" id="sonic-workshop-peak-row">
+        <input id="sonic-workshop-peak-picker" class="lyric-color-picker" type="color" value="#99c4ff" title="WE peak highlight">
+        <div class="fx-color-row-label">&#x5cf0;&#x503c;&#x9ad8;&#x5149;<small id="sonic-workshop-peak-value">&#x5c01;&#x9762;&#x53d6;&#x8272;</small></div>
+        <button class="fx-mini-btn ghost" id="sonic-workshop-peak-btn" type="button"
+          onclick="setSonicWorkshopRegionColorMode('peak','cover')">&#x5c01;&#x9762;</button>
+      </div>
+      <div class="fx-seg sonic-workshop-theme-seg" id="sonic-workshop-theme-seg">
+        <button data-sonic-workshop-theme="coral-mirage" onclick="setSonicWorkshopTheme('coral-mirage')">珊瑚</button>
+        <button data-sonic-workshop-theme="ocean-deep" onclick="setSonicWorkshopTheme('ocean-deep')">深海</button>
+        <button data-sonic-workshop-theme="arctic-aurora" onclick="setSonicWorkshopTheme('arctic-aurora')">冰蓝</button>
+        <button data-sonic-workshop-theme="cyber-forest" onclick="setSonicWorkshopTheme('cyber-forest')">翠绿</button>
+        <button data-sonic-workshop-theme="minimal-monochrome" onclick="setSonicWorkshopTheme('minimal-monochrome')">极简</button>
+      </div>
+
       <div class="fx-fold" id="fx-lyric-fold">
         <div class="fx-fold-head" onclick="document.getElementById('fx-lyric-fold').classList.toggle('open')">
           <span class="fx-fold-title"><strong>歌词外观</strong><small>颜色 / 来源 / 位置</small></span><span
@@ -978,13 +1031,11 @@
             <code class="cache-storage-path small" id="cache-storage-chromium-path">—</code>
             <div class="cache-storage-row"><span>节奏分析缓存</span><b id="cache-storage-beatmaps-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-beatmaps-path">—</code>
-            <div class="cache-storage-row"><span>更新安装包与补丁缓存</span><b id="cache-storage-updates-size">—</b></div>
-            <code class="cache-storage-path small" id="cache-storage-updates-path">—</code>
             <div class="cache-storage-row"><span>Wallpaper Engine 静音场景缓存</span><b id="cache-storage-wallpaper-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-wallpaper-path">—</code>
             <div class="cache-storage-row muted"><span>设置与登录资料（安全固定）</span><b id="cache-storage-userdata-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-userdata-path">—</code>
-            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词缓存立即切换；网络、节奏分析、WE 静音场景与更新缓存目录在下次重启后切换。</div>
+            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词缓存立即切换；网络、节奏分析与 WE 静音场景缓存目录在下次重启后切换。</div>
           </div>
           <div class="fx-slider"><label>粒子尺寸</label><input id="fx-point" type="range" min="0.5" max="2.2"
               step="0.01"><output></output></div>
@@ -1401,7 +1452,7 @@
           </button>
           <div id="login-easter-hint" class="login-easter-hint" aria-live="polite"></div>
           <div id="login-easter-egg-wish" class="login-easter-egg-wish">
-            <h1 id="login-easter-egg-wish-title"></h1>
+            <h1>我希望</h1>
             <div class="login-easter-input-shell">
               <div id="login-easter-egg-cells" class="login-easter-cells" aria-hidden="true">
                 <span class="login-easter-cell"></span>
@@ -1475,17 +1526,17 @@
     </div>
 
     <div id="login-easter-unlock-cinematic" class="login-easter-unlock-cinematic" role="button" tabindex="-1"
-      aria-hidden="true" aria-label="点击继续" onclick="dismissLoginEasterEggCinematic()">
+      aria-hidden="true" aria-label="世界和平，点击继续" onclick="dismissLoginEasterEggCinematic()">
       <div id="login-easter-unlock-phrase" class="login-easter-unlock-phrase" aria-hidden="true">
-        <span style="--float-duration:3.8s;--float-delay:-.7s;--float-distance:9px"></span>
-        <span style="--float-duration:4.4s;--float-delay:-2.1s;--float-distance:13px"></span>
-        <span style="--float-duration:3.5s;--float-delay:-1.4s;--float-distance:8px"></span>
-        <span style="--float-duration:4.1s;--float-delay:-2.8s;--float-distance:12px"></span>
+        <span style="--float-duration:3.8s;--float-delay:-.7s;--float-distance:9px">世</span>
+        <span style="--float-duration:4.4s;--float-delay:-2.1s;--float-distance:13px">界</span>
+        <span style="--float-duration:3.5s;--float-delay:-1.4s;--float-distance:8px">和</span>
+        <span style="--float-duration:4.1s;--float-delay:-2.8s;--float-distance:12px">平</span>
       </div>
     </div>
 
     <div id="login-easter-achievement" class="login-easter-achievement" role="status" aria-live="polite"
-      aria-label="已达成成就">
+      aria-label="已达成成就：世界和平！">
       <span class="login-easter-achievement-icon" aria-hidden="true">
         <span class="login-easter-achievement-pixel-eyes">
           <i class="login-easter-achievement-pixel-eye pixel-eye-big"></i>
@@ -1494,7 +1545,7 @@
       </span>
       <span class="login-easter-achievement-copy">
         <small>已达成成就</small>
-        <b id="login-easter-achievement-title"></b>
+        <b>世界和平！</b>
       </span>
     </div>
 
@@ -1727,7 +1778,7 @@
             <div>
               <div class="update-kicker">MINERADIO</div>
               <div id="update-modal-title" class="update-title">New release</div>
-              <div id="update-modal-version" class="update-version">v2.0.2</div>
+              <div id="update-modal-version" class="update-version">v2.0.3</div>
             </div>
           </div>
           <div class="update-hero">
@@ -1735,15 +1786,17 @@
             <div id="update-hero-sub" class="update-hero-sub"></div>
           </div>
           <div id="update-list" class="update-list"></div>
+          <div id="update-download-sources" class="update-download-sources" hidden
+            aria-label="下载线路"></div>
           <div class="update-actions">
             <button id="update-primary-btn" class="update-primary-btn" type="button"
               onclick="startUpdatePreviewDownload()">
               <span id="update-btn-fill" class="update-btn-fill"></span>
-              <span id="update-btn-label" class="update-btn-label">立即更新</span>
+              <span id="update-btn-label" class="update-btn-label">查看更新页面</span>
             </button>
             <button class="update-secondary-btn" type="button" onclick="closeUpdatePanel()">取消</button>
           </div>
-          <div id="update-footnote" class="update-footnote">预览版只演示更新手感，不会真的下载安装。</div>
+          <div id="update-footnote" class="update-footnote">将在浏览器打开下载页面，软件不会在本地下载或应用补丁。</div>
         </div>
       </div>
     </div>

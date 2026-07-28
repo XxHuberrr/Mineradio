@@ -4,11 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const LOGIN_EASTER_EGG_GATE_VERSION = String.fromCharCode(
-  119, 111, 114, 108, 100, 45, 112, 101, 97, 99, 101, 45, 118, 49,
-);
+const LOGIN_EASTER_EGG_GATE_VERSION = 'world-peace-v1';
 const LOGIN_EASTER_EGG_STATE_FILE = 'login-easter-egg.json';
-const LOGIN_EASTER_EGG_PASSWORD = String.fromCodePoint(19990, 30028, 21644, 24179);
+const LOGIN_EASTER_EGG_PASSWORD = '世界和平';
 const LOGIN_EASTER_EGG_CREDENTIAL_FILES = [
   '.cookie',
   '.qq-cookie',

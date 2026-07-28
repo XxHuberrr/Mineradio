@@ -12,7 +12,7 @@ function readSavedPlaybackVisualPreset() {
   try {
     var raw = readCurrentFxAutosaveRaw();
     if (!Object.prototype.hasOwnProperty.call(raw, 'preset')) return fxDefaults.preset;
-    var savedPreset = normalizeSavedVisualPresetIndex(raw.preset);
+    var savedPreset = clampRange(Number(raw.preset) || 0, 0, MAX_VISUAL_PRESET_INDEX);
     if (savedPreset === 3 && raw.visualPresetSchema !== VISUAL_PRESET_SCHEMA) savedPreset = 5;
     return savedPreset;
   } catch (e) {

@@ -122,3 +122,4 @@ function triggerScheduledBeat(beat) {
 }
 var scheduledBeatPulse = 0;
 var scheduledBeatFlag = false;
+

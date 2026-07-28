@@ -13,8 +13,6 @@ const {
 const { normalizeLoginEasterEggCharacters } = require('../public/js/modules/08-account/00-login-easter-egg');
 
 async function run() {
-  const hiddenPhrase = String.fromCodePoint(19990, 30028, 21644, 24179);
-  const nearMiss = Array.from(hiddenPhrase).slice(0, 3).join('') + String.fromCodePoint(27668);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mineradio-login-gate-'));
   try {
     const migrationRoot = path.join(root, 'chromium-session');
@@ -46,8 +44,8 @@ async function run() {
     assert.strictEqual(fs.existsSync(path.join(root, '.qishui-oauth.json')), true);
     assert.strictEqual(fs.existsSync(path.join(root, 'current-fx-autosave.json')), true);
 
-    assert.strictEqual(gate.unlock(nearMiss).error, 'LOGIN_EASTER_EGG_INVALID');
-    assert.strictEqual(gate.unlock(hiddenPhrase).unlocked, true);
+    assert.strictEqual(gate.unlock('世界和气').error, 'LOGIN_EASTER_EGG_INVALID');
+    assert.strictEqual(gate.unlock('世界和平').unlocked, true);
 
     fs.writeFileSync(path.join(root, '.cookie'), 'new-login', 'utf8');
     const reopened = new LoginEasterEggGate({ userDataPath: root, credentialRoots: () => [migrationRoot], now: () => 5678 });
@@ -61,8 +59,7 @@ async function run() {
     assert.strictEqual(state.gateVersion, LOGIN_EASTER_EGG_GATE_VERSION);
     assert.strictEqual(state.cookieResetVersion, LOGIN_EASTER_EGG_GATE_VERSION);
     assert.strictEqual(state.unlocked, true);
-    const noisyPhrase = ` ${Array.from(hiddenPhrase).join(' ')} ${String.fromCodePoint(22810)} `;
-    assert.deepStrictEqual(normalizeLoginEasterEggCharacters(noisyPhrase), Array.from(hiddenPhrase));
+    assert.deepStrictEqual(normalizeLoginEasterEggCharacters(' 世 界 和 平 多 '), ['世', '界', '和', '平']);
 
     LOGIN_EASTER_EGG_CREDENTIAL_FILES.forEach((name) => {
       fs.writeFileSync(path.join(root, name), 'replayed-login', 'utf8');
@@ -91,7 +88,7 @@ async function run() {
     assert.strictEqual(lockedStatus.unlocked, false);
     assert.strictEqual(partitionClearCount, 3, 'a locked restart must audit sessions again');
     assert.strictEqual(fs.existsSync(path.join(migrationRoot, '.cookie')), false, 'locked restart must remove restored migration credentials');
-    assert.strictEqual(lockedRestart.unlock(hiddenPhrase).unlocked, true, 'replayed gate should unlock again');
+    assert.strictEqual(lockedRestart.unlock('世界和平').unlocked, true, 'replayed gate should unlock again');
 
     const main = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
     assert(main.indexOf('migrateLegacyAuthStorage();') < main.indexOf('await initializeLoginEasterEggGate();'));
@@ -173,8 +170,7 @@ async function run() {
     assert(html.includes('id="login-reset-all-btn"'));
     assert(html.includes('onclick="logoutAllAccountsAndResetEasterEgg()"'));
     assert(html.includes('已达成成就'));
-    assert(html.includes('id="login-easter-achievement-title"'));
-    assert(!html.includes(hiddenPhrase), 'hidden phrase must not be stored as plain text in public HTML');
+    assert(html.includes('世界和平！'));
     assert(!/id="login-easter-egg-input"[^>]*maxlength="4"/.test(html), 'IME composition must not be truncated before Chinese text is committed');
 
     const easterEggRenderer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', '08-account', '00-login-easter-egg.js'), 'utf8');

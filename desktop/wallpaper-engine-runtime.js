@@ -4008,12 +4008,13 @@ class WallpaperEngineRuntime {
       };
     }
     this.disposed = true;
+    const isClean = () => !this.active && !this.pending;
     let result = await this.stop();
-    if (!result || result.stopped !== true) {
+    if ((!result || result.stopped !== true) && !isClean()) {
       await this.nativeSleep(180);
       result = await this.stop();
     }
-    if (!result || result.stopped !== true) {
+    if ((!result || result.stopped !== true) && !isClean()) {
       const leftovers = [];
       if (this.pending) leftovers.push(this.pending);
       if (this.active && (!this.pending || this.active.sessionId !== this.pending.sessionId)) leftovers.push(this.active);
@@ -4031,7 +4032,14 @@ class WallpaperEngineRuntime {
         reason: 'WALLPAPER_ENGINE_WINDOW_CLOSE_FAILED',
       };
     } else {
-      result = { ...result, ok: true };
+      result = {
+        ...(result || {}),
+        ok: true,
+        stopped: true,
+        active: false,
+        sessionId: '',
+        reason: '',
+      };
     }
     this.signatureCache.clear();
     this.executableCache = null;

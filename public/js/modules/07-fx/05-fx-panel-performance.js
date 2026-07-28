@@ -159,6 +159,11 @@ var SONIC_ORIGINAL_FX_CONTROL_IDS = [
   'fx-sonic-color-section', 'sonic-ground-base-row', 'sonic-ground-cool-row', 'sonic-ground-warm-row', 'sonic-ground-accent-row', 'fx-sonicglow',
   'fx-sonic-floating-section', 'sonic-floating-toggle-grid', 'fx-sonicfloatcount', 'fx-sonicfloatintensity', 'fx-sonicfloatmin', 'fx-sonicfloatmax', 'fx-sonicfloatspeed'
 ];
+var SONIC_WORKSHOP_FX_CONTROL_IDS = [
+  'fx-sonic-workshop-section', 'fx-sonicwegain', 'fx-sonicweaudio', 'fx-sonicwerange', 'fx-sonicwepeak',
+  'sonic-workshop-color-row', 'sonic-workshop-base-row', 'sonic-workshop-warm-row', 'sonic-workshop-cool-row',
+  'sonic-workshop-ripple-row', 'sonic-workshop-peak-row', 'sonic-workshop-theme-seg'
+];
 function fxPanelControlBlockById(id) {
   var el = document.getElementById(id);
   if (!el) return null;
@@ -174,7 +179,9 @@ function setFxPanelControlsHidden(ids, hidden) {
 function updateSonicSeriesControlVisibility() {
   var preset = Number(fx && fx.preset) || 0;
   var original = preset === 7;
+  var workshop = preset === 8;
   setFxPanelControlsHidden(SONIC_ORIGINAL_FX_CONTROL_IDS, !original);
+  setFxPanelControlsHidden(SONIC_WORKSHOP_FX_CONTROL_IDS, !workshop);
   setFxPanelControlsHidden(['fx-lyricbgadapt-row', 'fx-lyricbgadapt'], false);
 }
 function setPerformanceBackgroundMode(mode, silent) {

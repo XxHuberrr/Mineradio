@@ -105,6 +105,21 @@ function runPlaybackSourceFallbackTransactionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runWallpaperEngineIdleDisposeRegressionCheck() {
+  logStep('Wallpaper Engine idle-dispose regression');
+  const testFile = path.join(appRoot, 'tests', 'wallpaper-engine-idle-dispose.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`Wallpaper Engine idle-dispose regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 function runQQVipEntitlementRegressionCheck() {
   logStep('QQ VIP entitlement regression');
   const testFile = path.join(appRoot, 'tests', 'qq-vip-entitlement.test.js');
@@ -1312,7 +1327,7 @@ function checkPersistentCacheStorageGuard() {
   const cssText = fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8');
   const setNameAt = mainText.indexOf('app.setName(APP_NAME)');
   const firstUserDataLookupAt = mainText.indexOf("app.getPath('appData')");
-  if (!/const CACHE_SETTINGS_FILE/.test(mainText) || !/const LYRIC_CACHE_MAX_BYTES = 96 \* 1024 \* 1024/.test(mainText) || !/function defaultCacheRootPath\(\)/.test(mainText) || !/path\.join\(dDrive, 'MineradioCache'\)/.test(mainText) || setNameAt < 0 || firstUserDataLookupAt < 0 || setNameAt > firstUserDataLookupAt || !/const STABLE_USER_DATA_PATH = path\.join\(app\.getPath\('appData'\), APP_NAME\)/.test(mainText) || !/app\.setPath\('userData', STABLE_USER_DATA_PATH\)/.test(mainText) || !/app\.setPath\('sessionData', chromiumSessionDataPath\(cacheSettings\)\)/.test(mainText) || !/const currentChromiumPath = app\.getPath\('sessionData'\)/.test(mainText) || !/MINERADIO_BEAT_CACHE_DIR = cacheSettings\.beatmapsPath/.test(mainText) || !/nativePath:\s*path\.join\(rootPath, 'native-helper-temp'\)/.test(mainText) || !/const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS\.nativePath/.test(mainText) || !/activeWallpaperEnginePath/.test(mainText) || !/wallpaperEngineBytes/.test(mainText)) {
+  if (!/const CACHE_SETTINGS_FILE/.test(mainText) || !/const LYRIC_CACHE_MAX_BYTES = 96 \* 1024 \* 1024/.test(mainText) || !/function defaultCacheRootPath\(\)/.test(mainText) || !/path\.join\(dDrive, 'MineradioCache'\)/.test(mainText) || setNameAt < 0 || firstUserDataLookupAt < 0 || setNameAt > firstUserDataLookupAt || !/const STABLE_USER_DATA_PATH = STARTUP_QA_USER_DATA_PATH \|\| path\.join\(app\.getPath\('appData'\), APP_NAME\)/.test(mainText) || !/app\.setPath\('userData', STABLE_USER_DATA_PATH\)/.test(mainText) || !/app\.setPath\('sessionData', chromiumSessionDataPath\(cacheSettings\)\)/.test(mainText) || !/const currentChromiumPath = app\.getPath\('sessionData'\)/.test(mainText) || !/MINERADIO_BEAT_CACHE_DIR = cacheSettings\.beatmapsPath/.test(mainText) || !/nativePath:\s*path\.join\(rootPath, 'native-helper-temp'\)/.test(mainText) || !/const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS\.nativePath/.test(mainText) || !/activeWallpaperEnginePath/.test(mainText) || !/wallpaperEngineBytes/.test(mainText)) {
     fail('desktop cache settings must keep app-owned userData stable and route Chromium sessionData plus beatmaps to the configurable cache root');
   }
   if (!/function migrateMisplacedAppOwnedFiles\(\)/.test(mainText) || !/APP_OWNED_MIGRATION_FILES/.test(mainText) || !/process\.env\.QISHUI_COOKIE_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.qishui-cookie'\)/.test(mainText) || !/process\.env\.SPOTIFY_TOKEN_FILE = path\.join\(STABLE_USER_DATA_PATH, '\.spotify-token\.json'\)/.test(mainText)) {
@@ -1328,10 +1343,51 @@ function checkPersistentCacheStorageGuard() {
   if (!/function persistentLyricCacheKey/.test(lyricText) || !/await readPersistentLyricCache\(song\)/.test(lyricText) || !/refreshPersistentLyricCache\(song\)/.test(lyricText) || !/writePersistentLyricCache\(song, mergedResponse\)/.test(lyricText) || !/function scheduleQueueLyricPrefetch/.test(lyricText) || !/function runQueueLyricPrefetch/.test(lyricText) || !/scheduleQueueLyricPrefetch\(idx, 2400\)/.test(playbackStartText)) {
     fail('lyrics must read persistent cache before network fetch, refresh it without blocking playback, and prefetch the next queue lyric');
   }
-  if (!/07-fx\/08-cache-storage-settings\.js/.test(loaderText) || !/cache-storage-panel/.test(htmlText) || !/cache-storage-lyrics-size/.test(htmlText) || !/cache-storage-chromium-size/.test(htmlText) || !/cache-storage-beatmaps-size/.test(htmlText) || !/cache-storage-updates-size/.test(htmlText) || !/cache-storage-wallpaper-size/.test(htmlText) || !/cache-storage-userdata-size/.test(htmlText) || !/cache-storage-beatmaps-path/.test(cacheUiText) || !/cache-storage-updates-path/.test(cacheUiText) || !/cache-storage-wallpaper-path/.test(cacheUiText) || !/function chooseMineradioCacheRoot/.test(cacheUiText) || !/function refreshMineradioCacheSettings/.test(cacheUiText) || !/\.cache-storage-panel/.test(cssText)) {
+  if (!/07-fx\/08-cache-storage-settings\.js/.test(loaderText) || !/cache-storage-panel/.test(htmlText) || !/cache-storage-lyrics-size/.test(htmlText) || !/cache-storage-chromium-size/.test(htmlText) || !/cache-storage-beatmaps-size/.test(htmlText) || !/cache-storage-wallpaper-size/.test(htmlText) || !/cache-storage-userdata-size/.test(htmlText) || !/cache-storage-beatmaps-path/.test(cacheUiText) || !/cache-storage-wallpaper-path/.test(cacheUiText) || !/function chooseMineradioCacheRoot/.test(cacheUiText) || !/function refreshMineradioCacheSettings/.test(cacheUiText) || !/\.cache-storage-panel/.test(cssText) || /cache-storage-updates-(?:path|size)/.test(htmlText + cacheUiText)) {
     fail('advanced settings must show configurable cache paths and their current usage');
   }
   console.log('[OK] Persistent lyric and application cache paths are configurable and report current usage.');
+}
+
+function checkExternalUpdatePageBridgeGuard() {
+  logStep('External update page bridge guard');
+  const mainText = fs.readFileSync(path.join(appRoot, 'desktop', 'main.js'), 'utf8');
+  const preloadText = fs.readFileSync(path.join(appRoot, 'desktop', 'preload.js'), 'utf8');
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  const updateUiText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '08-account', '00-update-preview.js'), 'utf8');
+  const bridgeText = mainText + '\n' + preloadText;
+  if (
+    !/ipcMain\.handle\('mineradio-open-update-page', async \(event, value\) =>/.test(mainText)
+    || !/isTrustedMainWindowIpc\(event\)/.test(mainText)
+    || !/target\.length > 2048/.test(mainText)
+    || !/parsed\.protocol !== 'https:'/.test(mainText)
+    || !/await shell\.openExternal\(parsed\.href\)/.test(mainText)
+    || !/openUpdatePage: \(url\) => ipcRenderer\.invoke\('mineradio-open-update-page'/.test(preloadText)
+  ) {
+    fail('desktop update bridge must open only bounded HTTPS pages from the trusted main document');
+  }
+  if (/mineradio-open-update-installer|openUpdateInstaller|getUpdateDownloadDir|MINERADIO_UPDATE_DIR/.test(bridgeText)) {
+    fail('desktop update bridge must not expose the removed local installer or update-cache path');
+  }
+  if (
+    !/mineradio-download-page/.test(serverText)
+    || !/extractReleaseDownloadPages/.test(serverText)
+    || !/downloadPages/.test(serverText)
+    || !/error:\s*'UPDATE_EXTERNAL_ONLY'/.test(serverText)
+    || !/openUpdateDownloadSource/.test(updateUiText)
+    || !/update-download-source/.test(updateUiText)
+    || !/desktopWindow\.openUpdatePage\(target\)/.test(updateUiText)
+    || !/软件不会在本地下载或应用补丁/.test(updateUiText)
+  ) {
+    fail('updates must resolve to an external download page and keep legacy local routes disabled');
+  }
+  if (
+    /startUpdateDownloadJob|startUpdatePatchJob|updateDownloadJobs|UPDATE_DOWNLOAD_DIR|pickPatchAsset/.test(serverText)
+    || /\/api\/update\/(?:download|patch)|openUpdateInstaller|快速补丁/.test(updateUiText)
+  ) {
+    fail('local installer download and quick-patch workers must remain removed');
+  }
+  console.log('[OK] Updates use a trusted HTTPS-only external-page bridge with no local installer path.');
 }
 
 function checkLyricTranslationCompletenessGuard() {
@@ -2905,6 +2961,11 @@ function checkSonicTopographyPresetGuard() {
   const fxPanelText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '07-fx', '05-fx-panel-performance.js'), 'utf8');
   const mainLoopText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '11-main-loop.js'), 'utf8');
   const sonicText = fs.readFileSync(path.join(appRoot, 'public', 'sonic-topography-preset.js'), 'utf8');
+  const sonicWorkshopText = fs.readFileSync(path.join(appRoot, 'public', 'sonic-workshop-preset.js'), 'utf8');
+  const sonicWorkshopBridgeText = fs.readFileSync(path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'mineradio-bridge.html'), 'utf8');
+  const paletteText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '02-visual', '07-lyrics-palette-text-utils.js'), 'utf8');
+  const accentControlText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '07-fx', '02-accent-background-controls.js'), 'utf8');
+  const colorLabText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '02-visual', '06-custom-background-colorlab.js'), 'utf8');
   const keyboardCameraText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '04-shelf', '06-keyboard-camera-events.js'), 'utf8');
   const sonicAudioText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '03-beat', '06-sonic-audio-monitor.js'), 'utf8');
   const defaultArchiveText = fs.readFileSync(path.join(appRoot, 'public', 'default-user-fx-archive.json'), 'utf8');
@@ -2946,6 +3007,23 @@ function checkSonicTopographyPresetGuard() {
     'sonicAudioBandEnd',
     'sonicAudioThreshold',
     'sonicAudioPulseStrength',
+    'sonicWorkshopInputGain',
+    'sonicWorkshopAudioIntensity',
+    'sonicWorkshopResponseRange',
+    'sonicWorkshopPeakIntensity',
+    'sonicWorkshopColorMode',
+    'sonicWorkshopTheme',
+    'sonicWorkshopCustomColor',
+    'sonicWorkshopBaseColorMode',
+    'sonicWorkshopBaseColor',
+    'sonicWorkshopWarmColorMode',
+    'sonicWorkshopWarmColor',
+    'sonicWorkshopCoolColorMode',
+    'sonicWorkshopCoolColor',
+    'sonicWorkshopRippleColorMode',
+    'sonicWorkshopRippleColor',
+    'sonicWorkshopPeakColorMode',
+    'sonicWorkshopPeakColor',
     'cameraViewSaved',
     'cameraViewMode',
     'cameraOrbitTheta',
@@ -2995,40 +3073,56 @@ function checkSonicTopographyPresetGuard() {
   if (!/function deriveGroundLayoutSettings/.test(sonicText) || !/sonicGroundRange/.test(sonicText) || !/state\.root\.rotation\.x\s*=\s*state\.boundRotX/.test(sonicText) || !/state\.root\.position\.set\(0,\s*layout\.y,\s*layout\.z\)/.test(sonicText) || !/state\.root\.scale\.setScalar\(layout\.scale\)/.test(sonicText)) {
     fail('Sonic Topography must expose a wide, lyric-safe horizontal platter layout inside Mineradio camera space');
   }
-  if (!/MAX_VISUAL_PRESET_INDEX = 7/.test(coreText)
-    || !/SONIC_PRESET_INDEX = 7/.test(coreText)
-    || !/LEGACY_REMOVED_VISUAL_PRESET_INDEX = 8/.test(coreText)
-    || !/preset === LEGACY_REMOVED_VISUAL_PRESET_INDEX\) return SONIC_PRESET_INDEX/.test(coreText)
-    || !/normalizeSavedVisualPresetIndex/.test(runtimeText + persistenceText + archiveText)) {
-    fail('Sonic preset 7 must remain selectable while legacy preset 8 archives migrate to it');
+  if (!/MAX_VISUAL_PRESET_INDEX = 8/.test(coreText) || !/SONIC_PRESET_INDEX = 7/.test(coreText) || !/SONIC_WORKSHOP_PRESET_INDEX = 8/.test(coreText) || !/MAX_VISUAL_PRESET_INDEX/.test(runtimeText + persistenceText)) {
+    fail('Sonic preset 7 and Workshop derivative preset 8 must survive autosave and startup restore clamps');
   }
-  if (!/音域回响/.test(archiveText)
-    || !/presetDisplayOrder = \[0, 6, 7, 5/.test(archiveText)
-    || /音域回响[\s\S]{0,120}disabled:\s*true/.test(archiveText)) {
+  if (!/音域回响/.test(archiveText) || !/presetDisplayOrder = \[0, 6, 7, 8/.test(archiveText) || /音域回响[\s\S]{0,120}disabled:\s*true/.test(archiveText)) {
     fail('Sonic Topography must be exposed as the selectable 音域回响 preset');
   }
   if (!archiveText.includes('音域回响 <span class="pc-name-en">Sonic-Topography</span>')
     || !archiveText.includes('作者 <span class="pc-author-ajin">Ajin</span>')
-    || /Wallpaper Engine<\/span>/.test(archiveText)
-    || /CmzYa/.test(archiveText)
+    || !archiveText.includes('音域回响 <span class="pc-name-en">Wallpaper Engine</span>')
+    || !archiveText.includes("desc: '作者 CmzYa'")
     || !/var name = p\.nameHtml \|\| p\.name/.test(presetGridText)
     || !/\.preset-card \.pc-name-en[\s\S]{0,260}font-size:\s*9px/.test(presetCssText)
     || !/\.preset-card \.pc-author-ajin[\s\S]{0,100}color:\s*#f59e0b/.test(presetCssText)) {
-    fail('The public Sonic preset card must preserve its own subtitle and Ajin author credit only');
+    fail('Sonic preset cards must preserve their English subtitles and Ajin/CmzYa author credits');
   }
   [
-    path.join(appRoot, 'public', 'sonic-workshop-preset.js'),
-    path.join(appRoot, 'public', 'vendor', 'sonic-workshop')
-  ].forEach((removedPath) => {
-    if (fs.existsSync(removedPath)) fail('Public release must not package the unlicensed Workshop derivative: ' + path.relative(appRoot, removedPath));
+    path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'assets', 'index-Z-j1MQ-r.js'),
+    path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'assets', 'index-Bhwp8mwk.css'),
+    path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'project.json'),
+    path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'preview.gif')
+  ].forEach((vendorFile) => {
+    if (!fs.existsSync(vendorFile)) fail('Sonic Workshop derivative preset is missing packaged Wallpaper Engine asset: ' + path.relative(appRoot, vendorFile));
   });
-  if (/sonic-workshop-preset\.js/.test(loaderText)
-    || /MineradioSonicWorkshop/.test(mainLoopText + presetGridText)
-    || /SONIC_WORKSHOP_PRESET_INDEX/.test(coreText + pointerText)) {
-    fail('Public release must not reference the removed Workshop derivative runtime');
+  if (!/sonic-workshop-preset\.js/.test(loaderText) || !/BRIDGE_SRC = 'vendor\/sonic-workshop\/mineradio-bridge\.html'/.test(sonicWorkshopText) || !/MineradioSonicWorkshop\.update/.test(mainLoopText) || !/visual\.sonic-workshop/.test(mainLoopText) || !/MineradioSonicWorkshop\.onPresetChange/.test(presetGridText) || !/workshopPresetActive/.test(mainLoopText)) {
+    fail('Sonic Workshop derivative preset must load, fade as preset 8, hide base particles, and update from the main loop');
+  }
+  if (!/canvasAnchor\.parentNode\.insertBefore\(layer,\s*canvasAnchor\)/.test(sonicWorkshopText) || !/layer\.setAttribute\('inert'/.test(sonicWorkshopText) || !/iframe\.setAttribute\('inert'/.test(sonicWorkshopText) || !/iframe\.style\.pointerEvents\s*=\s*'none'/.test(sonicWorkshopText) || !/#sonic-workshop-layer,\s*#sonic-workshop-layer \*[\s\S]{0,120}pointer-events:\s*none !important/.test(fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8'))) {
+    fail('Sonic Workshop iframe layer must remain fully pointer-transparent so player buttons and window controls stay clickable');
+  }
+  if (!/wallpaperRegisterAudioListener/.test(sonicWorkshopBridgeText) || !/__mineradioApplyAudio/.test(sonicWorkshopBridgeText) || !/__mineradioApplyMedia/.test(sonicWorkshopBridgeText) || !/theme:\s*'coral-mirage'/.test(sonicWorkshopBridgeText) || !/themeCycleInterval:\s*50/.test(sonicWorkshopBridgeText) || !/gridSize:\s*320/.test(sonicWorkshopBridgeText) || !/audioIntensity:\s*1\.15/.test(sonicWorkshopBridgeText) || !/responseRange:\s*1\.3/.test(sonicWorkshopBridgeText) || !/peakColorIntensity:\s*0\.62/.test(sonicWorkshopBridgeText) || !/pulseSensitivity:\s*0\.05/.test(sonicWorkshopBridgeText) || !/pulseCooldown:\s*0/.test(sonicWorkshopBridgeText) || !/meteorSensitivity:\s*0\.3/.test(sonicWorkshopBridgeText) || !/cameraDistance:\s*80/.test(sonicWorkshopBridgeText) || !/autoRotateEnabled:\s*true/.test(sonicWorkshopBridgeText) || !/autoRotateSpeed:\s*7/.test(sonicWorkshopBridgeText) || !/cameraAngleX:\s*150/.test(sonicWorkshopBridgeText) || !/cameraAngleY:\s*30/.test(sonicWorkshopBridgeText) || !/showPlayerController:\s*false/.test(sonicWorkshopBridgeText)) {
+    fail('Sonic Workshop bridge must preserve the requested Wallpaper Engine default parameters and receive Mineradio audio/media');
+  }
+  const sonicWorkshopVendorText = fs.readFileSync(path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'assets', 'index-Z-j1MQ-r.js'), 'utf8');
+  if (!/mineradioCustomTheme/.test(sonicWorkshopBridgeText) || !/mineradioCustomTheme/.test(sonicWorkshopText) || !/function workshopCustomThemeForColor/.test(sonicWorkshopText) || !/function workshopPaletteHexesFromCover/.test(sonicWorkshopText) || !/function workshopCustomThemeForPalette/.test(sonicWorkshopText) || !/function workshopCustomThemeForRegions/.test(sonicWorkshopText) || !/function workshopRegionsFromFx/.test(sonicWorkshopText) || !/function applyWorkshopThemeTransition/.test(sonicWorkshopText) || !/WORKSHOP_THEME_TRANSITION_MS\s*=\s*1280/.test(sonicWorkshopText) || !/function applyThemeTransition/.test(sonicWorkshopBridgeText) || !/THEME_TRANSITION_STEP_MS\s*=\s*33/.test(sonicWorkshopBridgeText) || /scheduleWorkshopThemeTransition\(\);/.test(sonicWorkshopText) || !/__mineradioPaletteHexes/.test(sonicWorkshopText) || !/rawWarm/.test(paletteText + sonicWorkshopText) || !/rawCool/.test(paletteText + sonicWorkshopText) || !/rawAreaPrimary/.test(paletteText + sonicWorkshopText + accentControlText) || !/sonicWorkshopColors/.test(paletteText + sonicWorkshopText) || !/coverSourceKey/.test(paletteText + accentControlText) || !/function ensureSonicWorkshopCoverPaletteForUi/.test(accentControlText) || !/function sonicWorkshopCurrentCoverDomSource/.test(accentControlText) || !/function buildSonicWorkshopUiPaletteFromCanvas/.test(accentControlText) || !/function sonicWorkshopUiPaletteForKey/.test(accentControlText) || !/sonicWorkshopCoverUiSample\.palette/.test(accentControlText) || !/coverPickerCanvas/.test(accentControlText) || !/coverProxySrc/.test(accentControlText) || !/coverColors/.test(paletteText + sonicWorkshopText) || !/sonic-workshop-cool-picker/.test(indexText + fxBindText) || !/sonic-workshop-peak-picker/.test(indexText + fxBindText) || !/setSonicWorkshopRegionColorFromPicker/.test(fxBindText + sonicWorkshopText + accentControlText) || !/function sonicRawPaletteHex/.test(accentControlText) || /function sonicWorkshopCoverHex[\s\S]{0,700}sonicPaletteHex/.test(accentControlText) || !/uCoolCore:\s*cool/.test(sonicWorkshopText) || !/uRippleColor:\s*ripple/.test(sonicWorkshopText) || !/MRt\(We\.mineradioCustomTheme\.value\)/.test(sonicWorkshopVendorText) || !/Be\(function\(Mr\)\{return Mr===0\?1e-6:0\}\)/.test(sonicWorkshopVendorText)) {
+    fail('Sonic Workshop cover/custom colors must feed the real vendor terrain theme instead of only recoloring the UI controls');
+  }
+  if (!/colorLabState\.picker\)\s*colorLabState\.picker\.value\s*=\s*hex/.test(colorLabText) || !/id === 'sonic-workshop-cover-picker'[\s\S]{0,180}\^sonic-workshop-/.test(colorLabText) || !/pointerdown[\s\S]{0,180}updateColorLabFromSv\(e\)/.test(fxBindText) || !/function sonicWorkshopRegionControl\(id\)\s*\{[\s\S]{0,120}typeof id === 'object' && id\.id/.test(accentControlText) || !/function pushSonicWorkshopColorChange/.test(accentControlText) || !/function setSonicWorkshopThemeFromPicker[\s\S]{0,520}SONIC_WORKSHOP_COLOR_CONTROLS\.forEach/.test(accentControlText) || !/pushSonicWorkshopColorChange\(item\.colorKey\)/.test(accentControlText)) {
+    fail('Sonic Workshop color lab changes must commit into fx state, UI swatches, saved settings, and the live iframe theme');
   }
   if (!/function isPlaybackSpaceKey/.test(keyboardCameraText) || !/if \(isPlaybackSpaceKey\(e\)\) return;/.test(keyboardCameraText)) {
     fail('Space playback hotkey must not mark render interaction before resume playback');
+  }
+  if (!/global\.frequencyData/.test(sonicWorkshopText) || /sonicAudioMonitorState/.test(sonicWorkshopText) || /MineradioSonicWorkshop\.update\([\s\S]{0,260}audio:\s*sonicAudioFrame/.test(mainLoopText)) {
+    fail('Sonic Workshop derivative must use the local player analyser bridge instead of the original Sonic realtime spectrum frame');
+  }
+  if (!/WORKSHOP_AUDIO_TARGET_MAX_SAMPLE\s*=\s*0\.52/.test(sonicWorkshopText) || !/WORKSHOP_AUDIO_GAMMA\s*=\s*1\.55/.test(sonicWorkshopText) || !/WORKSHOP_AUDIO_MIN_FLOOR\s*=\s*0\.035/.test(sonicWorkshopText) || !/function workshopAudioFrameStats/.test(sonicWorkshopText) || !/function shapeWorkshopAudioValue/.test(sonicWorkshopText) || !/sonicWorkshopInputGain/.test(sonicWorkshopText) || /Math\.pow\(clamp01\(value\),\s*0\.68\)/.test(sonicWorkshopText) || /1\.05\s*\+\s*energy\s*\*\s*0\.34/.test(sonicWorkshopText)) {
+    fail('Sonic Workshop bridge must keep Wallpaper-like dark-field audio shaping instead of overdriving the terrain');
+  }
+  if (/getUserMedia|getDisplayMedia|desktopCapturer|MediaStream|D:\\\\Steam|workshop\\content/.test(sonicWorkshopText + sonicWorkshopBridgeText)) {
+    fail('Sonic Workshop derivative must use packaged assets and Mineradio analyser data instead of runtime capture or the Steam workshop path');
   }
   if (!/fx-sonicamp/.test(indexText) || !/fx-sonicrange/.test(indexText) || !/fx-sonicair/.test(indexText) || !/sonic-ground-base-picker/.test(indexText) || !/fx-sonicfloatcount/.test(indexText) || !/t-sonicGroundFloatingEnabled/.test(indexText) || !/音域地形/.test(indexText) || !/\^fx-sonic/.test(fxPanelText)) {
     fail('visual console must expose layout, color, ground EQ, and floating block controls for 音域回响');
@@ -4877,7 +4971,9 @@ function runMainStartupRecoveryCheck() {
   const appData = process.env.APPDATA;
   if (!appData) fail('APPDATA is required for the real main-entry startup recovery check');
   const runtimeName = `MineradioStartupQA-${process.pid}-${Date.now()}`;
-  const qaUserData = path.join(appData, runtimeName);
+  const qaUserDataParent = path.join(process.env.TEMP || appData, 'mineradio-startup-qa');
+  fs.mkdirSync(qaUserDataParent, { recursive: true });
+  const qaUserData = path.join(qaUserDataParent, runtimeName);
   const stateFile = path.join(qaUserData, 'startup-state.json');
   const qaSessionData = path.join('D:\\MineradioCache\\chromium', runtimeName);
   try {
@@ -4888,6 +4984,7 @@ function runMainStartupRecoveryCheck() {
         MINERADIO_RUNTIME_NAME: runtimeName,
         MINERADIO_APP_USER_MODEL_ID: 'com.mineradio.startup.qa',
         MINERADIO_NO_DESKTOP_SHORTCUT: '1',
+        MINERADIO_STARTUP_QA_USER_DATA: qaUserData,
         MINERADIO_STARTUP_TEST_SERVER_DELAY_MS: '4500',
         MINERADIO_STARTUP_TEST_FAIL_FIRST_NAV: '1',
         MINERADIO_STARTUP_QA_HIDDEN: '1',
@@ -4927,7 +5024,7 @@ function runMainStartupRecoveryCheck() {
     }
     console.log(`[OK] Startup shell visible in ${windowVisibleAt - state.startedAt}ms, before delayed server at ${serverReadyAt - state.startedAt}ms; injected first navigation failure recovered and reached ready in ${readyAt - state.startedAt}ms.`);
   } finally {
-    if (fs.existsSync(qaUserData)) removeOwnedStartupQaDirectory(qaUserData, appData, runtimeName);
+    if (fs.existsSync(qaUserData)) removeOwnedStartupQaDirectory(qaUserData, qaUserDataParent, runtimeName);
     const qaSessionParent = path.dirname(qaSessionData);
     if (fs.existsSync(qaSessionData)) removeOwnedStartupQaDirectory(qaSessionData, qaSessionParent, runtimeName);
   }
@@ -5241,6 +5338,7 @@ async function main() {
   runNodeSyntaxCheck(jsCheckFiles());
   runPlaybackAudioGraphRegressionCheck();
   runPlaybackSourceFallbackTransactionCheck();
+  runWallpaperEngineIdleDisposeRegressionCheck();
   runQQVipEntitlementRegressionCheck();
   runLoginEasterEggGateRegressionCheck();
   runQishuiProviderDistributionRegressionCheck();
@@ -5260,6 +5358,7 @@ async function main() {
   checkLyricBackfaceMaterialGuard();
   checkLyricScrollPerformanceGuard();
   checkPersistentCacheStorageGuard();
+  checkExternalUpdatePageBridgeGuard();
   checkLyricTranslationCompletenessGuard();
   checkLyricVerticalFloatToggleGuard();
   checkQishuiProviderGuard();
