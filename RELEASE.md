@@ -8,7 +8,8 @@
 - 安装包：`Mineradio-2.0.3-Setup.exe`
 - 仅从当前可信源码完整构建，不复用旧安装包或旧 `dist/`。
 - 正式 Release 不混入 Mineradio_Beat 产物。
-- GitHub Release 保持零二进制资产；安装包由网盘分发。
+- GitHub Release 仅附带完整安装包 `Mineradio-2.0.3-Setup.exe`，供用户手动下载；不上传 `latest.yml`、blockmap 或补丁。
+- `2.0.3+` 客户端不得从 Release assets 识别或下载安装包，软件内更新仍只读取正文中的网盘线路。
 - Release 正文使用 `<!-- mineradio-download-page: 线路名称|https://... -->` 写入 HTTPS 网盘地址，可配置多条线路。
 
 ## 网盘分发
@@ -29,7 +30,7 @@
 - `dist/latest.yml`
 - `dist/Mineradio-2.0.3-SHA256SUMS.txt`
 
-以上产物只用于本地验收和网盘上传，不作为 GitHub Release 资产发布。
+GitHub Release 只上传 `dist/Mineradio-2.0.3-Setup.exe`；其余产物只用于本地验收和校验，不作为 Release 资产发布。
 
 ## 发布前检查
 
