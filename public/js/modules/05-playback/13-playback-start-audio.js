@@ -1063,10 +1063,23 @@ async function playQueueAt(idx, opts) {
       }
     });
 
+    // 离线缓存命中需提前计算, 供封面加载分支使用 (跳过在线 URL 解析 / trial / fallback)
+    var offlineHitKey = null;
+    if (opts.offlineSimilarKey && offlineAudioManifest[opts.offlineSimilarKey]) {
+      // P5 相似续播重播: 直接复用指定缓存 key(已校验在 manifest 中)
+      offlineHitKey = opts.offlineSimilarKey;
+    } else if (typeof resolveOfflineAudioKey === 'function' && !albumGaplessHandoff) {
+      // 精确匹配始终生效(在线/离线); 相似匹配仅在离线时允许(坑10: 避免在线用相似版本替换原曲)
+      var cacheOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+      offlineHitKey = resolveOfflineAudioKey(song, { allowSimilar: cacheOffline });
+    }
+    if (offlineHitKey) {
+      song.__mineradioOffline = true;
+      song.__mineradioOfflineSimilar = (offlineHitKey !== queueItemKey(song));
+    }
     markPlayPhase('cover-load');
     safePlaybackStep('cover-load', function () {
       if (qualitySwitch) return;
-      var customCover = getCustomCoverForSong(song);
       var coverOpts = {
         trackToken: token,
         deferHeavy: true,
@@ -1076,6 +1089,25 @@ async function playQueueAt(idx, opts) {
         noCoverTransition: sameAlbumCoverSwitch,
         colorMixDuration: sameAlbumCoverSwitch ? 1 : undefined
       };
+      if (offlineHitKey) {
+        // 离线歌曲: 封面取自已下载文件内嵌/sidecar, 无需联网
+        // 注意: loadCoverFromUrl 仅接受 http(s) URL, 故这里自行 fetch 转 dataURL 再 apply
+        var coverEp = '/api/offline-audio/cover?key=' + encodeURIComponent(offlineHitKey);
+        fetch(coverEp)
+          .then(function (r) { if (!r.ok) throw new Error('no-cover'); return r.blob(); })
+          .then(function (blob) {
+            return new Promise(function (resolve) {
+              var fr = new FileReader();
+              fr.onload = function () { resolve(fr.result); };
+              fr.onerror = function () { resolve(null); };
+              fr.readAsDataURL(blob);
+            });
+          })
+          .then(function (dataUrl) { if (dataUrl) applyCoverDataUrl(dataUrl, coverOpts); })
+          .catch(function () {});
+        return;
+      }
+      var customCover = getCustomCoverForSong(song);
       if (customCover) applyCoverDataUrl(customCover, coverOpts);
       else loadCoverFromUrl(song.cover ? coverUrlWithSize(song.cover, 400) : '', coverOpts);
     });
@@ -1089,7 +1121,7 @@ async function playQueueAt(idx, opts) {
       return localStarted === true;
     }
     safePlaybackStep('show-loading', function () { showLoading({ trackSwitch: true, seamlessCover: true }); });
-    if (!qualitySwitch) lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55;
+    if (!qualitySwitch) { lyricSunEnergy = 0; lyricSunTarget = 0; lyricSunHold = 0; lyricSunAvg = 0; lyricSunPeak = 0.55; }
 
     // 首次播放: 粒子从暗处浮出 (Apple 风格)
     if (firstVisualPlay) {
@@ -1098,6 +1130,8 @@ async function playQueueAt(idx, opts) {
         tweenParticleAlpha(uniforms.uAlpha.value || 0, 1.0, 220);
       });
     }
+
+    // ---- 离线缓存命中: 跳过在线 URL 解析 / trial / fallback (offlineHitKey 已在封面加载前计算) ----
 
     try {
       markPlayPhase('source-url');
@@ -1114,7 +1148,10 @@ async function playQueueAt(idx, opts) {
       }
       var qualityParam = '&quality=' + encodeURIComponent(requestedQuality);
       var data;
-      if (albumGaplessHandoff) {
+      if (offlineHitKey) {
+        // 离线缓存命中: 直接走本地端点, 不走在线解析 / trial / fallback
+        data = { url: '/api/offline-audio?key=' + encodeURIComponent(offlineHitKey), offline: true, level: '' };
+      } else if (albumGaplessHandoff) {
         data = opts.preloadedData;
       } else if (opts.preResolvedPlaybackData && opts.preResolvedPlaybackData.url) {
         data = opts.preResolvedPlaybackData;
@@ -1176,6 +1213,14 @@ async function playQueueAt(idx, opts) {
       if (!data || !data.url) {
         var fallbackResult = await tryAutoPlaybackFallback(song, data, idx, token, retryPlaybackOpts);
         if (fallbackResult !== null) return fallbackResult === true;
+        // P5: 在线全源失败 → 尝试相似缓存版本续播(覆盖 navigator.onLine 误报为在线但实际离线的情形)
+        if (!opts.offlineSimilarKey) {
+          var simKey = (typeof resolveOfflineAudioKey === 'function') ? resolveOfflineAudioKey(song, { allowSimilar: true }) : null;
+          if (simKey && simKey !== queueItemKey(song) && offlineAudioManifest[simKey]) {
+            if (typeof showSourceFallbackNotice === 'function') showSourceFallbackNotice('离线续播', '使用缓存的相似版本播放');
+            return playQueueAt(idx, Object.assign({}, opts, { offlineSimilarKey: simKey }));
+          }
+        }
         if (opts.startupAutoplay) {
           markQueueItemPlaybackFailed(idx);
           return false;
@@ -1206,7 +1251,7 @@ async function playQueueAt(idx, opts) {
         document.getElementById('trial-banner').classList.add('show');
       }
       markPlayPhase('audio-element');
-      var proxyAudioUrl = opts.preloadedProxyAudioUrl || '/api/audio?url=' + encodeURIComponent(data.url);
+      var proxyAudioUrl = opts.preloadedProxyAudioUrl || (data && data.offline ? data.url : '/api/audio?url=' + encodeURIComponent(data.url));
       if (albumGaplessHandoff) {
         audioFadeSerial++;
         clearAudioFadeTimers();

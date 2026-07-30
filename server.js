@@ -160,6 +160,8 @@ const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
 const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.1.0';
+const OFFLINE_CACHE_DIR = process.env.MINERADIO_OFFLINE_DIR || path.join('D:\\MineradioCache', 'offline');
+const NodeID3 = require('node-id3');
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const qishuiAudioDecryptor = new TrackDecryptor();
 const qishuiAudioDecryptCache = new Map();
@@ -2945,6 +2947,359 @@ function audioContentTypeForUrl(audioUrl, upstreamType) {
   return upstreamType || 'audio/mpeg';
 }
 
+// ============================================================
+// 离线缓存 (P1: 音频离线闭环)
+// 目录: OFFLINE_CACHE_DIR/offline-manifest.json + 音频文件
+// 关键约束: 全量落盘(非代理截流, 见方案 R1); 汽水加密流存解密后字节(R2);
+//          试听片段(trial)由前端在下载前拒绝, 服务端不再二次校验。
+// ============================================================
+function getOfflineManifestPath() {
+  return path.join(OFFLINE_CACHE_DIR, 'offline-manifest.json');
+}
+function readOfflineManifest() {
+  try {
+    const raw = fs.readFileSync(getOfflineManifestPath(), 'utf8');
+    return JSON.parse(raw) || {};
+  } catch (e) {
+    return {};
+  }
+}
+function writeOfflineManifest(manifest) {
+  fs.mkdirSync(OFFLINE_CACHE_DIR, { recursive: true });
+  const tmp = getOfflineManifestPath() + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(manifest || {}, null, 2), 'utf8');
+  fs.renameSync(tmp, getOfflineManifestPath());
+}
+function detectAudioExtension(buffer) {
+  if (buffer && buffer.length >= 8) {
+    if (buffer[0] === 0x66 && buffer[1] === 0x4c && buffer[2] === 0x61 && buffer[3] === 0x43) return 'flac'; // fLaC
+    if (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) return 'mp3'; // ID3
+    if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return 'mp3'; // MPEG 音频帧
+    if (buffer[0] === 0x4f && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53) return 'ogg'; // OggS
+    if (buffer[4] === 0x66 && buffer[5] === 0x74 && buffer[6] === 0x79 && buffer[7] === 0x70) return 'm4a'; // ftyp
+  }
+  return 'audio';
+}
+function sanitizeOfflineFileName(name, artist) {
+  const safeName = String(name || '未知歌曲').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+  const safeArtist = String(artist || '未知歌手').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+  let base = safeName + ' - ' + safeArtist;
+  if (base.length > 160) base = base.slice(0, 160);
+  return base;
+}
+// 单参数版本: 由前端按命名规则算好的完整文件名基(不含扩展名), 仅做安全化与长度限制
+function sanitizeOfflineBase(name) {
+  return String(name || '未知歌曲').replace(/[\\/:*?"<>|]/g, '_').slice(0, 150);
+}
+function uniqueOfflineFilePath(dir, fileName) {
+  const ext = path.extname(fileName);
+  const stem = fileName.slice(0, fileName.length - ext.length);
+  let candidate = path.join(dir, fileName);
+  let n = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, stem + '_' + n + ext);
+    n++;
+  }
+  return candidate;
+}
+async function fetchFullAudioBuffer(audioUrl) {
+  if (String(audioUrl || '').indexOf('#auth=') >= 0) {
+    const dec = await getQishuiDecryptedAudio(audioUrl);
+    if (dec && dec.buffer) return dec.buffer;
+    throw new Error('QISHUI_DECRYPT_FAILED');
+  }
+  const up = await fetchWithTimeout(audioUrl, { headers: audioProxyHeadersFor(audioUrl, '') }, 60000);
+  if (!up.ok) throw new Error('UPSTREAM_HTTP_' + up.status);
+  return Buffer.from(await up.arrayBuffer());
+}
+async function downloadOfflineAudioFile(meta) {
+  fs.mkdirSync(OFFLINE_CACHE_DIR, { recursive: true });
+  let manifest = readOfflineManifest();
+  const existing = manifest[meta.key];
+  // 仅重写标签模式: 文件已存在, 跳过音频下载, 用最新元数据补全/覆盖标签(幂等, 修复旧文件标签不全)
+  if (meta.tagOnly) {
+    if (!existing) return existing || null;
+    const finalPath = path.join(OFFLINE_CACHE_DIR, existing.fileName);
+    if (!fs.existsSync(finalPath)) return existing;
+    let cover = null;
+    try { cover = await fetchCoverBuffer(meta.cover || existing.cover || ''); } catch (e) { cover = null; }
+    let tagResult = { ok: false, reason: 'SKIPPED' };
+    try {
+      tagResult = await writeAudioFileTags(finalPath, {
+        title: (meta.name != null && meta.name !== '') ? meta.name : (existing.name || ''),
+        artist: (meta.artist != null && meta.artist !== '') ? meta.artist : (existing.artist || ''),
+        album: (meta.album != null && meta.album !== '') ? meta.album : (existing.album || ''),
+        albumArtist: meta.albumArtist || existing.albumArtist || '',
+        track: meta.track || existing.track || '',
+        year: meta.year || existing.year || '',
+        genre: meta.genre || existing.genre || '',
+        lyric: meta.lyric || existing.lyric || '',
+        cover: cover,
+      });
+    } catch (e) { tagResult = { ok: false, reason: String((e && e.message) || e) }; }
+    if (cover && cover.buffer && cover.buffer.length) {
+      try { fs.writeFileSync(finalPath + '.cover', cover.buffer); } catch (e) {}
+    }
+    existing.tagStatus = tagResult.ok ? (tagResult.format || 'done') : ('failed:' + (tagResult.reason || ''));
+    existing.albumArtist = meta.albumArtist || existing.albumArtist || '';
+    existing.track = meta.track || existing.track || '';
+    existing.year = meta.year || existing.year || '';
+    existing.genre = meta.genre || existing.genre || '';
+    existing.lyric = meta.lyric || existing.lyric || '';
+    existing.cover = meta.cover || existing.cover || '';
+    manifest[meta.key] = existing;
+    writeOfflineManifest(manifest);
+    return existing;
+  }
+  const buffer = await fetchFullAudioBuffer(meta.url);
+  const ext = detectAudioExtension(buffer);
+  const baseName = (meta.fileNameHint ? sanitizeOfflineBase(meta.fileNameHint) : sanitizeOfflineFileName(meta.name, meta.artist)) + '.' + (ext || 'audio');
+  const finalPath = uniqueOfflineFilePath(OFFLINE_CACHE_DIR, baseName);
+  fs.writeFileSync(finalPath, buffer);
+  // 一次性抓取封面字节: 既用于嵌入音频文件, 也落盘 sidecar 供离线播放直出
+  let cover = null;
+  try { cover = await fetchCoverBuffer(meta.cover || ''); } catch (e) { cover = null; }
+  let tagResult = { ok: false, reason: 'SKIPPED' };
+  try {
+    tagResult = await writeAudioFileTags(finalPath, {
+      title: meta.name || '',
+      artist: meta.artist || '',
+      album: meta.album || '',
+      albumArtist: meta.albumArtist || '',
+      track: meta.track || '',
+      year: meta.year || '',
+      genre: meta.genre || '',
+      lyric: meta.lyric || '',
+      cover: cover,
+    });
+  } catch (e) { tagResult = { ok: false, reason: String((e && e.message) || e) }; }
+  if (cover && cover.buffer && cover.buffer.length) {
+    try { fs.writeFileSync(finalPath + '.cover', cover.buffer); } catch (e) {}
+  }
+  manifest[meta.key] = {
+    fileName: path.basename(finalPath),
+    ext,
+    name: meta.name || '',
+    artist: meta.artist || '',
+    album: meta.album || '',
+    albumArtist: meta.albumArtist || '',
+    track: meta.track || '',
+    year: meta.year || '',
+    genre: meta.genre || '',
+    lyric: meta.lyric || '',
+    provider: meta.provider || '',
+    quality: meta.quality || '',
+    cover: meta.cover || '',
+    duration: meta.duration || '',
+    size: buffer.length,
+    downloadedAt: Date.now(),
+    tagStatus: tagResult.ok ? (tagResult.format || 'done') : ('failed:' + (tagResult.reason || '')),
+  };
+  writeOfflineManifest(manifest);
+  return manifest[meta.key];
+}
+
+// ---------- 离线文件标签写入 (P3) ----------
+// 说明: flac-metadata@0.1.1 仅导出流式的 Processor(含模块级全局态, 并发不安全),
+// 故 FLAC 采用纯 Buffer 重建元数据块, 规避并发 bug; MP3 用 node-id3。
+function sniffImageMime(buf) {
+  if (buf && buf.length >= 3) {
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e) return 'image/png';
+    if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif';
+  }
+  return null;
+}
+function uint32be(n) { const b = Buffer.alloc(4); b.writeUInt32BE(n >>> 0, 0); return b; }
+function buildVorbisCommentBuffer(meta) {
+  const vendor = Buffer.from('reference Mineradio', 'utf8');
+  const comments = [];
+  if (meta.title) comments.push('TITLE=' + meta.title);
+  if (meta.artist) comments.push('ARTIST=' + meta.artist);
+  if (meta.album) comments.push('ALBUM=' + meta.album);
+  if (meta.albumArtist) comments.push('ALBUMARTIST=' + meta.albumArtist);
+  if (meta.lyric) comments.push('LYRICS=' + meta.lyric);
+  if (meta.track) comments.push('TRACKNUMBER=' + meta.track);
+  if (meta.year) comments.push('DATE=' + String(meta.year));
+  if (meta.genre) comments.push('GENRE=' + meta.genre);
+  const parts = [uint32be(vendor.length), vendor, uint32be(comments.length)];
+  comments.forEach(function (c) {
+    const b = Buffer.from(c, 'utf8');
+    parts.push(uint32be(b.length));
+    parts.push(b);
+  });
+  return Buffer.concat(parts);
+}
+function buildFlacPictureBuffer(coverBuffer, mime) {
+  const mimeBuf = Buffer.from(mime || 'image/jpeg', 'ascii');
+  const descBuf = Buffer.alloc(0);
+  const head = Buffer.concat([
+    uint32be(3),
+    uint32be(mimeBuf.length), mimeBuf,
+    uint32be(descBuf.length), descBuf,
+    uint32be(0), uint32be(0), uint32be(0), uint32be(0),
+    uint32be(coverBuffer.length)
+  ]);
+  return Buffer.concat([head, coverBuffer]);
+}
+function writeFlacTags(filePath, meta, cover) {
+  const buf = fs.readFileSync(filePath);
+  if (buf.length < 4 || buf.toString('ascii', 0, 4) !== 'fLaC') throw new Error('NOT_FLAC');
+  let pos = 4;
+  const kept = [];
+  // peek 式解析: 仅对合法元数据块(type<=6)才前进 pos; 遇到音频帧(首字节 0xFF → type 127)
+  // 或非法块立即 break, pos 停在音频起点, 避免把音频首字节最高位误判为 isLast 而丢 4 字节。
+  while (pos + 4 <= buf.length) {
+    const header = buf.readUInt32BE(pos);
+    const isLast = (header & 0x80000000) !== 0;
+    const type = (header >>> 24) & 0x7f;
+    const len = header & 0x00ffffff;
+    if (type > 6) break;
+    pos += 4;
+    if (pos + len > buf.length) break;
+    const data = buf.slice(pos, pos + len); pos += len;
+    if (type === 4 || type === 6) { if (isLast) break; continue; } // 丢弃旧 VORBIS_COMMENT / PICTURE, 稍后重写
+    kept.push({ type: type, data: data });
+    if (isLast) break;
+  }
+  const blocks = kept.slice();
+  blocks.push({ type: 4, data: buildVorbisCommentBuffer(meta) });
+  if (cover && cover.buffer && cover.buffer.length) blocks.push({ type: 6, data: buildFlacPictureBuffer(cover.buffer, cover.mime) });
+  let out = Buffer.from('fLaC');
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    const last = (i === blocks.length - 1);
+    const h = (last ? 0x80000000 : 0) | ((b.type & 0x7f) << 24) | (b.data.length & 0x00ffffff);
+    out = Buffer.concat([out, uint32be(h), b.data]);
+  }
+  out = Buffer.concat([out, buf.slice(pos)]); // 追加剩余音频帧
+  return out;
+}
+function writeMp3Tags(filePath, meta, cover) {
+  const tags = {
+    title: meta.title || '',
+    artist: meta.artist || '',
+    album: meta.album || '',
+    albumartist: meta.albumArtist || '',
+    trackNumber: meta.track || '',
+    year: meta.year || '',
+    genre: meta.genre || '',
+  };
+  if (cover && cover.buffer && cover.buffer.length) {
+    tags.image = { type: { id: 3, name: 'Front Cover' }, mime: cover.mime || 'image/jpeg', imageBuffer: cover.buffer, description: '' };
+  }
+  if (meta.lyric) tags.unsynchronisedLyrics = [{ language: 'eng', text: meta.lyric }];
+  NodeID3.write(tags, filePath);
+}
+function atomicWriteAudioTags(filePath, buf) {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  let tmp = path.join(dir, '.' + base + '.tagtmp');
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      fs.writeFileSync(tmp, buf);
+      fs.renameSync(tmp, filePath);
+      return;
+    } catch (e) {
+      tmp = path.join(dir, '.' + base + '.tagtmp' + attempt);
+    }
+  }
+  fs.writeFileSync(filePath, buf); // 退化就地覆盖(Windows 文件锁)
+}
+async function fetchCoverBuffer(coverUrl) {
+  if (!coverUrl || typeof coverUrl !== 'string') return null;
+  let target = coverUrl.trim();
+  // 兼容已代理的相对路径 /api/cover?url=... (前端 song.cover 偶尔为代理路径)
+  if (target.charAt(0) === '/') {
+    const m = target.match(/[?&]url=([^&]+)/);
+    if (m) { try { target = decodeURIComponent(m[1]); } catch (e) {} }
+    else return null;
+  }
+  if (!/^https?:\/\//i.test(target)) return null;
+  // 直连抓取: 按音频代理同源策略设置 Referer(QQ→y.qq.com / 酷狗 / 汽水), 提升各源封面命中率
+  try {
+    const up = await fetchWithTimeout(target, { headers: audioProxyHeadersFor(target, '') }, 20000);
+    if (up.ok) {
+      const cb = Buffer.from(await up.arrayBuffer());
+      const mime = sniffImageMime(cb);
+      if (mime) return { buffer: cb, mime: mime };
+    }
+  } catch (e) {}
+  // 回退: 复用应用自身的 /api/cover 代理(在线封面已验证可用), 避免各源防盗链差异
+  try {
+    const selfUrl = 'http://127.0.0.1:' + PORT + '/api/cover?url=' + encodeURIComponent(target);
+    const up2 = await fetchWithTimeout(selfUrl, {}, 20000);
+    if (up2.ok) {
+      const cb = Buffer.from(await up2.arrayBuffer());
+      const mime = sniffImageMime(cb);
+      if (mime) return { buffer: cb, mime: mime };
+    }
+  } catch (e) {}
+  return null;
+}
+// 从已完成下载的音频文件中抽取内嵌封面, 供离线播放使用
+function extractEmbeddedCover(filePath) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    const fmt = detectAudioExtension(buf);
+    if (fmt === 'flac') {
+      if (buf.length < 4 || buf.toString('ascii', 0, 4) !== 'fLaC') return null;
+      let pos = 4; let isLast = false;
+      while (pos + 4 <= buf.length && !isLast) {
+        const header = buf.readUInt32BE(pos); pos += 4;
+        isLast = (header & 0x80000000) !== 0;
+        const type = (header >>> 24) & 0x7f;
+        const len = header & 0x00ffffff;
+        if (type > 6) break;
+        if (type === 6) {
+          let pp = pos;
+          pp += 4; // picture type (3=front cover)
+          const mimeLen = buf.readUInt32BE(pp); pp += 4;
+          const mime = buf.toString('ascii', pp, pp + mimeLen); pp += mimeLen;
+          const descLen = buf.readUInt32BE(pp); pp += 4; pp += descLen;
+          pp += 16; // width,height,depth,colors (4 字段 × 4 字节)
+          const dataLen = buf.readUInt32BE(pp); pp += 4;
+          if (pp + dataLen > buf.length) return null;
+          const cbuf = buf.slice(pp, pp + dataLen);
+          return { buffer: cbuf, mime: mime || (sniffImageMime(cbuf) || 'image/jpeg') };
+        }
+        if (pos + len > buf.length) break;
+        pos += len;
+      }
+      return null;
+    }
+    if (fmt === 'mp3') {
+      const tags = NodeID3.read(filePath);
+      if (tags && tags.image && tags.image.imageBuffer) {
+        return { buffer: tags.image.imageBuffer, mime: tags.image.mime || 'image/jpeg' };
+      }
+      return null;
+    }
+  } catch (e) {}
+  return null;
+}
+async function writeAudioFileTags(filePath, meta) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    const fmt = detectAudioExtension(buf);
+    let cover = null;
+    if (meta.cover && meta.cover.buffer && meta.cover.buffer.length) cover = meta.cover;
+    else if (meta.coverUrl) cover = await fetchCoverBuffer(meta.coverUrl);
+    if (fmt === 'flac') {
+      const out = writeFlacTags(filePath, meta, cover);
+      atomicWriteAudioTags(filePath, out);
+      return { ok: true, format: 'flac' };
+    }
+    if (fmt === 'mp3') {
+      writeMp3Tags(filePath, meta, cover);
+      return { ok: true, format: 'mp3' };
+    }
+    return { ok: false, reason: 'UNSUPPORTED_FORMAT', format: fmt };
+  } catch (e) {
+    return { ok: false, reason: String((e && e.message) || e), format: '' };
+  }
+}
+
 function mapQQPlaylist(pl, kind) {
   pl = pl || {};
   const dirid = pl.dirid || pl.dir_id || '';
@@ -4680,6 +5035,67 @@ const server = http.createServer(async (req, res) => {
       },
     });
     return;
+  }
+
+  if (pn === '/api/local-audio' || pn === '/api/local-cover') {
+    const rawPath = url.searchParams.get('path') || '';
+    if (!rawPath) { sendJSON(res, { ok: false, error: 'MISSING_PATH' }, 400); return; }
+    if (!server.localAudioFolders || server.localAudioFolders.size === 0) { sendJSON(res, { ok: false, error: 'NO_LOCAL_FOLDER_REGISTERED' }, 403); return; }
+    if (!server.isPathInsideLocalAudioFolders(rawPath)) { sendJSON(res, { ok: false, error: 'PATH_NOT_AUTHORIZED' }, 403); return; }
+    let fileStat;
+    try { fileStat = fs.statSync(rawPath); } catch (e) { sendJSON(res, { ok: false, error: 'FILE_NOT_FOUND' }, 404); return; }
+    if (!fileStat.isFile()) { sendJSON(res, { ok: false, error: 'NOT_A_FILE' }, 404); return; }
+    const ext = path.extname(rawPath).toLowerCase();
+    if (pn === '/api/local-cover') {
+      const imageExt = /\.(jpe?g|png|gif|webp|bmp)$/i;
+      if (imageExt.test(ext)) {
+        const coverTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+        serveLocalFile(res, rawPath, fileStat, coverTypes[ext] || 'application/octet-stream', req, true);
+        return;
+      }
+      if (!/\.(mp3|flac|wav|ogg|m4a|aac|wma)$/i.test(ext)) { sendJSON(res, { ok: false, error: 'UNSUPPORTED_FILE' }, 403); return; }
+      try {
+        const dataUrl = (server.localCoverCache && server.localCoverCache[rawPath]) ||
+          (typeof server.buildLocalCoverDataUrl === 'function' ? server.buildLocalCoverDataUrl(rawPath) : null);
+        if (!dataUrl) { res.statusCode = 404; res.end('no cover'); return; }
+        const buf = Buffer.from(String(dataUrl).split(',')[1] || '', 'base64');
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'private, max-age=86400');
+        res.end(buf);
+        return;
+      } catch (e) { res.statusCode = 500; res.end('cover extract failed'); return; }
+    }
+    serveLocalFile(res, rawPath, fileStat, server.audioContentTypeForLocalFile(ext), req, false);
+    return;
+  }
+
+  function serveLocalFile(res, filePath, stat, contentType, req, isCover) {
+    const total = stat.size;
+    const range = req && req.headers ? req.headers.range : null;
+    const headers = {
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    };
+    if (range) {
+      const m = /bytes=(\d*)-(\d*)/.exec(range);
+      let start = m && m[1] ? parseInt(m[1], 10) : 0;
+      let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+      if (isNaN(start) || isNaN(end) || start > end || end >= total) { start = 0; end = total - 1; }
+      headers['Content-Range'] = 'bytes ' + start + '-' + end + '/' + total;
+      headers['Content-Length'] = (end - start + 1);
+      res.writeHead(206, headers);
+      const stream = fs.createReadStream(filePath, { start: start, end: end });
+      stream.on('error', function () { try { res.destroy(); } catch (e) { } });
+      stream.pipe(res);
+    } else {
+      headers['Content-Length'] = total;
+      res.writeHead(200, headers);
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', function () { try { res.destroy(); } catch (e) { } });
+      stream.pipe(res);
+    }
   }
 
   if (pn === '/api/platform/capabilities') {
@@ -6682,6 +7098,160 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ---------- 离线缓存 (P1: 音频离线闭环) ----------
+  if (pn === '/api/offline-manifest') {
+    try {
+      sendJSON(res, { ok: true, manifest: readOfflineManifest() });
+    } catch (err) {
+      sendJSON(res, { ok: false, reason: err.message }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/offline-audio/download') {
+    if (req.method !== 'POST') { res.writeHead(405, { 'Access-Control-Allow-Origin': '*' }); res.end(); return; }
+    try {
+      const body = await readRequestBody(req);
+      const key = String(body.key || '').trim();
+      const srcUrl = String(body.url || '').trim();
+      if (!key || !srcUrl) { sendJSON(res, { ok: false, reason: 'BAD_REQUEST' }, 400); return; }
+      await downloadOfflineAudioFile({
+        key,
+        url: srcUrl,
+        provider: body.provider,
+        quality: body.quality,
+        fileNameHint: body.fileNameHint,
+        name: body.name,
+        artist: body.artist,
+        album: body.album,
+        albumArtist: body.albumArtist,
+        track: body.track,
+        year: body.year,
+        genre: body.genre,
+        lyric: body.lyric,
+        cover: body.cover,
+        duration: body.duration,
+        tagOnly: body.tagOnly,
+      });
+      sendJSON(res, { ok: true, key, entry: readOfflineManifest()[key] });
+    } catch (err) {
+      console.error('[OfflineDownload]', err);
+      sendJSON(res, { ok: false, reason: err.message || 'DOWNLOAD_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/offline-tags') {
+    if (req.method !== 'POST') { res.writeHead(405, { 'Access-Control-Allow-Origin': '*' }); res.end(); return; }
+    try {
+      const body = await readRequestBody(req);
+      const key = String(body.key || '').trim();
+      if (!key) { sendJSON(res, { ok: false, reason: 'BAD_REQUEST' }, 400); return; }
+      const manifest = readOfflineManifest();
+      const entry = manifest[key];
+      if (!entry) { sendJSON(res, { ok: false, reason: 'NOT_CACHED' }, 404); return; }
+      const filePath = path.join(OFFLINE_CACHE_DIR, entry.fileName);
+      if (!fs.existsSync(filePath)) { sendJSON(res, { ok: false, reason: 'FILE_MISSING' }, 404); return; }
+      const result = await writeAudioFileTags(filePath, {
+        title: entry.name || '',
+        artist: entry.artist || '',
+        album: entry.album || '',
+        albumArtist: entry.albumArtist || '',
+        track: entry.track || '',
+        year: entry.year || '',
+        genre: entry.genre || '',
+        lyric: entry.lyric || '',
+        coverUrl: entry.cover || '',
+      });
+      // 回填时若封面字节此前未落盘, 重新抓取并写 sidecar (供离线封面直出)
+      if (entry.cover && !fs.existsSync(filePath + '.cover')) {
+        try {
+          const cb = await fetchCoverBuffer(entry.cover);
+          if (cb && cb.buffer && cb.buffer.length) fs.writeFileSync(filePath + '.cover', cb.buffer);
+        } catch (e) {}
+      }
+      entry.tagStatus = result.ok ? (result.format || 'done') : ('failed:' + (result.reason || ''));
+      manifest[key] = entry;
+      writeOfflineManifest(manifest);
+      sendJSON(res, Object.assign({ ok: result.ok, key: key }, result));
+    } catch (err) {
+      console.error('[OfflineTags]', err);
+      sendJSON(res, { ok: false, reason: err.message || 'TAG_FAILED' }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/offline-audio/cover') {
+    try {
+      const key = url.searchParams.get('key');
+      const manifest = readOfflineManifest();
+      const entry = key ? manifest[key] : null;
+      if (!entry) { res.writeHead(404); res.end(); return; }
+      const filePath = path.join(OFFLINE_CACHE_DIR, entry.fileName);
+      let cover = null;
+      if (fs.existsSync(filePath)) {
+        try { cover = extractEmbeddedCover(filePath); } catch (e) { cover = null; }
+      }
+      if (!cover && fs.existsSync(filePath + '.cover')) {
+        try {
+          const cb = fs.readFileSync(filePath + '.cover');
+          if (cb && cb.length) cover = { buffer: cb, mime: sniffImageMime(cb) || 'image/jpeg' };
+        } catch (e) { cover = null; }
+      }
+      if (!cover) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, {
+        'Content-Type': cover.mime || 'image/jpeg',
+        'Access-Control-Allow-Origin': '*',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'Cache-Control': 'public, max-age=86400',
+      });
+      res.end(cover.buffer);
+    } catch (e) {
+      console.error('[OfflineCover]', e);
+      res.writeHead(500); res.end();
+    }
+    return;
+  }
+
+  if (pn === '/api/offline-audio') {
+    if (req.method === 'DELETE') {
+      try {
+        const key = url.searchParams.get('key');
+        const manifest = readOfflineManifest();
+        const entry = key ? manifest[key] : null;
+        if (entry) {
+          try { fs.unlinkSync(path.join(OFFLINE_CACHE_DIR, entry.fileName)); } catch (e) {}
+          try { fs.unlinkSync(path.join(OFFLINE_CACHE_DIR, entry.fileName + '.cover')); } catch (e) {}
+          delete manifest[key];
+          writeOfflineManifest(manifest);
+        }
+        sendJSON(res, { ok: true });
+      } catch (err) {
+        sendJSON(res, { ok: false, reason: err.message }, 500);
+      }
+      return;
+    }
+    // GET: 流式返回离线音频 (支持 Range/206, 供 <audio> 拖进度条)
+    try {
+      const key = url.searchParams.get('key');
+      if (!key) { res.writeHead(400); res.end('Missing key'); return; }
+      const manifest = readOfflineManifest();
+      const entry = manifest[key];
+      if (!entry) { res.writeHead(404); res.end('Not cached'); return; }
+      const filePath = path.join(OFFLINE_CACHE_DIR, entry.fileName);
+      if (!fs.existsSync(filePath)) { res.writeHead(404); res.end('File missing'); return; }
+      const buffer = fs.readFileSync(filePath);
+      const contentType = ({
+        flac: 'audio/flac', mp3: 'audio/mpeg', m4a: 'audio/mp4', ogg: 'audio/ogg', wav: 'audio/wav',
+      })[entry.ext] || 'application/octet-stream';
+      sendAudioBuffer(res, buffer, contentType, req.headers.range || '');
+    } catch (err) {
+      console.error('[OfflineAudio]', err);
+      if (!res.headersSent) { res.writeHead(500); res.end(); }
+    }
+    return;
+  }
+
   // ---------- 静态资源 ----------
   if (pn === '/favicon.ico') {
     serveStatic(res, path.join(__dirname, 'build', 'icon.ico'));
@@ -6701,5 +7271,28 @@ server.listen(PORT, HOST, () => {
 });
 
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
+
+server.localAudioFolders = new Set();
+server.registerLocalAudioFolder = function (p) {
+  if (!p) return false;
+  try { server.localAudioFolders.add(path.resolve(String(p))); return true; } catch (e) { return false; }
+};
+server.isPathInsideLocalAudioFolders = function (p) {
+  if (!p) return false;
+  const n = path.resolve(String(p));
+  const sep = path.sep;
+  for (const f of server.localAudioFolders) {
+    const nf = path.resolve(String(f));
+    if (n === nf || n.indexOf(nf + sep) === 0) return true;
+  }
+  return false;
+};
+server.audioContentTypeForLocalFile = function (ext) {
+  return ({
+    '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+    '.wma': 'audio/x-ms-wma'
+  })[String(ext || '').toLowerCase()] || 'application/octet-stream';
+};
 
 module.exports = server;

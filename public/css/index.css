@@ -13372,6 +13372,251 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   line-height: 1.45
 }
 
+.offline-cache-panel {
+  border: 1px solid rgba(255, 255, 255, .075);
+  background: rgba(3, 9, 14, .42);
+  border-radius: 10px;
+  padding: 10px;
+  margin: -1px 0 12px
+}
+
+.offline-cache-head,
+.offline-cache-row,
+.offline-cache-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px
+}
+
+.offline-cache-head {
+  color: rgba(255, 255, 255, .82);
+  font-size: 11px;
+  font-weight: 700
+}
+
+.offline-cache-head span:last-child,
+.offline-cache-row b {
+  color: rgba(var(--fc-accent-rgb), .86);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums
+}
+
+.offline-cache-row {
+  color: rgba(255, 255, 255, .63);
+  font-size: 10px;
+  padding: 4px 0
+}
+
+.offline-cache-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(0, 0, 0, .32) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='%23ffffff99'%3E%3Cpath d='M0 0h10L5 6z'/%3E%3C/svg%3E") no-repeat right 7px center;
+  background-size: 10px 6px;
+  color: rgba(255, 255, 255, .9);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px;
+  padding: 4px 22px 4px 8px;
+  font-size: 10.5px;
+  min-width: 110px;
+  max-width: 160px;
+  outline: none;
+  cursor: pointer
+}
+
+.offline-cache-select:focus {
+  border-color: rgba(120, 200, 255, .6)
+}
+
+.offline-cache-select option {
+  background: #1a1f24;
+  color: rgba(255, 255, 255, .9)
+}
+
+.offline-cache-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(222, 240, 246, .38);
+  font-size: 9px;
+  line-height: 1.45;
+  margin: 2px 0 7px
+}
+
+.offline-cache-actions {
+  justify-content: flex-start;
+  margin: 7px 0 10px
+}
+
+.offline-cache-actions .fx-mini-btn {
+  min-height: 25px;
+  padding: 0 8px;
+  font-size: 10px
+}
+
+.offline-cache-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  padding-top: 6px
+}
+
+.offline-cache-empty {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, .4);
+  padding: 8px 2px;
+  line-height: 1.5
+}
+
+.offline-playlist-banner {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  margin: 6px 8px 2px;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #ffd9a8;
+  background: linear-gradient(180deg, rgba(255, 150, 60, .16), rgba(255, 120, 40, .1));
+  border: 1px solid rgba(255, 160, 80, .35);
+  border-radius: 9px;
+  backdrop-filter: blur(6px)
+}
+
+.offline-cache-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, .05)
+}
+
+.offline-cache-item-main {
+  flex: 1;
+  min-width: 0
+}
+
+.offline-cache-item-name {
+  font-size: 11px;
+  color: rgba(255, 255, 255, .86);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis
+}
+
+.offline-cache-item-sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, .42)
+}
+
+.offline-cache-del {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, .45);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1
+}
+
+.offline-cache-del:hover {
+  background: rgba(255, 90, 90, .16);
+  color: #ff9a9a
+}
+
+.light-theme .offline-cache-panel,
+.fx-light .offline-cache-panel {
+  border-color: rgba(0, 0, 0, .08);
+  background: rgba(255, 255, 255, .52)
+}
+
+.light-theme .offline-cache-head,
+.fx-light .offline-cache-head {
+  color: rgba(0, 0, 0, .78)
+}
+
+.light-theme .offline-cache-row,
+.fx-light .offline-cache-row {
+  color: rgba(0, 0, 0, .62)
+}
+
+.light-theme .offline-cache-select,
+.fx-light .offline-cache-select {
+  background-color: rgba(255, 255, 255, .7);
+  border-color: rgba(0, 0, 0, .14);
+  color: rgba(0, 0, 0, .85)
+}
+
+.light-theme .offline-cache-select option,
+.fx-light .offline-cache-select option {
+  background: #f5f7f9;
+  color: rgba(0, 0, 0, .85)
+}
+
+.light-theme .offline-cache-path,
+.fx-light .offline-cache-path {
+  color: rgba(0, 0, 0, .42)
+}
+
+.light-theme .offline-cache-empty,
+.fx-light .offline-cache-empty {
+  color: rgba(0, 0, 0, .45)
+}
+
+.light-theme .offline-cache-item-name,
+.fx-light .offline-cache-item-name {
+  color: rgba(0, 0, 0, .82)
+}
+
+.light-theme .offline-cache-item-sub,
+.fx-light .offline-cache-item-sub {
+  color: rgba(0, 0, 0, .45)
+}
+
+.light-theme .offline-cache-del,
+.fx-light .offline-cache-del {
+  color: rgba(0, 0, 0, .4)
+}
+
+.light-theme .offline-cache-del:hover,
+.fx-light .offline-cache-del:hover {
+  background: rgba(255, 90, 90, .12);
+  color: #d93025
+}
+
+.offline-cache-modal {
+  width: min(520px, calc(100vw - 44px));
+  max-width: min(520px, calc(100vw - 44px));
+  max-height: calc(100vh - 60px);
+  padding: 22px 24px 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column
+}
+
+.offline-cache-modal .login-panel-head {
+  flex: 0 0 auto;
+  margin-bottom: 14px
+}
+
+.offline-cache-modal .offline-cache-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden
+}
+
+.offline-cache-modal .offline-cache-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto
+}
+
 .fx-advanced.open .fx-advanced-body {
   display: block
 }
@@ -17916,3 +18161,206 @@ body.desktop-shell.desktop-wallpaper-mode.diy-mode #bottom-bar.stage-mode {
     width: calc(100vw - var(--desktop-safe-left) - var(--desktop-safe-right) - 24px);
   }
 }
+
+/* ============================================================
+ *  音效 (Audio FX) —— 嵌入「视觉控制台 · 音效」Tab 的内容块
+ *  样式沿用控制台原生组件（.fx-fold / .fx-slider / .fx-toggle）
+ *  配色：白字（--fc-accent）+ 青色（--home-accent）仅作点缀
+ * ============================================================ */
+
+.audio-fx-block { display: block }
+.audio-fx-block + .audio-fx-block { margin-top: 2px }
+
+.audio-fx-label {
+  font-size: 10.5px;
+  letter-spacing: .4px;
+  color: rgba(255, 255, 255, .50);
+  margin: 12px 0 8px
+}
+.audio-fx-label:first-child { margin-top: 2px }
+
+/* 预设 / 声场：深色玻璃卡（深底 + 顶部高光 + 白色 1px 细描边）
+   风格仿主页 home-tile：白字主标题 + 灰副标。
+   设计原则：基色统一（未激活/激活共享同一深玻璃底色 + 顶部高光），
+   激活态通过"加 inset 整面散光"区分，不加深底色，避免出现"黑→亮"突变。 */
+.audio-fx-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 6px 0 4px
+}
+.audio-fx-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 9px 10px 10px;
+  min-height: 46px;
+  border-radius: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+  color: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(255, 255, 255, .10);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .08) 0%, rgba(255, 255, 255, 0) 38%),
+    rgba(0, 0, 0, .38);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 1px 2px rgba(0, 0, 0, .28);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  overflow: hidden
+}
+.audio-fx-chip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .18), rgba(255, 255, 255, 0));
+  pointer-events: none
+}
+.audio-fx-chip:hover {
+  border-color: rgba(255, 255, 255, .16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 38%),
+    rgba(0, 0, 0, .38)
+}
+.audio-fx-chip:active { transform: translateY(0.5px) }
+.audio-fx-chip .audio-fx-chip-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .2px;
+  color: rgba(255, 255, 255, .94);
+  line-height: 1.1
+}
+.audio-fx-chip .audio-fx-chip-sub {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, .50);
+  letter-spacing: .15px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%
+}
+/* 激活态：与未激活共享同一基色（不加深底色）
+   区别仅在：底部 radial 上泛光 + 整面 inset 雾光 + 描边/副标略亮 + 主标 text-shadow */
+.audio-fx-chip.active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 32%),
+    radial-gradient(140% 100% at 50% 100%, rgba(255, 255, 255, .18) 0%, rgba(255, 255, 255, 0) 55%),
+    rgba(0, 0, 0, .38);
+  box-shadow:
+    inset 0 0 32px rgba(255, 255, 255, .14),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 1px 2px rgba(0, 0, 0, .32)
+}
+.audio-fx-chip.active .audio-fx-chip-name { color: #fff; text-shadow: 0 0 8px rgba(255, 255, 255, .22) }
+.audio-fx-chip.active .audio-fx-chip-sub { color: rgba(255, 255, 255, .68) }
+
+/* 3D 开关：与预设卡共用同一基色，仅在 on 时加整面散光（同款基色共享策略） */
+#audio-fx-3d {
+  background: rgba(0, 0, 0, .38)
+}
+#audio-fx-3d.on {
+  color: #fff;
+  border-color: rgba(255, 255, 255, .18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 32%),
+    radial-gradient(140% 100% at 50% 100%, rgba(255, 255, 255, .18) 0%, rgba(255, 255, 255, 0) 55%),
+    rgba(0, 0, 0, .38);
+  box-shadow:
+    inset 0 0 32px rgba(255, 255, 255, .14),
+    inset 0 1px 0 rgba(255, 255, 255, .18),
+    0 1px 2px rgba(0, 0, 0, .32)
+}
+#audio-fx-3d.on .dot { background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, .35) }
+
+/* 频响曲线：低饱和玻璃底（呼应 home-tile 卡片深底）
+   描边与填充改用白色低饱和 + 极淡青辉光，告别满屏高亮青。 */
+.audio-fx-curve {
+  display: block;
+  width: 100%;
+  height: 96px;
+  margin: 6px 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .03) 0%, rgba(0, 0, 0, 0) 60%),
+    rgba(0, 0, 0, .38);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset
+}
+
+/* 10 段 EQ 容器：深玻璃底 + 顶部高光（与其他卡片一致） */
+.audio-fx-eq {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  height: 172px;
+  margin: 4px 0 12px;
+  padding: 12px 8px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .04) 0%, rgba(255, 255, 255, 0) 30%),
+    rgba(0, 0, 0, .34);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .03) inset
+}
+.audio-fx-band { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; height: 100% }
+.audio-fx-band-freq { font-size: 9px; color: rgba(255, 255, 255, .42); margin-bottom: 6px; letter-spacing: .2px }
+.audio-fx-band-track {
+  position: relative;
+  flex: 1;
+  width: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .07);
+  cursor: ns-resize;
+  overflow: hidden;
+  touch-action: none
+}
+/* 填充：白色低饱和渐变 + 极淡青外发光（克制点缀，告别满屏亮青） */
+.audio-fx-band-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .58), rgba(255, 255, 255, .14));
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(0, 245, 212, .12)
+}
+.audio-fx-band-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  cursor: ns-resize
+}
+.audio-fx-band-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 10px;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(0, 245, 212, .28), 0 0 0 1px rgba(255, 255, 255, .12);
+  border: none
+}
+.audio-fx-band-input::-moz-range-thumb {
+  width: 22px;
+  height: 10px;
+  border: none;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(0, 245, 212, .28)
+}
+.audio-fx-band-val { font-size: 9px; color: rgba(255, 255, 255, .5); margin-top: 6px; height: 12px; font-variant-numeric: tabular-nums }

@@ -1035,7 +1035,10 @@
             <code class="cache-storage-path small" id="cache-storage-wallpaper-path">—</code>
             <div class="cache-storage-row muted"><span>设置与登录资料（安全固定）</span><b id="cache-storage-userdata-size">—</b></div>
             <code class="cache-storage-path small" id="cache-storage-userdata-path">—</code>
-            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词缓存立即切换；网络、节奏分析与 WE 静音场景缓存目录在下次重启后切换。</div>
+            <div class="fx-sub cache-storage-note" id="cache-storage-note">歌词缓存立即切换；网络、节奏分析、WE 静音场景与更新缓存目录在下次重启后切换。</div>
+            <div class="cache-storage-actions" style="margin-top:10px">
+              <button class="fx-mini-btn" type="button" onclick="openOfflineCacheModal()">离线音乐管理</button>
+            </div>
           </div>
           <div class="fx-slider"><label>粒子尺寸</label><input id="fx-point" type="range" min="0.5" max="2.2"
               step="0.01"><output></output></div>
@@ -1880,6 +1883,45 @@
         </span>
         <span class="desktop-mode-switch-track" aria-hidden="true"><span></span></span>
       </button>
+    </div>
+  </div>
+
+  <!-- 离线音乐管理面板 -->
+  <div id="offline-cache-modal" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+    onclick="if(event.target===this)closeOfflineCacheModal()">
+    <div class="modal offline-cache-modal" onclick="event.stopPropagation()">
+      <div class="login-panel-head">
+        <div><b>离线音乐</b><small>缓存管理</small></div>
+        <button class="login-panel-close" type="button" onclick="closeOfflineCacheModal()">×</button>
+      </div>
+      <div class="offline-cache-panel" id="offline-cache-panel">
+        <div class="offline-cache-head"><span>已离线歌曲</span><span id="offline-cache-total">读取中…</span></div>
+        <div class="offline-cache-row"><span>缓存音质</span>
+          <select id="offline-cache-quality" class="offline-cache-select">
+            <option value="default">跟随播放默认</option>
+            <option value="standard">标准 128k</option>
+            <option value="exhigh">极高 320k</option>
+            <option value="lossless">无损 FLAC</option>
+            <option value="hires">Hi-Res</option>
+          </select>
+        </div>
+        <div class="offline-cache-row"><span>文件命名</span>
+          <select id="offline-cache-naming" class="offline-cache-select">
+            <option value="title-artist">歌名 - 歌手</option>
+            <option value="artist-title">歌手 - 歌名</option>
+            <option value="title">仅歌名</option>
+            <option value="key">音源标识</option>
+          </select>
+        </div>
+        <code class="offline-cache-path" id="offline-cache-path">离线目录/offline</code>
+        <div class="offline-cache-actions">
+          <button class="fx-mini-btn ghost" type="button" onclick="openOfflineCacheDir()">打开目录</button>
+          <button class="fx-mini-btn ghost" type="button" onclick="backfillOfflineTags()">补全标签</button>
+          <button class="fx-mini-btn ghost" type="button" onclick="refreshOfflineCachePanel()">刷新</button>
+          <button class="fx-mini-btn ghost" type="button" onclick="clearAllOfflineCacheConfirm()">清空全部</button>
+        </div>
+        <div class="offline-cache-list" id="offline-cache-list"></div>
+      </div>
     </div>
   </div>
 
