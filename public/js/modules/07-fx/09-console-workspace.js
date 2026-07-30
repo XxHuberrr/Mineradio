@@ -4,6 +4,7 @@ var FX_CONSOLE_TABS = [
   { key: 'home', label: '常用' },
   { key: 'interface', label: '界面' },
   { key: 'lyrics', label: '歌词' },
+  { key: 'audio', label: '音效' },
   { key: 'motion', label: '动效' },
   { key: 'shelf', label: '歌单架' },
   { key: 'system', label: '系统' }
@@ -287,6 +288,23 @@ var FX_CONSOLE_LAYOUT = [
       ] },
       { key: 'experimental', title: '实验功能', hint: '尚未开放或需要谨慎使用的能力', items: [
         fxConsoleItem('t-wallpaperMode', '完整桌面模式', '完整 Mineradio 进入桌面层 Ctrl Shift M 切换操作层 本次启动有效', false)
+      ] }
+    ]
+  },
+  {
+    key: 'audio',
+    groups: [
+      { key: 'audio-master', title: '音效', hint: '启用后实时作用于当前播放', open: true, items: [
+        fxConsoleItem('audio-fx-master', '音效总开关', '音效 均衡 声场 3D 环绕 开关 强度')
+      ] },
+      { key: 'audio-presets', title: '预设', hint: '一键风格', open: true, items: [
+        fxConsoleItem('audio-fx-presets', '音效预设', '低音 人声 明亮 夜间 电影 声境 Chill Live 心动 Lo-fi Air Focus 原声')
+      ] },
+      { key: 'audio-eq', title: '图形均衡器', hint: '10 段频率微调', open: true, items: [
+        fxConsoleItem('audio-fx-eq', '10 段均衡器', 'EQ 31Hz 62Hz 125Hz 250Hz 500Hz 1K 2K 4K 8K 16K 增益 Q')
+      ] },
+      { key: 'audio-fields', title: '专业声场', hint: '空间与环绕', open: true, items: [
+        fxConsoleItem('audio-fx-fields', '专业声场', '关闭 录音棚 小房间 音乐厅 影院 教堂 3D 环绕 声场 空间')
       ] }
     ]
   }

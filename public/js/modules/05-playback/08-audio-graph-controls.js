@@ -3,6 +3,9 @@ function audioGraphHealthy() {
   return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && audioSourceMedia === audio && analyser && beatAnalyser && (gainNode || analysisSinkNode));
 }
 function disconnectAudioGraphNodes(keepSource) {
+  if (typeof disposeAudioFxChain === 'function') {
+    try { disposeAudioFxChain(); } catch (e) { }
+  }
   [source, analyser, beatAnalyser, gainNode, analysisSinkNode].forEach(function (node) {
     if (!node) return;
     try { node.disconnect(); } catch (e) { }
@@ -182,7 +185,17 @@ function initAudio() {
   beatAnalyser.smoothingTimeConstant = 0.10;
   source.connect(analyser);
   source.connect(beatAnalyser);
-  if (gainNode) {
+  // Audio FX chain (EQ + 声场/3D 环绕) —— 来自 05-playback/20-audio-fx.js
+  if (typeof buildAudioFxChain === 'function') {
+    try { buildAudioFxChain(audioCtx); } catch (e) { console.warn('audio fx chain build failed:', e); }
+  }
+  if (audioFxNodes && audioFxNodes.eqBands && audioFxNodes.eqBands.length && audioFxNodes.advancedGain) {
+    // analyser → EQ 级联 → [dry + wet(声场)] → advancedGain → gainNode/analysisSinkNode → destination
+    analyser.connect(audioFxNodes.eqBands[0]);
+    audioFxNodes.advancedGain.connect(gainNode || analysisSinkNode);
+    if (gainNode) gainNode.connect(audioCtx.destination);
+    else if (analysisSinkNode) analysisSinkNode.connect(audioCtx.destination);
+  } else if (gainNode) {
     analyser.connect(gainNode);
     gainNode.connect(audioCtx.destination);
   } else if (analysisSinkNode) {
