@@ -105,41 +105,10 @@ async function run() {
     assert.strictEqual(second.nextOffset, 8);
   });
 
-  const desktopMain = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
-  const extractorSource = namedFunctionSource(desktopMain, 'extractQishuiCookieHeaderFromCookieDatabase');
-  assert(extractorSource, 'the SodaMusic cookie database must have a full-cookie extractor');
-  const extractCookie = vm.runInNewContext('(' + extractorSource + ')', {
-    fs: { readFileSync: () => Buffer.from('test') },
-    sqliteLeafRecords: () => [
-      ['.qishui.com', 'sessionid', 'session-value'],
-      ['.qishui.com', 'sid_tt', 'sid-value'],
-      ['.qishui.com', 'uid_tt', 'uid-value'],
-      ['.qishui.com', 'ttwid', 'ttwid-value'],
-      ['.example.com', 'sessionid', 'wrong-domain'],
-      ['.qishui.com', 'empty_cookie', ''],
-    ],
-    sqliteCookieColumns: () => ['host_key', 'name', 'value'],
-    isQishuiCookieDomain: domain => /(?:^|\.)qishui\.com$/i.test(String(domain || '').replace(/^\./, '')),
-    QISHUI_LOGIN_COOKIE_PRIORITY: ['sessionid', 'sid_tt', 'uid_tt', 'ttwid'],
-    buildCookieHeaderFor: (cookies, allowed, priority) => {
-      const picked = new Map();
-      cookies.forEach(cookie => { if (allowed(cookie.domain)) picked.set(cookie.name, cookie.value); });
-      return priority.filter(name => picked.has(name)).map(name => name + '=' + picked.get(name)).join('; ');
-    },
-    Buffer,
-  });
-  const cookie = extractCookie('Network/Cookies');
-  assert.strictEqual(cookie, 'sessionid=session-value; sid_tt=sid-value; uid_tt=uid-value; ttwid=ttwid-value');
-  assert(!cookie.includes('wrong-domain'), 'cookies from unrelated domains must never be imported');
-
-  const localImportSource = namedFunctionSource(desktopMain, 'openQishuiMusicLoginWindow');
-  assert(localImportSource, 'the desktop Qishui import route must exist');
-  assert(localImportSource.indexOf('readQishuiOfficialClientCookieHeader()') < localImportSource.indexOf('readSavedQishuiCookieHeader()'), 'fresh SodaMusic state must be read before the cached Mineradio copy');
-  assert(!/openQishuiOfficialWebLoginWindow\s*\(/.test(localImportSource), 'normal Qishui import must not fall through to QR login');
-  assert(!/createQishuiPcQrLogin\s*\(/.test(localImportSource), 'normal Qishui import must not create a QR session');
-  assert(/QISHUI_LOCAL_COOKIE_DB_LOCKED/.test(localImportSource));
-  assert(/QISHUI_LOCAL_COOKIE_NOT_FOUND/.test(localImportSource));
-  console.log('[OK] Qishui search pagination and strict full SodaMusic local-session import verified.');
+  const legacyTokenStatus = qishui.getQishuiStatus('');
+  assert.strictEqual(legacyTokenStatus.loggedIn, false, 'catalogue configuration must not impersonate a signed-in account');
+  assert.strictEqual(legacyTokenStatus.webSession, false);
+  console.log('[OK] Qishui search pagination and official-session account boundary verified.');
 }
 
 run().catch(error => {

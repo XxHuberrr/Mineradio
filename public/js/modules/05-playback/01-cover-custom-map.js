@@ -23,7 +23,11 @@ function saveCustomCoverMap() {
   }
 }
 function isInlineCoverSrc(src) {
-  return typeof src === 'string' && (/^data:image\//i.test(src) || /^blob:/i.test(src));
+  return typeof src === 'string' && (
+    /^data:image\//i.test(src) ||
+    /^blob:/i.test(src) ||
+    /^mineradio-local:\/\/cover\//i.test(src)
+  );
 }
 function isProxyableCoverUrl(url) {
   return /^https?:\/\//i.test(String(url || ''));

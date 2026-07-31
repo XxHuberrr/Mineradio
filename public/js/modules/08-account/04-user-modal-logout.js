@@ -34,8 +34,8 @@ function updateUserModalUi() {
       vipEl.textContent = 'UID: ' + ((st && st.userId) || '-') + '  /  ' + kgVipLabel;
       vipEl.style.color = hasProviderVip('kugou', st) ? 'rgba(86,224,255,0.86)' : 'rgba(86,224,255,0.58)';
     } else if (activeAccountProvider === 'qishui') {
-      var qishuiMode = st && st.webSession ? '本机汽水会话已导入' : (st && st.tokenConfigured ? 'OpenAPI 授权已保存' : '汽水登录态未导入');
-      var qishuiSync = st && st.webSession ? '可同步我的喜欢、歌单并直接播放' : '匹配源';
+      var qishuiMode = st && st.webSession ? '汽水音乐已扫码登录' : '汽水音乐未登录';
+      var qishuiSync = st && st.webSession ? '可同步我的喜欢、歌单并按账号权益播放' : '请使用抖音 App 扫码';
       vipEl.textContent = qishuiMode + '  /  ' + qishuiSync;
       vipEl.style.color = 'rgba(69,214,143,0.78)';
     } else if (activeAccountProvider === 'spotify') {
@@ -44,9 +44,10 @@ function updateUserModalUi() {
       vipEl.style.color = hasProviderVip('spotify', st) ? 'rgba(30,215,96,0.86)' : 'rgba(30,215,96,0.60)';
     } else {
       var qqVipLevel = providerVipLevel('qq', st);
-      var qqVipLabel = qqLoginNeedsAuthorizationRefresh(st) ? 'QQ 会员待同步' : (qqVipLevel === 'svip' ? 'QQ SVIP 会员' : (qqVipLevel === 'vip' ? 'QQ VIP 会员' : 'QQ 音乐会话'));
+      var qqVipPending = qqLoginNeedsAuthorizationRefresh(st) || (typeof qqMembershipNeedsSync === 'function' && qqMembershipNeedsSync(st));
+      var qqVipLabel = qqVipPending ? 'QQ 会员待同步' : (qqVipLevel === 'svip' ? 'QQ SVIP 会员' : (qqVipLevel === 'vip' ? 'QQ VIP 会员' : 'QQ 音乐会话'));
       vipEl.textContent = 'UID: ' + ((st && st.userId) || '-') + '  /  ' + qqVipLabel;
-      vipEl.style.color = qqLoginNeedsAuthorizationRefresh(st) ? 'rgba(255,232,174,0.86)' : (hasProviderVip('qq', st) ? 'rgba(0,245,212,0.82)' : 'rgba(0,245,212,0.58)');
+      vipEl.style.color = qqVipPending ? 'rgba(255,232,174,0.86)' : (hasProviderVip('qq', st) ? 'rgba(0,245,212,0.82)' : 'rgba(0,245,212,0.58)');
     }
   }
   ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'both'].forEach(function (key) {
@@ -56,7 +57,7 @@ function updateUserModalUi() {
   if (addNetease) addNetease.style.display = hasPlatformLogin('netease') ? 'none' : '';
   if (addQQ) addQQ.textContent = hasPlatformLogin('qq') ? '查看 QQ 音乐' : '补登 QQ 音乐';
   if (addKugou) addKugou.textContent = hasPlatformLogin('kugou') ? '查看酷狗音乐' : '补登酷狗音乐';
-  if (addQishui) addQishui.textContent = hasPlatformLogin('qishui') ? '重新导入汽水' : '导入汽水登录态';
+  if (addQishui) addQishui.textContent = hasPlatformLogin('qishui') ? '重新登录汽水' : '登录汽水音乐';
   if (addSpotify) addSpotify.textContent = hasPlatformLogin('spotify') ? '查看 Spotify' : '连接 Spotify';
   if (logoutBtn) logoutBtn.textContent =
     activeAccountProvider === 'qq' ? '退出 QQ 音乐' :
@@ -110,6 +111,33 @@ function openProviderLogin(provider) {
 }
 
 var logoutAllAccountsResetBusy = false;
+var logoutAllAccountsResetConfirmUntil = 0;
+var logoutAllAccountsResetConfirmTimer = null;
+
+function clearLogoutAllAccountsResetConfirmation() {
+  logoutAllAccountsResetConfirmUntil = 0;
+  if (logoutAllAccountsResetConfirmTimer) {
+    window.clearTimeout(logoutAllAccountsResetConfirmTimer);
+    logoutAllAccountsResetConfirmTimer = null;
+  }
+  var button = document.getElementById('login-reset-all-btn');
+  if (button) {
+    button.classList.remove('confirming');
+    if (!logoutAllAccountsResetBusy) button.textContent = '退出登录';
+  }
+}
+
+function armLogoutAllAccountsResetConfirmation() {
+  logoutAllAccountsResetConfirmUntil = Date.now() + 5000;
+  var button = document.getElementById('login-reset-all-btn');
+  if (button) {
+    button.classList.add('confirming');
+    button.textContent = '再次点击确认';
+  }
+  if (typeof showToast === 'function') showToast('再次点击“退出登录”以清除全部平台 Cookie');
+  if (logoutAllAccountsResetConfirmTimer) window.clearTimeout(logoutAllAccountsResetConfirmTimer);
+  logoutAllAccountsResetConfirmTimer = window.setTimeout(clearLogoutAllAccountsResetConfirmation, 5000);
+}
 
 function resetAllProviderRendererLoginState() {
   loginStatus = { loggedIn: false, vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, vipLabel: '无VIP' };
@@ -145,9 +173,13 @@ function resetAllProviderRendererLoginState() {
 
 async function logoutAllAccountsAndResetEasterEgg() {
   if (logoutAllAccountsResetBusy) return;
-  if (!window.confirm('退出全部平台并清除登录 Cookie？\n完成后登录彩蛋会重新锁定，可以再次体验。')) return;
+  if (Date.now() > logoutAllAccountsResetConfirmUntil) {
+    armLogoutAllAccountsResetConfirmation();
+    return;
+  }
   logoutAllAccountsResetBusy = true;
   var button = document.getElementById('login-reset-all-btn');
+  clearLogoutAllAccountsResetConfirmation();
   if (button) {
     button.disabled = true;
     button.textContent = '正在清除…';
@@ -186,6 +218,7 @@ async function logoutAllAccountsAndResetEasterEgg() {
     logoutAllAccountsResetBusy = false;
     if (button) {
       button.disabled = false;
+      button.classList.remove('confirming');
       button.textContent = '退出登录';
     }
   }

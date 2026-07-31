@@ -302,7 +302,10 @@ function providerAvatarSrc(provider, status) {
 function providerVipBadge(provider, status, idAttr, includeNormal) {
   status = status || platformStatus(provider) || {};
   if (!status.loggedIn) return '';
-  var pendingQQSync = provider === 'qq' && typeof qqLoginNeedsAuthorizationRefresh === 'function' && qqLoginNeedsAuthorizationRefresh(status);
+  var pendingQQSync = provider === 'qq' && (
+    (typeof qqLoginNeedsAuthorizationRefresh === 'function' && qqLoginNeedsAuthorizationRefresh(status)) ||
+    (typeof qqMembershipNeedsSync === 'function' && qqMembershipNeedsSync(status))
+  );
   var level = providerVipLevel(provider, status);
   if (level === 'none' && !includeNormal && !pendingQQSync) return '';
   var id = idAttr ? ' id="' + idAttr + '"' : '';

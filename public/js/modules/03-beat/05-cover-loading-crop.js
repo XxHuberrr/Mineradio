@@ -13,7 +13,7 @@ function hideAIDepthChip() {
 function loadCoverFromUrl(directUrl, opts) {
   opts = opts || {};
   var preserveOnSwitch = !!(opts.trackSwitch || opts.seamlessCover || opts.seamlessTrackSwitch);
-  if (!directUrl || typeof directUrl !== 'string' || !/^https?:\/\//i.test(directUrl)) {
+  if (!directUrl || typeof directUrl !== 'string' || (!/^https?:\/\//i.test(directUrl) && !/^mineradio-local:\/\/cover\//i.test(directUrl))) {
     if (!coverApplyStillCurrent(opts)) return;
     if (preserveOnSwitch && uniforms.uHasCover.value > 0.5) {
       document.getElementById('thumb-cover').removeAttribute('src');

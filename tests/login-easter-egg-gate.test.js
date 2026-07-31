@@ -93,12 +93,13 @@ async function run() {
     const main = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
     assert(main.indexOf('migrateLegacyAuthStorage();') < main.indexOf('await initializeLoginEasterEggGate();'));
     assert(main.indexOf('await initializeLoginEasterEggGate();') < main.indexOf("localServer = require(serverModulePath)"));
-    ['netease', 'qq', 'kugou', 'qishui', 'spotify'].forEach((provider) => {
+    ['netease', 'qq', 'kugou', 'spotify'].forEach((provider) => {
       const marker = `ipcMain.handle('${provider}-music-open-login'`;
       const start = main.indexOf(marker);
       assert(start >= 0, `${provider} login IPC missing`);
       assert(main.slice(start, start + 260).includes('loginEasterEggGate.isUnlocked()'), `${provider} login IPC is not gated`);
     });
+    assert(!main.includes("ipcMain.handle('qishui-music-open-login'"), 'Qishui must use the embedded signed QR route, not the legacy login-window IPC');
     assert(main.includes("ipcMain.handle('mineradio-login-easter-egg-reset'"));
     assert(main.includes("loginEasterEggGate.resetForReplay(() => clearAllProviderLoginState('renderer-replay-reset'))"));
     assert(main.includes('credentialRoots: () => ['));
@@ -108,8 +109,10 @@ async function run() {
     assert(preload.includes("resetLoginEasterEgg: () => ipcRenderer.invoke('mineradio-login-easter-egg-reset')"));
 
     const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/token', '/api/spotify/config']
+    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/qrcode', '/api/qishui/login/check', '/api/spotify/config']
       .forEach((route) => assert(server.includes(`'${route}'`), `${route} gate missing`));
+    assert(!server.includes("pn === '/api/qishui/login/token'"), 'legacy Qishui token-login route must stay removed');
+    assert(!server.includes("pn === '/api/qishui/login/cookie'"), 'legacy Qishui cookie-login route must stay removed');
     assert(server.includes('function clearAllRuntimeLoginCredentials(reason)'));
     assert(server.includes('server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials'));
 
@@ -186,7 +189,13 @@ async function run() {
     assert(easterEggRenderer.includes('function restoreLoginEasterEggInputSurface(clearValue)'));
     assert(easterEggRenderer.includes("input.removeAttribute('inert')"));
     assert(easterEggRenderer.includes('restoreLoginEasterEggInputSurface(true)'));
-    assert(easterEggRenderer.includes("requestDesktopKeyboardFocus('login-easter-egg-"));
+    assert(easterEggRenderer.includes('loginEasterEggState.focusRequestId'));
+    assert(easterEggRenderer.includes("requestLoginEasterEggKeyboardFocus(reason || 'focus').then"));
+    assert(easterEggRenderer.includes('document.activeElement === input && document.hasFocus()'));
+    assert(easterEggRenderer.includes('if (document.hasFocus())'));
+    assert(easterEggRenderer.includes('event.isComposing || loginEasterEggState.composing || event.keyCode === 229'));
+    assert(!easterEggRenderer.includes("requestLoginEasterEggKeyboardFocus('wish-pointerdown')"));
+    assert(/api\.requestDesktopKeyboardFocus\([\s\S]{0,120}'login-easter-egg-'/.test(easterEggRenderer));
     assert(easterEggRenderer.includes('function playLoginEasterEggAchievementChime()'));
     assert(easterEggRenderer.includes('[2093.00, 0.36, 0.82]'));
     assert(easterEggRenderer.includes('playLoginEasterEggAchievementChime();'));
@@ -196,6 +205,9 @@ async function run() {
     assert(logoutRenderer.includes("apiJson('/api/spotify/logout')"));
     assert(logoutRenderer.includes('resetAllProviderRendererLoginState()'));
     assert(logoutRenderer.includes('resetLoginEasterEggUiForReplay()'));
+    assert(logoutRenderer.includes('armLogoutAllAccountsResetConfirmation()'));
+    assert(logoutRenderer.includes("button.textContent = '再次点击确认'"));
+    assert(!logoutRenderer.includes('window.confirm('));
 
     const splashRenderer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', '10-shell', '03-splash.js'), 'utf8');
     assert(splashRenderer.includes('function retroChord(frequencies, startAt, dur, peak)'));
@@ -203,9 +215,15 @@ async function run() {
     assert(splashRenderer.includes('[220.00, 261.63, 329.63, 392.00]'));
 
     const desktopMain = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
+    assert(desktopMain.includes("ipcMain.handle('mineradio-full-desktop-request-keyboard-focus'"));
     assert(desktopMain.includes("fullDesktopModeRuntime.getStatus('renderer-keyboard-focus-fallback')"));
-    assert(desktopMain.includes('if (desktopStatus && desktopStatus.enabled) return;'));
+    assert(desktopMain.includes('if (desktopStatus && desktopStatus.enabled) {'));
+    assert(desktopMain.includes('ordinaryWindowImeFocusRepairs.get(webContents)'));
+    assert(desktopMain.includes('ordinaryWindowImeFocusRepairs.set(webContents, repair)'));
+    assert(desktopMain.includes('webContents.blur();'));
+    assert(desktopMain.includes('win.focus();'));
     assert(desktopMain.includes('webContents.focus();'));
+    assert(/requestDesktopKeyboardFocus:[\s\S]{0,120}ipcRenderer\.invoke\(/.test(preload));
 
     console.log('[OK] Login easter egg gate, one-time reset, account identity, cinematic, achievement, and route guards verified.');
   } finally {

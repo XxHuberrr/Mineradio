@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, protocol, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Tray, Menu, protocol, desktopCapturer, powerMonitor } = require('electron');
 const net = require('net');
 const http = require('http');
 const path = require('path');
@@ -10,6 +10,10 @@ const {
   WallpaperEngineLibrary,
   registerWallpaperEngineScheme,
 } = require('./wallpaper-engine-library');
+const {
+  LocalMusicLibrary,
+  registerLocalMusicScheme,
+} = require('./local-music-library');
 const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
 const {
@@ -17,20 +21,8 @@ const {
   LOGIN_EASTER_EGG_GATE_VERSION,
   LOGIN_EASTER_EGG_STATE_FILE,
 } = require('./login-easter-egg-gate');
-const {
-  discoverQishuiClientDataRoots,
-  discoverQishuiCookieStores,
-  qishuiDiscoveryErrorCode,
-} = require('./qishui-local-session-discovery');
 const { extractKugouAuth } = require('../kugou-api');
-const {
-  getQishuiOAuthConfig,
-  buildQishuiOAuthAuthorizeUrl,
-  exchangeQishuiOAuthCode,
-  createQishuiPcQrLogin,
-  checkQishuiPcQrLogin,
-  handleQishuiStatus,
-} = require('../qishui-api');
+const { qishuiCookieHasLogin } = require('../qishui-api');
 const {
   getSpotifyOAuthConfig,
   buildSpotifyOAuthAuthorizeUrl,
@@ -39,6 +31,7 @@ const {
 } = require('../spotify-api');
 
 registerWallpaperEngineScheme(protocol);
+registerLocalMusicScheme(protocol);
 
 let mainWindow = null;
 let localServer = null;
@@ -84,6 +77,9 @@ let startupCompleted = false;
 let startupErrorReported = false;
 let localServerStartPromise = null;
 let mainWindowCreatePromise = null;
+let mainWindowRendererRecoveryPromise = null;
+let mainWindowRendererRecoveryAttempts = [];
+let mainWindowFullscreenVisibilityTimer = null;
 let startupState = { pid: process.pid, startedAt: Date.now(), phase: 'module-loaded', events: [] };
 const registeredGlobalHotkeys = new Map();
 let fullDesktopEscapeRegistered = false;
@@ -116,6 +112,9 @@ const STARTUP_SERVER_TIMEOUT_MS = 10000;
 const STARTUP_HTTP_TIMEOUT_MS = 8000;
 const STARTUP_NAVIGATION_TIMEOUT_MS = 15000;
 const STARTUP_SHOW_WATCHDOG_MS = 3500;
+const RENDERER_RECOVERY_WINDOW_MS = 2 * 60 * 1000;
+const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
+const FULLSCREEN_VISIBILITY_CHECK_MS = 5000;
 const CACHE_SETTINGS_FILE = 'cache-settings.json';
 const LYRIC_CACHE_VERSION = 1;
 const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
@@ -124,17 +123,11 @@ const NETEASE_LOGIN_PARTITION = 'persist:mineradio-netease-login';
 const NETEASE_LOGIN_URL = 'https://music.163.com/#/login';
 const QQ_LOGIN_PARTITION = 'persist:mineradio-qqmusic-login';
 const QQ_LOGIN_URL = 'https://y.qq.com/n/ryqq/profile';
+const QQ_LOGIN_FALLBACK_URL = 'https://y.qq.com/';
 const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
 const KUGOU_LOGIN_WARMUP_URL = 'https://www.kugou.com/newuc/user/uc/type=edit';
-const QISHUI_LOGIN_PARTITION = 'persist:mineradio-qishui-oauth-login';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
-const QISHUI_WEB_LOGIN_URL = process.env.QISHUI_WEB_LOGIN_URL || 'https://qishui.douyin.com/';
-const QISHUI_WEB_LOGIN_FALLBACK_URL = process.env.QISHUI_WEB_LOGIN_FALLBACK_URL || 'https://bff-pc.qishui.com/ucenter_web/app/sdk-next';
-const QISHUI_OFFICIAL_CLIENT_DATA_DIRS = (process.env.QISHUI_OFFICIAL_CLIENT_DATA_DIRS || '')
-  .split(/[;,]/)
-  .map((value) => String(value || '').trim())
-  .filter(Boolean);
 
 // Keep app-owned settings and provider credentials independent from the
 // user-selectable Chromium cache. app.setName() must run before the first
@@ -161,6 +154,8 @@ const NATIVE_HELPER_TEMP_PATH = INITIAL_CACHE_SETTINGS.nativePath;
 fs.mkdirSync(NATIVE_HELPER_TEMP_PATH, { recursive: true });
 process.env.MINERADIO_NATIVE_TEMP_DIR = NATIVE_HELPER_TEMP_PATH;
 systemMemory.setNativeTempPath(NATIVE_HELPER_TEMP_PATH);
+const localMusicLibrary = new LocalMusicLibrary({ userDataPath: STABLE_USER_DATA_PATH });
+const localMusicImportCapabilities = new Map();
 const wallpaperEngineLibrary = new WallpaperEngineLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const wallpaperEngineRuntime = new WallpaperEngineRuntime({
   library: wallpaperEngineLibrary,
@@ -540,20 +535,6 @@ const KUGOU_LOGIN_COOKIE_PRIORITY = [
   'Kugou',
   'NickName',
 ];
-const QISHUI_LOGIN_COOKIE_PRIORITY = [
-  'sessionid',
-  'sessionid_ss',
-  'sid_guard',
-  'sid_tt',
-  'uid_tt',
-  'uid_tt_ss',
-  'passport_csrf_token',
-  'passport_csrf_token_default',
-  's_v_web_id',
-  'odin_tt',
-  'ttwid',
-];
-
 function findOpenPort(startPort) {
   return new Promise((resolve, reject) => {
     function tryPort(port) {
@@ -2014,6 +1995,7 @@ function isZoomShortcutInput(input) {
 
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.__mineradioIntentionalHide = false;
   const desktopMode = fullDesktopModeRuntime.getStatus('focus-main-window');
   if (desktopMode.enabled === true) {
     setFullDesktopModeInteractive(true, 'focus-main-window').catch((error) => {
@@ -2294,7 +2276,8 @@ function parseCookieHeader(cookieText) {
 
 function qqCookieHasLogin(cookieText) {
   const obj = parseCookieHeader(cookieText);
-  const rawUin = Number(obj.login_type) === 2
+  const isWechat = !!obj.wxopenid || Number(obj.login_type) === 2;
+  const rawUin = isWechat
     ? (obj.wxuin || obj.uin || obj.p_uin || '')
     : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin || '');
   const uin = String(rawUin).replace(/\D/g, '');
@@ -2305,12 +2288,46 @@ function qqCookieHasLogin(cookieText) {
 
 function qqCookieHasPlaybackLogin(cookieText) {
   const obj = parseCookieHeader(cookieText);
-  const rawUin = Number(obj.login_type) === 2
+  const isWechat = !!obj.wxopenid || Number(obj.login_type) === 2;
+  const rawUin = isWechat
     ? (obj.wxuin || obj.uin || obj.p_uin || '')
     : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin || '');
   const uin = String(rawUin).replace(/\D/g, '');
   const playbackKey = obj.qm_keyst || obj.qqmusic_key || obj.music_key || obj.wxskey || '';
   return !!(uin && playbackKey);
+}
+
+function isTrustedQQLoginUrl(targetUrl) {
+  try {
+    const parsed = new URL(String(targetUrl || ''));
+    if (parsed.protocol !== 'https:') return false;
+    const hostname = parsed.hostname.toLowerCase();
+    return [
+      'qq.com',
+      'tencent.com',
+      'qqmusic.com',
+      'gtimg.com',
+      'qpic.cn',
+      'weixin.qq.com',
+    ].some(domain => hostname === domain || hostname.endsWith('.' + domain));
+  } catch (_) {
+    return false;
+  }
+}
+
+function qqLoginCompletionFromCookie(cookieText) {
+  if (qqCookieHasPlaybackLogin(cookieText)) {
+    return { ok: true, cookie: cookieText };
+  }
+  if (qqCookieHasLogin(cookieText)) {
+    return {
+      ok: false,
+      partial: true,
+      error: 'QQ_PLAYBACK_AUTH_INCOMPLETE',
+      message: 'QQ 账号验证已完成，但 QQ 音乐播放授权尚未生成，请在官方登录窗口完成授权后再关闭',
+    };
+  }
+  return { ok: false, cancelled: true, message: 'QQ 登录窗口已关闭' };
 }
 
 function neteaseCookieHasLogin(cookieText) {
@@ -2333,366 +2350,6 @@ function isNeteaseCookieDomain(domain) {
 function isKugouCookieDomain(domain) {
   const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
   return normalized === 'kugou.com' || normalized.endsWith('.kugou.com');
-}
-
-function isQishuiCookieDomain(domain) {
-  const normalized = String(domain || '').replace(/^\./, '').toLowerCase();
-  return normalized === 'douyin.com' || normalized.endsWith('.douyin.com') ||
-    normalized === 'qishui.com' || normalized.endsWith('.qishui.com');
-}
-
-function qishuiCookieHasLogin(cookieText) {
-  return /(?:^|;\s*)(sessionid|sessionid_ss|sid_guard|sid_tt|uid_tt|uid_tt_ss)=/i.test(String(cookieText || ''));
-}
-
-function readSavedQishuiCookieHeader() {
-  const candidates = [];
-  const add = (value) => {
-    value = String(value || '').trim();
-    if (value && !candidates.includes(value)) candidates.push(value);
-  };
-  add(process.env.QISHUI_COOKIE_FILE);
-  add(path.join(STABLE_USER_DATA_PATH, '.qishui-cookie'));
-  try { add(path.join(app.getPath('userData'), '.qishui-cookie')); } catch (e) {}
-  try { add(path.join(app.getPath('sessionData'), '.qishui-cookie')); } catch (e) {}
-  for (const filePath of candidates) {
-    try {
-      if (!fs.existsSync(filePath)) continue;
-      const cookie = String(fs.readFileSync(filePath, 'utf8') || '').trim();
-      if (qishuiCookieHasLogin(cookie)) return { cookie, source: filePath, method: 'persisted-cookie' };
-    } catch (e) {
-      console.warn('Saved Qishui cookie read skipped:', e && e.message || e);
-    }
-  }
-  return { cookie: '', source: '', method: 'persisted-cookie' };
-}
-
-function qishuiOfficialClientDataDirCandidates() {
-  let appDataPath = process.env.APPDATA || '';
-  let homePath = process.env.USERPROFILE || process.env.HOME || '';
-  try { appDataPath = app.getPath('appData') || appDataPath; } catch (_) {}
-  try { homePath = app.getPath('home') || homePath; } catch (_) {}
-  let localAppDataPath = process.env.LOCALAPPDATA || '';
-  if (!localAppDataPath && appDataPath) {
-    localAppDataPath = path.resolve(appDataPath, '..', 'Local');
-  }
-  return discoverQishuiClientDataRoots({
-    explicitDirs: QISHUI_OFFICIAL_CLIENT_DATA_DIRS,
-    appDataPath,
-    localAppDataPath,
-    homePath,
-  });
-}
-
-function readSqliteVarint(buffer, offset, end) {
-  let value = 0n;
-  for (let i = 0; i < 9 && offset + i < end; i++) {
-    const byte = buffer[offset + i];
-    if (i === 8) {
-      value = (value << 8n) | BigInt(byte);
-      return { value: Number(value), next: offset + i + 1 };
-    }
-    value = (value << 7n) | BigInt(byte & 0x7f);
-    if ((byte & 0x80) === 0) return { value: Number(value), next: offset + i + 1 };
-  }
-  return null;
-}
-
-function sqliteSerialSize(type) {
-  if (type === 0 || type === 8 || type === 9) return 0;
-  if (type === 1) return 1;
-  if (type === 2) return 2;
-  if (type === 3) return 3;
-  if (type === 4) return 4;
-  if (type === 5) return 6;
-  if (type === 6 || type === 7) return 8;
-  if (type >= 12) return Math.floor((type - 12) / 2);
-  return 0;
-}
-
-function sqliteDecodeSerialValue(buffer, offset, type) {
-  const size = sqliteSerialSize(type);
-  if (offset + size > buffer.length) return { value: null, size };
-  if (type === 0) return { value: null, size };
-  if (type === 1) return { value: buffer.readInt8(offset), size };
-  if (type === 2) return { value: buffer.readInt16BE(offset), size };
-  if (type === 3) return { value: buffer.readIntBE(offset, 3), size };
-  if (type === 4) return { value: buffer.readInt32BE(offset), size };
-  if (type === 5) return { value: buffer.readIntBE(offset, 6), size };
-  if (type === 6) return { value: Number(buffer.readBigInt64BE(offset)), size };
-  if (type === 7) return { value: buffer.readDoubleBE(offset), size };
-  if (type === 8) return { value: 0, size };
-  if (type === 9) return { value: 1, size };
-  if (type >= 12 && type % 2 === 0) return { value: buffer.slice(offset, offset + size), size };
-  if (type >= 13 && type % 2 === 1) return { value: buffer.toString('utf8', offset, offset + size), size };
-  return { value: null, size };
-}
-
-function sqliteParseRecord(buffer, offset, payloadSize) {
-  const payloadEnd = Math.min(buffer.length, offset + payloadSize);
-  const header = readSqliteVarint(buffer, offset, payloadEnd);
-  if (!header || header.value <= 0 || offset + header.value > payloadEnd) return [];
-  const headerEnd = offset + header.value;
-  const serials = [];
-  let pos = header.next;
-  while (pos < headerEnd) {
-    const serial = readSqliteVarint(buffer, pos, headerEnd);
-    if (!serial) break;
-    serials.push(serial.value);
-    pos = serial.next;
-  }
-  const values = [];
-  pos = headerEnd;
-  for (const type of serials) {
-    const decoded = sqliteDecodeSerialValue(buffer, pos, type);
-    values.push(decoded.value);
-    pos += decoded.size;
-    if (pos > payloadEnd) break;
-  }
-  return values;
-}
-
-function sqliteLeafRecords(buffer) {
-  if (!buffer || buffer.length < 100 || buffer.toString('ascii', 0, 16) !== 'SQLite format 3\0') return [];
-  const rawPageSize = buffer.readUInt16BE(16);
-  const pageSize = rawPageSize === 1 ? 65536 : rawPageSize;
-  if (!pageSize || pageSize < 512) return [];
-  const pageCount = Math.floor(buffer.length / pageSize);
-  const records = [];
-  for (let pageNo = 1; pageNo <= pageCount; pageNo++) {
-    const pageStart = (pageNo - 1) * pageSize;
-    const headerStart = pageStart + (pageNo === 1 ? 100 : 0);
-    if (headerStart + 8 > buffer.length || buffer[headerStart] !== 0x0d) continue;
-    const cellCount = buffer.readUInt16BE(headerStart + 3);
-    const pointerStart = headerStart + 8;
-    for (let i = 0; i < cellCount; i++) {
-      const pointerOffset = pointerStart + i * 2;
-      if (pointerOffset + 2 > buffer.length) break;
-      const cellOffset = pageStart + buffer.readUInt16BE(pointerOffset);
-      if (cellOffset <= 0 || cellOffset >= buffer.length) continue;
-      const payloadSize = readSqliteVarint(buffer, cellOffset, Math.min(buffer.length, cellOffset + 10));
-      if (!payloadSize) continue;
-      const rowId = readSqliteVarint(buffer, payloadSize.next, Math.min(buffer.length, payloadSize.next + 10));
-      if (!rowId) continue;
-      records.push(sqliteParseRecord(buffer, rowId.next, payloadSize.value));
-    }
-  }
-  return records;
-}
-
-function sqliteCookieColumns(records) {
-  const master = records.find((record) =>
-    record.some((value) => typeof value === 'string' && /CREATE\s+TABLE\s+cookies/i.test(value))
-  );
-  const sql = master && master.find((value) => typeof value === 'string' && /CREATE\s+TABLE\s+cookies/i.test(value));
-  const body = sql && sql.slice(sql.indexOf('(') + 1, sql.lastIndexOf(')'));
-  if (!body) return [];
-  return body.split(/,(?![^()]*\))/)
-    .map(part => part.trim().split(/\s+/)[0])
-    .map(name => String(name || '').replace(/^[`"[]|[`"\]]$/g, ''))
-    .filter(Boolean);
-}
-
-function extractQishuiCookieHeaderFromCookieDatabase(databasePath) {
-  const buffer = fs.readFileSync(databasePath);
-  const records = sqliteLeafRecords(buffer);
-  const columns = sqliteCookieColumns(records);
-  const hostIndex = columns.indexOf('host_key');
-  const nameIndex = columns.indexOf('name');
-  const valueIndex = columns.indexOf('value');
-  if (hostIndex < 0 || nameIndex < 0 || valueIndex < 0) return '';
-  const cookies = [];
-  for (const record of records) {
-    const domain = String(record[hostIndex] || '').trim();
-    const name = String(record[nameIndex] || '').trim();
-    const value = String(record[valueIndex] || '').trim();
-    if (!isQishuiCookieDomain(domain) || !name || !value) continue;
-    if (!/^[0-9A-Za-z_.-]+$/.test(name)) continue;
-    cookies.push({ domain, name, value });
-  }
-  return buildCookieHeaderFor(cookies, isQishuiCookieDomain, QISHUI_LOGIN_COOKIE_PRIORITY);
-}
-
-function extractQishuiSessionIdFromCookieDatabase(databasePath) {
-  const cookie = extractQishuiCookieHeaderFromCookieDatabase(databasePath);
-  const match = cookie.match(/(?:^|;\s*)sessionid=([^;]+)/i);
-  return match ? String(match[1] || '').trim() : '';
-}
-
-function readQishuiOfficialClientCookieDatabase(target) {
-  const store = target && typeof target === 'object' && target.cookieDbPath
-    ? target
-    : {
-        cookieDbPath: path.basename(String(target || '')).toLowerCase() === 'cookies'
-          ? path.resolve(String(target || ''))
-          : path.join(String(target || ''), 'Network', 'Cookies'),
-      };
-  const cookieDb = store.cookieDbPath;
-  if (!fs.existsSync(cookieDb)) return { cookie: '', source: '', missing: true, dbPath: cookieDb };
-  try {
-    const cookie = extractQishuiCookieHeaderFromCookieDatabase(cookieDb);
-    if (!qishuiCookieHasLogin(cookie)) return { cookie: '', source: '', noSession: true, dbPath: cookieDb };
-    return { cookie, source: cookieDb, dbPath: cookieDb };
-  } catch (e) {
-    const message = e && e.message || String(e || '');
-    const errorCode = qishuiDiscoveryErrorCode(e);
-    const locked = errorCode === 'locked' || errorCode === 'access-denied' ||
-      /used by another process|EBUSY|locked|busy|access.*denied|无法访问|另一个程序正在使用|进程无法访问/i.test(message);
-    return { cookie: '', source: '', locked, error: message, errorCode, dbPath: cookieDb };
-  }
-}
-
-async function readQishuiOfficialClientCookieHeader() {
-  let last = null;
-  let lastLocked = null;
-  const roots = qishuiOfficialClientDataDirCandidates();
-  const stores = [];
-  const storeKeys = new Set();
-  const attemptsByStore = new Map();
-  const diagnostics = {
-    version: 1,
-    mode: 'sodamusic-local-session',
-    candidateCount: roots.length,
-    rootsChecked: [],
-    attempts: [],
-    selected: null,
-    result: 'pending',
-  };
-
-  for (const root of roots) {
-    const scan = discoverQishuiCookieStores(root);
-    diagnostics.rootsChecked.push({
-      kind: String(root.kind || 'detected'),
-      hint: String(root.hint || 'Detected/client-data'),
-      exists: scan.rootExists === true,
-      storesFound: scan.stores.length,
-      scannedDirectories: scan.scannedDirectories,
-      truncated: scan.truncated === true,
-      errorCode: String(scan.errorCode || ''),
-    });
-    for (const store of scan.stores) {
-      const key = path.resolve(store.cookieDbPath).toLowerCase();
-      if (storeKeys.has(key)) continue;
-      storeKeys.add(key);
-      stores.push(store);
-      const attempt = {
-        rootKind: String(store.rootKind || root.kind || 'detected'),
-        rootHint: String(store.rootHint || root.hint || 'Detected/client-data'),
-        storeLayout: String(store.layout || 'nested-cookie-store'),
-        relativeStore: String(store.relativePath || 'Network/Cookies'),
-        directRead: 'pending',
-        electronRead: 'not-run',
-        errorCode: '',
-      };
-      diagnostics.attempts.push(attempt);
-      attemptsByStore.set(key, attempt);
-    }
-  }
-
-  const finish = (result, diagnosticResult, selected) => {
-    diagnostics.result = String(diagnosticResult || 'not-found');
-    diagnostics.selected = selected || null;
-    try {
-      console.log('[QishuiLocalSession]', JSON.stringify(diagnostics));
-    } catch (_) {}
-    return Object.assign({}, result || {}, { diagnostics });
-  };
-
-  for (const store of stores) {
-    const key = path.resolve(store.cookieDbPath).toLowerCase();
-    const attempt = attemptsByStore.get(key);
-    const direct = readQishuiOfficialClientCookieDatabase(store);
-    if (attempt) {
-      attempt.directRead = direct && direct.cookie
-        ? 'login'
-        : direct && direct.locked
-          ? 'locked'
-          : direct && direct.missing
-            ? 'missing'
-            : direct && direct.noSession
-              ? 'no-login'
-              : 'error';
-      attempt.errorCode = String(direct && direct.errorCode || '');
-    }
-    if (direct && direct.cookie) {
-      return finish(
-        Object.assign({ method: 'cookie-db' }, direct),
-        'login',
-        {
-          method: 'cookie-db',
-          rootKind: attempt && attempt.rootKind || 'detected',
-          rootHint: attempt && attempt.rootHint || 'Detected/client-data',
-          storeLayout: attempt && attempt.storeLayout || 'nested-cookie-store',
-          relativeStore: attempt && attempt.relativeStore || 'Network/Cookies',
-        }
-      );
-    }
-    if (direct && direct.locked) lastLocked = direct;
-    last = direct || last;
-  }
-  if (!stores.length) last = { cookie: '', source: '', missing: true, dbPath: '' };
-  if (!session || typeof session.fromPath !== 'function') {
-    return finish(
-      Object.assign({ cookie: '', source: '', skipped: 'session.fromPath unavailable' }, lastLocked || last || {}),
-      lastLocked ? 'locked' : 'not-found'
-    );
-  }
-
-  const sessionPaths = new Set();
-  for (const store of stores) {
-    const key = path.resolve(store.cookieDbPath).toLowerCase();
-    const attempt = attemptsByStore.get(key);
-    const sessionPathKey = path.resolve(store.sessionPath).toLowerCase();
-    if (sessionPaths.has(sessionPathKey)) {
-      if (attempt) attempt.electronRead = 'duplicate-session';
-      continue;
-    }
-    sessionPaths.add(sessionPathKey);
-    try {
-      const clientSession = session.fromPath(store.sessionPath, { cache: false });
-      const cookie = await readQishuiLoginCookieHeader(clientSession);
-      if (attempt) attempt.electronRead = qishuiCookieHasLogin(cookie) ? 'login' : 'no-login';
-      if (qishuiCookieHasLogin(cookie)) {
-        return finish(
-          { cookie, source: store.cookieDbPath, method: 'electron-session' },
-          'login',
-          {
-            method: 'electron-session',
-            rootKind: attempt && attempt.rootKind || 'detected',
-            rootHint: attempt && attempt.rootHint || 'Detected/client-data',
-            storeLayout: attempt && attempt.storeLayout || 'nested-cookie-store',
-            relativeStore: attempt && attempt.relativeStore || 'Network/Cookies',
-          }
-        );
-      }
-    } catch (e) {
-      const errorCode = qishuiDiscoveryErrorCode(e);
-      const locked = errorCode === 'locked' || errorCode === 'access-denied';
-      if (attempt) {
-        attempt.electronRead = locked ? 'locked' : 'error';
-        attempt.errorCode = errorCode;
-      }
-      if (locked) {
-        lastLocked = {
-          cookie: '',
-          source: '',
-          locked: true,
-          error: e && e.message || String(e || ''),
-          errorCode,
-          dbPath: store.cookieDbPath,
-        };
-      }
-      console.warn('[QishuiLocalSession] electron import skipped', JSON.stringify({
-        rootHint: attempt && attempt.rootHint || 'Detected/client-data',
-        storeLayout: attempt && attempt.storeLayout || 'nested-cookie-store',
-        errorCode,
-      }));
-    }
-  }
-  return finish(
-    Object.assign({ cookie: '', source: '', skipped: 'no logged-in SodaMusic client session' }, lastLocked || last || {}),
-    lastLocked ? 'locked' : 'not-found'
-  );
 }
 
 function kugouCookieHasLogin(cookieText) {
@@ -2775,11 +2432,6 @@ async function readNeteaseLoginCookieHeader(cookieSession) {
 async function readKugouLoginCookieHeader(cookieSession) {
   const cookies = await cookieSession.cookies.get({});
   return buildCookieHeaderFor(cookies, isKugouCookieDomain, KUGOU_LOGIN_COOKIE_PRIORITY);
-}
-
-async function readQishuiLoginCookieHeader(cookieSession) {
-  const cookies = await cookieSession.cookies.get({});
-  return buildCookieHeaderFor(cookies, isQishuiCookieDomain, QISHUI_LOGIN_COOKIE_PRIORITY);
 }
 
 async function openNeteaseMusicLoginWindow(owner) {
@@ -2886,20 +2538,24 @@ async function openNeteaseMusicLoginWindow(owner) {
 async function openQQMusicLoginWindow(owner, options) {
   options = options || {};
   const cookieSession = session.fromPartition(QQ_LOGIN_PARTITION);
+  const initialCookie = await readQQLoginCookieHeader(cookieSession);
+  if (qqCookieHasPlaybackLogin(initialCookie)) {
+    return { ok: true, cookie: initialCookie, reused: true, recovered: !!options.forceReauth };
+  }
   if (options.forceReauth) {
     await cookieSession.clearStorageData({
       storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
     });
   }
-  const initialCookie = await readQQLoginCookieHeader(cookieSession);
-  if (!options.forceReauth && qqCookieHasPlaybackLogin(initialCookie)) {
-    return { ok: true, cookie: initialCookie, reused: true };
-  }
 
   return new Promise((resolve) => {
     let settled = false;
     let pollTimer = null;
-    let warmupStarted = false;
+    let warmupTimer = null;
+    let warmupWindow = null;
+    let playbackFinalizePending = false;
+    let showWatchdog = null;
+    const popupWindows = new Set();
 
     const loginWindow = new BrowserWindow({
       width: 900,
@@ -2921,45 +2577,154 @@ async function openQQMusicLoginWindow(owner, options) {
       },
     });
 
+    const closeAuxiliaryWindows = () => {
+      if (showWatchdog) {
+        clearTimeout(showWatchdog);
+        showWatchdog = null;
+      }
+      if (warmupTimer) {
+        clearTimeout(warmupTimer);
+        warmupTimer = null;
+      }
+      const windows = Array.from(popupWindows);
+      popupWindows.clear();
+      if (warmupWindow) windows.push(warmupWindow);
+      warmupWindow = null;
+      windows.forEach((win) => {
+        try {
+          if (win && !win.isDestroyed()) win.close();
+        } catch (_) {}
+      });
+    };
+
     const finish = async (result) => {
       if (settled) return;
       settled = true;
       if (pollTimer) clearInterval(pollTimer);
+      closeAuxiliaryWindows();
+      try { await cookieSession.flushStorageData(); } catch (_) {}
       if (loginWindow && !loginWindow.isDestroyed()) {
         loginWindow.close();
       }
       resolve(result);
     };
 
+    const showLoginWindow = () => {
+      if (settled || !loginWindow || loginWindow.isDestroyed() || loginWindow.isVisible()) return;
+      loginWindow.show();
+      loginWindow.focus();
+    };
+
+    const loadQQOfficialLoginEntry = async () => {
+      try {
+        await loginWindow.loadURL(QQ_LOGIN_URL);
+      } catch (firstError) {
+        const message = String(firstError && firstError.message || firstError || '');
+        if (/HTTP2|PROTOCOL_ERROR|ERR_FAILED/i.test(message)) {
+          try { await cookieSession.clearCache(); } catch (_) {}
+        }
+        console.warn('QQ profile login entry failed, retrying official homepage:', message);
+        await loginWindow.loadURL(QQ_LOGIN_FALLBACK_URL);
+      }
+    };
+
+    const schedulePlaybackWarmup = () => {
+      if (settled || warmupTimer || warmupWindow) return;
+      // Give the official OAuth callback enough time to exchange the generic
+      // QQ web session for qm_keyst/qqmusic_key. The fallback player page runs
+      // in a separate hidden WebContents so it can never replace that callback.
+      warmupTimer = setTimeout(() => {
+        warmupTimer = null;
+        if (settled || !loginWindow || loginWindow.isDestroyed()) return;
+        warmupWindow = new BrowserWindow({
+          width: 720,
+          height: 520,
+          parent: loginWindow,
+          modal: false,
+          show: false,
+          autoHideMenuBar: true,
+          backgroundColor: '#111111',
+          icon: APP_ICON_ICO,
+          webPreferences: {
+            partition: QQ_LOGIN_PARTITION,
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        });
+        warmupWindow.on('closed', () => {
+          warmupWindow = null;
+        });
+        warmupWindow.webContents.on('did-finish-load', checkCookies);
+        warmupWindow.loadURL('https://y.qq.com/n/ryqq/player')
+          .catch((e) => console.warn('QQ login warmup navigation failed:', e.message));
+      }, 5000);
+    };
+
     const checkCookies = async () => {
       try {
         const cookie = await readQQLoginCookieHeader(cookieSession);
         if (qqCookieHasPlaybackLogin(cookie)) {
-          finish({ ok: true, cookie });
-        } else if (qqCookieHasLogin(cookie) && !warmupStarted) {
-          warmupStarted = true;
-          setTimeout(() => {
-            if (!settled && loginWindow && !loginWindow.isDestroyed()) {
-              loginWindow.loadURL('https://y.qq.com/n/ryqq/player').catch((e) => console.warn('QQ login warmup navigation failed:', e.message));
-            }
-          }, 900);
+          if (playbackFinalizePending) return;
+          playbackFinalizePending = true;
+          // QQ writes the playback ticket and profile/refresh cookies in a
+          // short burst. Keep the official callback alive for one final read.
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 450));
+          const finalizedCookie = await readQQLoginCookieHeader(cookieSession);
+          await finish({
+            ok: true,
+            cookie: qqCookieHasPlaybackLogin(finalizedCookie) ? finalizedCookie : cookie,
+          });
+        } else if (qqCookieHasLogin(cookie)) {
+          schedulePlaybackWarmup();
         }
       } catch (e) {
+        if (!settled) playbackFinalizePending = false;
         console.warn('QQ login cookie check failed:', e.message);
       }
     };
 
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
-        loginWindow.loadURL(url).catch((e) => console.warn('QQ login popup navigation failed:', e.message));
-      } else {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
+    const installQQLoginWindowHandlers = (win, isRoot) => {
+      if (!win || win.isDestroyed()) return;
+      win.webContents.setWindowOpenHandler(({ url }) => {
+        if (isTrustedQQLoginUrl(url)) {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              width: 760,
+              height: 640,
+              parent: loginWindow,
+              modal: false,
+              show: true,
+              autoHideMenuBar: true,
+              backgroundColor: '#111111',
+              icon: APP_ICON_ICO,
+              webPreferences: {
+                partition: QQ_LOGIN_PARTITION,
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: true,
+              },
+            },
+          };
+        }
+        if (/^https?:\/\//i.test(String(url || ''))) {
+          shell.openExternal(url).catch(() => {});
+        }
+        return { action: 'deny' };
+      });
+      win.webContents.on('did-create-window', (child) => {
+        popupWindows.add(child);
+        child.on('closed', () => popupWindows.delete(child));
+        installQQLoginWindowHandlers(child, false);
+      });
+      if (!isRoot) win.webContents.on('did-finish-load', checkCookies);
+    };
+    installQQLoginWindowHandlers(loginWindow, true);
 
     loginWindow.webContents.on('did-finish-load', () => {
       checkCookies();
+      showLoginWindow();
       loginWindow.webContents.executeJavaScript(`
         setTimeout(() => {
           const nodes = Array.from(document.querySelectorAll('a, button, span, div'));
@@ -2974,22 +2739,24 @@ async function openQQMusicLoginWindow(owner, options) {
       `, true).catch(() => {});
     });
 
-    loginWindow.on('ready-to-show', () => loginWindow.show());
+    loginWindow.on('ready-to-show', showLoginWindow);
     loginWindow.on('closed', async () => {
       if (settled) return;
+      settled = true;
       if (pollTimer) clearInterval(pollTimer);
+      closeAuxiliaryWindows();
       try {
         const cookie = await readQQLoginCookieHeader(cookieSession);
-        resolve(qqCookieHasLogin(cookie)
-          ? { ok: true, cookie, partial: !qqCookieHasPlaybackLogin(cookie) }
-          : { ok: false, cancelled: true, message: 'QQ 登录窗口已关闭' });
+        try { await cookieSession.flushStorageData(); } catch (_) {}
+        resolve(qqLoginCompletionFromCookie(cookie));
       } catch (e) {
         resolve({ ok: false, error: e.message || 'QQ 登录窗口已关闭' });
       }
     });
 
     pollTimer = setInterval(checkCookies, 1200);
-    loginWindow.loadURL(QQ_LOGIN_URL).catch((e) => finish({ ok: false, error: e.message }));
+    showWatchdog = setTimeout(showLoginWindow, 2500);
+    loadQQOfficialLoginEntry().catch((e) => finish({ ok: false, error: e.message }));
   });
 }
 
@@ -3119,565 +2886,19 @@ async function clearNeteaseMusicLoginSession() {
   return { ok: true };
 }
 
-async function openQishuiOfficialWebLoginWindow(owner, config) {
-  let qrPayload = null;
-  try {
-    qrPayload = await createQishuiPcQrLogin();
-  } catch (e) {
-    console.warn('Qishui PC QR create failed:', e && e.message || e);
-    return openQishuiOfficialWebLoginWindowLegacy(owner, config);
-  }
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let pollTimer = null;
-    let expireTimer = null;
-    let lastStatus = '';
-    let qrPollBackoffUntil = 0;
-
-    const loginWindow = new BrowserWindow({
-      width: 560,
-      height: 700,
-      minWidth: 460,
-      minHeight: 560,
-      parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: '汽水音乐扫码登录',
-      backgroundColor: '#10110f',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: QISHUI_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const canUseLoginWindow = () => !settled &&
-      loginWindow &&
-      !loginWindow.isDestroyed() &&
-      loginWindow.webContents &&
-      !loginWindow.webContents.isDestroyed();
-
-    const clearTimers = () => {
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      if (expireTimer) {
-        clearTimeout(expireTimer);
-        expireTimer = null;
-      }
-    };
-
-    const publicResult = (cookie, extra) => ({
-      ok: true,
-      provider: 'qishui',
-      webSession: !!cookie,
-      opened: true,
-      cookieSaved: !!cookie,
-      cookie: cookie || '',
-      loggedIn: !!cookie,
-      configured: !!cookie,
-      searchReady: true,
-      publicCatalog: !cookie,
-      playbackMode: 'recommend-match',
-      oauthConfigured: false,
-      oauthMissing: config && config.missing || [],
-      message: cookie
-        ? '汽水音乐扫码登录态已获取，可同步我的喜欢和歌单；播放仍会按匹配源自动换源。'
-        : '已打开汽水音乐扫码窗口；未确认前 QS 搜索匹配源仍可用。',
-      ...(extra || {}),
-    });
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      clearTimers();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      resolve(result);
-    };
-
-    const escaped = (value) => String(value == null ? '' : value).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
-
-    const buildQrHtml = (statusText) => {
-      const qrImg = qrPayload && qrPayload.qrcode || '';
-      const statusLine = statusText || '等待汽水音乐 App 扫码…';
-      return [
-        '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐扫码登录</title>',
-        '<style>',
-        'html,body{margin:0;height:100%;background:#10110f;color:#ecf6df;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}',
-        'body{display:grid;place-items:center;}',
-        'main{width:min(420px,calc(100vw - 44px));text-align:center;}',
-        '.brand{font-size:12px;letter-spacing:.22em;color:#b7d48a;font-weight:800;margin-bottom:12px;}',
-        'h1{font-size:25px;margin:0 0 10px;font-weight:850;}',
-        'p{margin:0 auto 18px;color:rgba(236,246,223,.70);line-height:1.65;font-size:14px;}',
-        '.qr{width:286px;height:286px;margin:0 auto 18px;border-radius:24px;background:#f9fff1;padding:16px;box-shadow:0 24px 70px rgba(100,170,70,.20),inset 0 0 0 1px rgba(20,60,30,.10);}',
-        '.qr img{width:100%;height:100%;display:block;border-radius:14px;}',
-        '.status{min-height:24px;color:#cce68b;font-weight:700;}',
-        'a{color:#d6f89b;text-decoration:none;}',
-        '</style><main>',
-        '<div class="brand">QISHUI MUSIC</div>',
-        '<h1>使用汽水音乐 App 扫码</h1>',
-        '<p>请用汽水音乐 App 扫码并确认。确认后 Mineradio 会自动保存汽水登录态，同步汽水歌单与我的喜欢。</p>',
-        qrImg ? ('<div class="qr"><img src="' + escaped(qrImg) + '" alt="汽水音乐扫码登录"></div>') : '',
-        '<div class="status" id="status">' + escaped(statusLine) + '</div>',
-        qrPayload && qrPayload.qrcodeIndexUrl ? '<p>这个二维码来自汽水 PC 登录接口；抖音 App 扫描可能打开 404 页面，请用汽水音乐 App。</p>' : '',
-        '</main>'
-      ].join('');
-    };
-
-    const setQrStatusText = (statusText) => {
-      if (!statusText || !canUseLoginWindow()) return;
-      loginWindow.webContents.executeJavaScript(
-        `var el=document.getElementById('status'); if(el) el.textContent=${JSON.stringify(statusText)};`,
-        true
-      ).catch(() => {});
-    };
-
-    const armQrExpireTimer = () => {
-      if (expireTimer) {
-        clearTimeout(expireTimer);
-        expireTimer = null;
-      }
-      const ttlMs = qrPayload && qrPayload.expireTime ? Math.max(30000, qrPayload.expireTime * 1000 - Date.now()) : 180000;
-      expireTimer = setTimeout(() => {
-        if (!canUseLoginWindow()) return;
-        lastStatus = '二维码已过期，请重新打开汽水授权';
-        setQrStatusText(lastStatus);
-      }, Math.min(240000, ttlMs + 3000));
-    };
-
-    const showLocalQrPage = (statusText) => {
-      if (!canUseLoginWindow()) return;
-      loginWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildQrHtml(statusText))).catch((e) => {
-        console.warn('Qishui QR fallback page failed:', e && e.message || e);
-      });
-    };
-
-    const qrNextPollDelay = (status) => {
-      if (!status) return 10000;
-      if (status.retryAfterMs) return Math.max(60000, Math.min(90000, Number(status.retryAfterMs) || 60000));
-      if (status.needsSms) return 10000;
-      const key = String(status.status || '').toLowerCase();
-      if (status.cookie || status.confirmed || /scan|confirm|success|login/.test(key)) return 2400;
-      if (/error|fail/.test(key)) return 12000;
-      if (/expire/.test(key)) return 30000;
-      return 10000;
-    };
-
-    const scheduleQrPoll = (delayMs) => {
-      if (!canUseLoginWindow()) return;
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-      const delay = Math.max(1500, Math.min(90000, Number(delayMs) || 10000));
-      pollTimer = setTimeout(() => {
-        pollTimer = null;
-        pollQrStatus();
-      }, delay);
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('will-navigate', (event, url) => {
-      if (/^data:/i.test(String(url || ''))) return;
-      if (event && typeof event.preventDefault === 'function') event.preventDefault();
-      if (/^https?:\/\//i.test(String(url || ''))) shell.openExternal(url).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
-      if (!isMainFrame || Number(errorCode) === -3) return;
-      lastStatus = errorDescription || ('load failed: ' + errorCode);
-      showLocalQrPage();
-    });
-
-    const pollQrStatus = async () => {
-      if (!canUseLoginWindow()) return;
-      if (qrPollBackoffUntil && Date.now() < qrPollBackoffUntil) {
-        setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
-        scheduleQrPoll(qrPollBackoffUntil - Date.now() + 250);
-        return;
-      }
-      let nextPollDelay = 10000;
-      try {
-        const status = await checkQishuiPcQrLogin(qrPayload.token, qrPayload.cookie || '', qrPayload);
-        if (status && status.pollCookie) qrPayload.cookie = status.pollCookie;
-        nextPollDelay = qrNextPollDelay(status);
-        lastStatus = status && (status.message || status.status) || lastStatus;
-        if (!status || !status.retryAfterMs) qrPollBackoffUntil = 0;
-        if (status && status.cookie) {
-          finish(publicResult(status.cookie, { detected: true, status: status.status || 'confirmed' }));
-          return;
-        }
-        if (status && status.retryAfterMs) {
-          qrPollBackoffUntil = Date.now() + Math.max(5000, Math.min(90000, Number(status.retryAfterMs) || 0));
-          setQrStatusText(lastStatus || '汽水确认接口临时限流，已自动降频继续确认…');
-          return;
-        }
-        if (status && status.needsSms) {
-          qrPollBackoffUntil = Date.now() + 10000;
-          setQrStatusText(lastStatus || '汽水要求短信或二次验证，请先在汽水 App 内完成账号安全验证');
-          return;
-        }
-        if (status && status.confirmed) {
-          setQrStatusText(lastStatus || '已确认，正在换取汽水登录态…');
-          return;
-        }
-        if (status && /error|fail|expire/i.test(String(status.status || ''))) {
-          setQrStatusText(lastStatus || '扫码状态异常，正在继续确认当前二维码');
-          return;
-        }
-        setQrStatusText(lastStatus);
-      } catch (e) {
-        lastStatus = e && e.message || 'QISHUI_QR_CHECK_FAILED';
-        nextPollDelay = 12000;
-        setQrStatusText('扫码状态暂时无法确认，保留当前二维码继续重试…');
-      } finally {
-        if (!settled) scheduleQrPoll(nextPollDelay);
-      }
-    };
-
-    loginWindow.on('ready-to-show', () => {
-      if (canUseLoginWindow()) loginWindow.show();
-    });
-    loginWindow.on('closed', () => {
-      if (settled) return;
-      settled = true;
-      clearTimers();
-      resolve(publicResult('', { cancelled: true, status: lastStatus || '' }));
-    });
-
-    showLocalQrPage();
-    armQrExpireTimer();
-    scheduleQrPoll(6000);
-  });
-}
-
-async function openQishuiOfficialWebLoginWindowLegacy(owner, config) {
-  const cookieSession = session.fromPartition(QISHUI_LOGIN_PARTITION);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let pollTimer = null;
-    let loadRetryTimer = null;
-    let loadIndex = 0;
-    let lastLoadError = '';
-    let fallbackLoadQueued = false;
-    const officialLoginUrls = [QISHUI_WEB_LOGIN_URL, QISHUI_WEB_LOGIN_FALLBACK_URL]
-      .map((value) => String(value || '').trim())
-      .filter((value, index, arr) => value && arr.indexOf(value) === index);
-
-    const loginWindow = new BrowserWindow({
-      width: 920,
-      height: 760,
-      minWidth: 760,
-      minHeight: 560,
-      parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: '汽水音乐官方窗口',
-      backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: QISHUI_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const finish = async (result) => {
-      if (settled) return;
-      settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      clearLoadRetryTimer();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
-      resolve(result);
-    };
-
-    const publicResult = (cookie, extra) => ({
-      ok: true,
-      provider: 'qishui',
-      webSession: !!cookie,
-      opened: true,
-      cookieSaved: !!cookie,
-      cookie: cookie || '',
-      loggedIn: false,
-      configured: false,
-      searchReady: true,
-      publicCatalog: true,
-      playbackMode: 'recommend-match',
-      oauthConfigured: false,
-      oauthMissing: config && config.missing || [],
-      message: cookie
-        ? '汽水官方网页登录态已保留；当前仍以汽水搜索/匹配源接入。'
-        : '已打开汽水/抖音官方窗口；当前仍以汽水搜索/匹配源接入。',
-      ...(extra || {}),
-    });
-
-    const readResult = async (extra) => {
-      try {
-        const cookie = await readQishuiLoginCookieHeader(cookieSession);
-        return publicResult(qishuiCookieHasLogin(cookie) ? cookie : '', extra);
-      } catch (e) {
-        return publicResult('', Object.assign({ warning: e.message }, extra || {}));
-      }
-    };
-
-    const canUseLoginWindow = () => !settled &&
-      loginWindow &&
-      !loginWindow.isDestroyed() &&
-      loginWindow.webContents &&
-      !loginWindow.webContents.isDestroyed();
-
-    const clearLoadRetryTimer = () => {
-      if (loadRetryTimer) {
-        clearTimeout(loadRetryTimer);
-        loadRetryTimer = null;
-      }
-    };
-
-    const scheduleOfficialLoginLoad = () => {
-      clearLoadRetryTimer();
-      if (!canUseLoginWindow()) return;
-      loadRetryTimer = setTimeout(() => {
-        loadRetryTimer = null;
-        if (canUseLoginWindow()) loadOfficialLoginUrl();
-      }, 30);
-    };
-
-    const safeLoadLoginWindowUrl = async (url) => {
-      if (!canUseLoginWindow()) return { ok: false, skipped: true };
-      try {
-        await loginWindow.loadURL(url);
-        return { ok: true };
-      } catch (e) {
-        return { ok: false, error: e && e.message || String(e) };
-      }
-    };
-
-    const showLoadFallbackPage = (message) => {
-      if (!canUseLoginWindow()) return;
-      lastLoadError = message || lastLoadError || '汽水官方网页打开失败';
-      const html = [
-        '<!doctype html><meta charset="utf-8">',
-        '<title>汽水音乐官方窗口</title>',
-        '<style>body{margin:0;background:#10110f;color:#e8f4d2;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;height:100vh}main{max-width:560px;padding:28px;text-align:center}h1{font-size:24px;margin:0 0 12px}p{color:rgba(232,244,210,.72);line-height:1.7}a{color:#cde98a}</style>',
-        '<main><h1>汽水官方窗口暂时打不开</h1><p>',
-        String(lastLoadError).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch])),
-        '</p><p>窗口不会自动关闭；可以稍后重试，或在浏览器里打开汽水官方扫码页。</p></main>'
-      ].join('');
-      safeLoadLoginWindowUrl('data:text/html;charset=utf-8,' + encodeURIComponent(html)).then(() => {
-        if (canUseLoginWindow() && !loginWindow.isVisible()) loginWindow.show();
-      });
-    };
-
-    const loadOfficialLoginUrl = () => {
-      if (!canUseLoginWindow()) return;
-      fallbackLoadQueued = false;
-      const targetUrl = officialLoginUrls[loadIndex++];
-      if (!targetUrl) {
-        showLoadFallbackPage(lastLoadError);
-        return;
-      }
-      safeLoadLoginWindowUrl(targetUrl).then((loadResult) => {
-        if (loadResult && loadResult.ok) return;
-        if (loadResult && loadResult.skipped) return;
-        if (fallbackLoadQueued) return;
-        fallbackLoadQueued = true;
-        lastLoadError = loadResult && loadResult.error || '汽水官方网页打开失败';
-        console.warn('Qishui official window load failed:', lastLoadError);
-        scheduleOfficialLoginLoad();
-      });
-    };
-
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) {
-        safeLoadLoginWindowUrl(url).then((result) => {
-          if (result && !result.ok && !result.skipped) console.warn('Qishui official window navigation failed:', result.error);
-        });
-      } else {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
-
-    loginWindow.webContents.on('will-navigate', (event, url) => {
-      if (/^(https?|data):/i.test(String(url || ''))) return;
-      if (event && typeof event.preventDefault === 'function') event.preventDefault();
-      shell.openExternal(url).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-finish-load', () => {
-      if (!canUseLoginWindow()) return;
-      loginWindow.webContents.executeJavaScript(`
-        setTimeout(() => {
-          const docs = [document];
-          document.querySelectorAll('iframe').forEach((frame) => {
-            try { if (frame.contentDocument) docs.push(frame.contentDocument); } catch (_) {}
-          });
-          for (const doc of docs) {
-            const nodes = Array.from(doc.querySelectorAll('a, button, span, div'));
-            const loginNode = nodes.find((node) => {
-              const text = (node.textContent || '').trim();
-              if (!/登录|扫码|抖音登录|立即登录/.test(text)) return false;
-              const rect = node.getBoundingClientRect();
-              return rect.width > 0 && rect.height > 0;
-            });
-            if (loginNode) { loginNode.click(); return true; }
-          }
-          return false;
-        }, 900);
-      `, true).catch(() => {});
-    });
-
-    loginWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      if (!isMainFrame || Number(errorCode) === -3) return;
-      if (fallbackLoadQueued) return;
-      fallbackLoadQueued = true;
-      lastLoadError = errorDescription || ('load failed: ' + errorCode);
-      console.warn('Qishui official window did-fail-load:', lastLoadError, validatedURL || '');
-      scheduleOfficialLoginLoad();
-    });
-
-    loginWindow.on('ready-to-show', () => {
-      if (canUseLoginWindow()) loginWindow.show();
-    });
-    loginWindow.on('closed', async () => {
-      if (settled) return;
-      settled = true;
-      if (pollTimer) clearInterval(pollTimer);
-      clearLoadRetryTimer();
-      resolve(await readResult({ cancelled: false, loadError: lastLoadError || '' }));
-    });
-
-    pollTimer = setInterval(async () => {
-      try {
-        const cookie = await readQishuiLoginCookieHeader(cookieSession);
-        if (qishuiCookieHasLogin(cookie)) {
-          finish(publicResult(cookie, { detected: true }));
-        }
-      } catch (e) {
-        console.warn('Qishui official cookie check failed:', e.message);
-      }
-    }, 1400);
-
-    loadOfficialLoginUrl();
-  });
-}
-
-function qishuiOAuthRedirectMatches(targetUrl, redirectUri) {
-  try {
-    const target = new URL(String(targetUrl || ''));
-    const redirect = new URL(String(redirectUri || ''));
-    const normalizePath = (value) => (value || '/').replace(/\/+$/, '') || '/';
-    return target.protocol === redirect.protocol &&
-      target.host === redirect.host &&
-      normalizePath(target.pathname) === normalizePath(redirect.pathname);
-  } catch (e) {
-    return false;
-  }
-}
-
-async function openQishuiMusicLoginWindow(owner) {
-  const imported = await readQishuiOfficialClientCookieHeader();
-  if (imported && imported.cookie) {
-    let importedStatus = null;
-    try {
-      importedStatus = await handleQishuiStatus(imported.cookie);
-    } catch (error) {
-      console.warn('Imported Qishui cookie validation skipped:', error && error.message || error);
-    }
-    return {
-      ...(importedStatus || {}),
-      ok: true,
-      provider: 'qishui',
-      webSession: true,
-      opened: false,
-      cookieSaved: false,
-      cookie: imported.cookie,
-      loggedIn: true,
-      configured: true,
-      searchReady: true,
-      publicCatalog: false,
-      playbackMode: 'direct-url',
-      localPcImport: true,
-      importedOfficialClient: true,
-      source: imported.source,
-      importMethod: imported.method || 'cookie-db',
-      localSessionDiagnostics: imported.diagnostics || null,
-      message: '已读取本机汽水 PC 登录态，正在导入 Mineradio 并同步我的喜欢和歌单',
-    };
-  }
-
-  // Reuse Mineradio's last imported copy only when the official client data is
-  // temporarily unavailable. This keeps normal use stable without ever
-  // falling through to the obsolete QR/OAuth flows.
-  const saved = readSavedQishuiCookieHeader();
-  let savedStatus = null;
-  if (saved && saved.cookie) {
-    try {
-      savedStatus = await handleQishuiStatus(saved.cookie);
-    } catch (error) {
-      console.warn('Saved Qishui cookie validation skipped:', error && error.message || error);
-    }
-  }
-  if (saved && saved.cookie && savedStatus && savedStatus.loggedIn && savedStatus.webSession) {
-    return {
-      ...savedStatus,
-      ok: true,
-      provider: 'qishui',
-      webSession: true,
-      opened: false,
-      cookieSaved: true,
-      cookie: saved.cookie,
-      loggedIn: true,
-      configured: true,
-      searchReady: true,
-      publicCatalog: false,
-      playbackMode: 'direct-url',
-      localPcImport: true,
-      persistedSession: true,
-      source: saved.source,
-      importMethod: saved.method,
-      localSessionDiagnostics: imported && imported.diagnostics || null,
-      message: imported && imported.locked
-        ? '本机汽水登录数据库暂时被占用，已继续使用 Mineradio 上次导入的有效登录态。'
-        : '已继续使用 Mineradio 上次从本机汽水 PC 导入的登录态。',
-    };
-  }
-
-  const locked = !!(imported && imported.locked);
-  return {
-    ok: false,
-    provider: 'qishui',
-    webSession: false,
-    loggedIn: false,
-    localPcImport: true,
-    source: imported && (imported.dbPath || imported.source) || '',
-    locked,
-    localSessionDiagnostics: imported && imported.diagnostics || null,
-    error: locked ? 'QISHUI_LOCAL_COOKIE_DB_LOCKED' : 'QISHUI_LOCAL_COOKIE_NOT_FOUND',
-    message: locked
-      ? '汽水 PC 客户端正在占用本地登录数据库。请先完全退出汽水音乐 PC 端，再点击“重新导入”。'
-      : '没有读到本机汽水 PC 登录态。请先安装并登录汽水音乐 PC 客户端，然后重新导入。',
-  };
-}
-
 async function clearQishuiMusicLoginSession() {
-  const cookieSession = session.fromPartition(QISHUI_LOGIN_PARTITION);
-  await cookieSession.clearStorageData({
-    storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
-  });
+  const qishuiQrLogin = require('../qishui-qr-login');
+  await qishuiQrLogin.clear();
+  for (const filePath of [process.env.QISHUI_COOKIE_FILE, process.env.QISHUI_TOKEN_FILE]) {
+    if (!filePath) continue;
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, '', 'utf8');
+    } catch (error) {
+      console.warn('[QishuiQrLogin] credential file clear failed:', error && error.message || error);
+      throw error;
+    }
+  }
   return { ok: true };
 }
 
@@ -4586,20 +3807,50 @@ ipcMain.handle('mineradio-full-desktop-set-software-lock', async (event, locked)
   return fullDesktopModeRuntime.setSoftwareInteractionLocked(locked === true, 'renderer-software-lock');
 });
 
-ipcMain.on('mineradio-full-desktop-request-keyboard-focus', (event, reason) => {
-  if (!isTrustedMainWindowIpc(event)) return;
+const ordinaryWindowImeFocusRepairs = new WeakMap();
+
+ipcMain.handle('mineradio-full-desktop-request-keyboard-focus', async (event, reason) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_KEYBOARD_FOCUS_REQUEST' };
   const focusResult = fullDesktopModeRuntime.requestKeyboardFocus(
     `renderer-${String(reason || 'pointerdown').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 64)}`
   );
-  if (focusResult && focusResult.ok) return;
+  if (focusResult && focusResult.ok) return focusResult;
   const desktopStatus = fullDesktopModeRuntime.getStatus('renderer-keyboard-focus-fallback');
-  if (desktopStatus && desktopStatus.enabled) return;
-  const webContents = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
-  if (!webContents || webContents.isDestroyed() || typeof webContents.focus !== 'function') return;
+  if (desktopStatus && desktopStatus.enabled) {
+    return { ok: false, focused: false, error: 'DESKTOP_KEYBOARD_FOCUS_INACTIVE', status: desktopStatus };
+  }
+  const win = getSenderWindow(event);
+  const webContents = win && !win.isDestroyed() ? win.webContents : null;
+  if (!webContents || webContents.isDestroyed() || typeof webContents.focus !== 'function') {
+    return { ok: false, focused: false, error: 'KEYBOARD_FOCUS_WINDOW_UNAVAILABLE' };
+  }
+  const pendingRepair = ordinaryWindowImeFocusRepairs.get(webContents);
+  if (pendingRepair) return pendingRepair;
   // Native confirm/logout can leave Chromium's editable surface unfocused in the
-  // ordinary top-level window. This is webContents-only and never runs while the
-  // HWND is attached to Explorer, so it cannot disturb desktop icon/DWM ordering.
-  webContents.focus();
+  // ordinary top-level window while isFocused() still reports true. Rebuild the
+  // renderer focus boundary once so Windows TSF/IME attaches to the next focused
+  // input. This branch is forbidden while the HWND is attached to Explorer.
+  const repair = (async () => {
+    if (typeof webContents.blur === 'function') webContents.blur();
+    if (typeof win.setFocusable === 'function') win.setFocusable(true);
+    if (typeof win.restore === 'function' && typeof win.isMinimized === 'function' && win.isMinimized()) win.restore();
+    if (typeof win.focus === 'function') win.focus();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    webContents.focus();
+    return {
+      ok: true,
+      focused: typeof webContents.isFocused !== 'function' || webContents.isFocused(),
+      mode: 'ordinary-window-ime-refresh',
+    };
+  })();
+  ordinaryWindowImeFocusRepairs.set(webContents, repair);
+  try {
+    return await repair;
+  } finally {
+    if (ordinaryWindowImeFocusRepairs.get(webContents) === repair) {
+      ordinaryWindowImeFocusRepairs.delete(webContents);
+    }
+  }
 });
 
 ipcMain.on('mineradio-full-desktop-pointer-route', (event, payload = {}) => {
@@ -4841,10 +4092,6 @@ ipcMain.handle('mineradio-wallpaper-engine-start-scene', async (event, payload =
   try {
     if (!isTrustedWallpaperEngineIpc(event)) return { ok: false, error: 'WALLPAPER_ENGINE_UNTRUSTED_CALLER' };
     operation = ++wallpaperEngineCaptureOperation;
-    let hostElevated = false;
-    try { hostElevated = await systemMemory.probeProcessElevation(); } catch (_) { }
-    if (operation !== wallpaperEngineCaptureOperation) return { ok: false, error: 'WALLPAPER_ENGINE_START_SUPERSEDED' };
-    if (hostElevated) return { ok: false, error: 'WALLPAPER_ENGINE_HOST_ELEVATED' };
     const desktopMode = fullDesktopModeRuntime.getStatus('wallpaper-engine-start-scene');
     if (wallpaperEngineHostVisibilitySuspended
       || (desktopMode.enabled === true
@@ -5105,6 +4352,86 @@ ipcMain.handle('mineradio-wallpaper-engine-stop-scene', async (event, payload = 
   }
 });
 
+ipcMain.handle('mineradio-local-library-list', async (event) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, count: 0, tracks: [], error: 'UNTRUSTED_SENDER' };
+  try {
+    return await localMusicLibrary.listTracks();
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.message || 'LOCAL_LIBRARY_READ_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-local-library-lyric', async (event, localFileId) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, lyric: '', lyricSource: '', error: 'UNTRUSTED_SENDER' };
+  try {
+    return localMusicLibrary.lyricForTrack(localFileId);
+  } catch (error) {
+    return { ok: false, lyric: '', lyricSource: '', error: error.message || 'LOCAL_LYRIC_READ_FAILED' };
+  }
+});
+
+function pruneLocalMusicImportCapabilities() {
+  const now = Date.now();
+  for (const [token, capability] of localMusicImportCapabilities) {
+    if (!capability || capability.expiresAt <= now) localMusicImportCapabilities.delete(token);
+  }
+  while (localMusicImportCapabilities.size > 8) {
+    const oldest = localMusicImportCapabilities.keys().next().value;
+    if (!oldest) break;
+    localMusicImportCapabilities.delete(oldest);
+  }
+}
+
+ipcMain.handle('mineradio-local-library-authorize', async (event, payload = {}) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, count: 0, error: 'UNTRUSTED_SENDER' };
+  const files = [];
+  const seen = new Set();
+  for (const item of (Array.isArray(payload && payload.files) ? payload.files : []).slice(0, 50000)) {
+    const requestedPath = String(item && item.path || '').trim();
+    if (!requestedPath || /^[\\/]{2}/.test(requestedPath) || !path.isAbsolute(requestedPath)) continue;
+    if (!/\.(mp3|flac|wav|ogg|m4a|aac|opus)$/i.test(requestedPath)) continue;
+    let filePath = '';
+    try {
+      filePath = fs.realpathSync.native ? fs.realpathSync.native(requestedPath) : fs.realpathSync(requestedPath);
+      if (/^[\\/]{2}/.test(filePath) || !fs.statSync(filePath).isFile()) continue;
+    } catch (_) {
+      continue;
+    }
+    const identity = process.platform === 'win32' ? filePath.toLowerCase() : filePath;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    files.push({
+      path: filePath,
+      relativePath: String(item && item.relativePath || path.basename(filePath)).replace(/\0/g, '').slice(0, 2000),
+    });
+  }
+  if (!files.length) return { ok: false, count: 0, error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+  pruneLocalMusicImportCapabilities();
+  const token = crypto.randomBytes(24).toString('hex');
+  localMusicImportCapabilities.set(token, {
+    senderId: event.sender.id,
+    files,
+    expiresAt: Date.now() + 3 * 60 * 1000,
+  });
+  return { ok: true, count: files.length, token };
+});
+
+ipcMain.handle('mineradio-local-library-import', async (event, payload = {}) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, count: 0, tracks: [], error: 'UNTRUSTED_SENDER' };
+  pruneLocalMusicImportCapabilities();
+  const token = String(payload && payload.token || '').trim().toLowerCase();
+  const capability = /^[a-f0-9]{48}$/.test(token) ? localMusicImportCapabilities.get(token) : null;
+  if (!capability || capability.senderId !== event.sender.id || capability.expiresAt <= Date.now()) {
+    return { ok: false, count: 0, tracks: [], error: 'LOCAL_IMPORT_CAPABILITY_INVALID' };
+  }
+  localMusicImportCapabilities.delete(token);
+  try {
+    return await localMusicLibrary.importFiles(capability.files, { replace: false });
+  } catch (error) {
+    return { ok: false, count: 0, tracks: [], error: error.code || error.message || 'LOCAL_LIBRARY_IMPORT_FAILED' };
+  }
+});
+
 ipcMain.handle('mineradio-cache-read-lyric', async (_event, key) => {
   try {
     const file = lyricCacheFilePath(key);
@@ -5281,11 +4608,6 @@ ipcMain.handle('kugou-music-clear-login', async () => {
   return clearKugouMusicLoginSession();
 });
 
-ipcMain.handle('qishui-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
-  return openQishuiMusicLoginWindow(getSenderWindow(event));
-});
-
 ipcMain.handle('qishui-music-clear-login', async () => {
   return clearQishuiMusicLoginSession();
 });
@@ -5453,6 +4775,7 @@ function configureLocalServerEnvironment(port) {
   process.env.KUGOU_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.kugou-cookie');
   process.env.QISHUI_COOKIE_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-cookie');
   process.env.QISHUI_TOKEN_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-token');
+  process.env.QISHUI_QR_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.qishui-qr-login.json');
   process.env.MINERADIO_LISTEN_SYNC_FILE = path.join(STABLE_USER_DATA_PATH, 'listen-sync-journal.json');
   process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_FILE = path.join(STABLE_USER_DATA_PATH, LOGIN_EASTER_EGG_STATE_FILE);
   process.env.MINERADIO_LOGIN_EASTER_EGG_GATE_VERSION = LOGIN_EASTER_EGG_GATE_VERSION;
@@ -5472,6 +4795,8 @@ const APP_OWNED_MIGRATION_FILES = [
   '.qishui-cookie',
   '.qishui-token',
   '.qishui-oauth.json',
+  '.qishui-qr-identity.json',
+  '.qishui-qr-login.json',
   '.spotify-token.json',
   '.spotify-credentials.json',
   'current-fx-autosave.json',
@@ -5694,6 +5019,10 @@ async function ensureLocalServerStarted() {
 
 function showMainWindowSafely(win, reason) {
   if (!win || win.isDestroyed()) return false;
+  // A renderer may be reloaded while the user intentionally keeps Mineradio
+  // in the tray. Runtime recovery must never turn that reload into a surprise
+  // foreground window.
+  if (startupCompleted && win.__mineradioIntentionalHide === true) return false;
   if (win.__mineradioStartupShowTimer) {
     clearTimeout(win.__mineradioStartupShowTimer);
     win.__mineradioStartupShowTimer = null;
@@ -5710,6 +5039,155 @@ function showMainWindowSafely(win, reason) {
   return true;
 }
 
+function clearMainWindowFullscreenVisibilityGuard() {
+  if (mainWindowFullscreenVisibilityTimer) clearInterval(mainWindowFullscreenVisibilityTimer);
+  mainWindowFullscreenVisibilityTimer = null;
+}
+
+function shouldRestoreUnexpectedFullscreenVisibility(win) {
+  if (!win || win.isDestroyed() || appQuitting || win.__mineradioIntentionalHide === true) return false;
+  if (fullDesktopModeHostVisibilityTransitionDepth > 0 || fullDesktopModeRuntime.getStatus('fullscreen-visibility-guard').enabled === true) return false;
+  if (!win.isFullScreen() || win.isMinimized() || win.isVisible()) return false;
+  return true;
+}
+
+function restoreUnexpectedFullscreenVisibility(win, reason = 'fullscreen-visibility-guard') {
+  if (!shouldRestoreUnexpectedFullscreenVisibility(win)) return false;
+  console.warn('[WindowRecovery] restoring unexpectedly hidden fullscreen window:', reason);
+  try { win.showInactive(); } catch (_) { try { win.show(); } catch (_) { } }
+  sendWindowState(win);
+  return true;
+}
+
+function startMainWindowFullscreenVisibilityGuard(win) {
+  clearMainWindowFullscreenVisibilityGuard();
+  if (!win || win.isDestroyed()) return;
+  mainWindowFullscreenVisibilityTimer = setInterval(() => {
+    restoreUnexpectedFullscreenVisibility(win, 'fullscreen-watchdog');
+  }, FULLSCREEN_VISIBILITY_CHECK_MS);
+  if (typeof mainWindowFullscreenVisibilityTimer.unref === 'function') mainWindowFullscreenVisibilityTimer.unref();
+}
+
+function reserveMainWindowRendererRecoveryAttempt() {
+  const now = Date.now();
+  mainWindowRendererRecoveryAttempts = mainWindowRendererRecoveryAttempts.filter(at => now - at < RENDERER_RECOVERY_WINDOW_MS);
+  if (mainWindowRendererRecoveryAttempts.length >= RENDERER_RECOVERY_MAX_ATTEMPTS) return 0;
+  mainWindowRendererRecoveryAttempts.push(now);
+  return mainWindowRendererRecoveryAttempts.length;
+}
+
+function startupNavigationUrlMatches(actualUrl, expectedUrl) {
+  try {
+    return new URL(String(actualUrl || '')).href === new URL(String(expectedUrl || '')).href;
+  } catch (_) {
+    return false;
+  }
+}
+
+function createTrustedMainDocumentReadySignal(win, expectedUrl) {
+  const webContents = win && win.webContents;
+  let ready = false;
+  let readyUrl = '';
+  let readyPhase = '';
+  let rejectedHttpResponse = false;
+  let resolveReady;
+  const promise = new Promise((resolve) => { resolveReady = resolve; });
+  const markReady = (phase, eventUrl = '', httpResponseCode = 200) => {
+    if (ready || !webContents || webContents.isDestroyed()) return;
+    const candidateUrl = String(eventUrl || webContents.getURL() || '');
+    if (!isTrustedMainDocumentUrl(candidateUrl)
+      || !startupNavigationUrlMatches(candidateUrl, expectedUrl)) return;
+    if (Number(httpResponseCode) >= 400) {
+      rejectedHttpResponse = true;
+      return;
+    }
+    if (rejectedHttpResponse) return;
+    ready = true;
+    readyUrl = candidateUrl;
+    readyPhase = String(phase || 'trusted-main-document');
+    if (win && !win.isDestroyed()) {
+      win.__mineradioTrustedMainDocumentReady = {
+        url: readyUrl,
+        phase: readyPhase,
+        at: Date.now(),
+      };
+    }
+    resolveReady({ url: readyUrl, phase: readyPhase });
+  };
+  const onDidNavigate = (_event, url, httpResponseCode) => markReady('did-navigate', url, httpResponseCode);
+  const onDomReady = () => markReady('dom-ready');
+  const onDidFinishLoad = () => markReady('did-finish-load');
+  webContents.on('did-navigate', onDidNavigate);
+  webContents.on('dom-ready', onDomReady);
+  webContents.on('did-finish-load', onDidFinishLoad);
+  return {
+    promise,
+    isReady: () => ready,
+    url: () => readyUrl,
+    phase: () => readyPhase,
+    cancel: () => {
+      if (!webContents || webContents.isDestroyed()) return;
+      webContents.removeListener('did-navigate', onDidNavigate);
+      webContents.removeListener('dom-ready', onDomReady);
+      webContents.removeListener('did-finish-load', onDidFinishLoad);
+    },
+  };
+}
+
+function recoverMainWindowAfterRendererGone(win, details = {}, cleanupPromise = null) {
+  if (!win || win.isDestroyed() || win !== mainWindow || appQuitting) return Promise.resolve(false);
+  if (String(details.reason || '') === 'clean-exit') return Promise.resolve(false);
+  if (mainWindowRendererRecoveryPromise) return mainWindowRendererRecoveryPromise;
+  const attempt = reserveMainWindowRendererRecoveryAttempt();
+  if (!attempt) {
+    const error = new Error('renderer recovery limit reached');
+    const log = writeStartupErrorLog('Runtime renderer recovery', 'MR-RUNTIME-RENDERER-LOOP', error);
+    dialog.showErrorBox('Mineradio 显示恢复失败', `前台界面连续异常退出，已停止自动重载。\n日志：${log.file}`);
+    return Promise.resolve(false);
+  }
+  const keepFullscreen = win.isFullScreen() || windowFullscreenActive;
+  const keepIntentionallyHidden = win.__mineradioIntentionalHide === true;
+  mainWindowRendererRecoveryPromise = (async () => {
+    // Do not navigate synchronously from render-process-gone. Chromium may
+    // still be finalizing the dead renderer during the event callback.
+    await startupDelay(320);
+    if (appQuitting || win.isDestroyed() || win !== mainWindow) return false;
+    if (cleanupPromise) await Promise.resolve(cleanupPromise);
+    if (appQuitting || win.isDestroyed() || win !== mainWindow) return false;
+    await ensureLocalServerStarted();
+    await loadMainWindowWithRetry(win);
+    if (keepFullscreen && !win.isFullScreen()) {
+      windowFullscreenActive = true;
+      setMainWindowFullscreenResizeGuard(win, true);
+      win.setFullScreen(true);
+    }
+    win.__mineradioIntentionalHide = keepIntentionallyHidden;
+    if (!keepIntentionallyHidden) showMainWindowSafely(win, `renderer-recovered-${attempt}`);
+    else sendWindowState(win);
+    writeStartupState('renderer-recovered', {
+      rendererRecoveredAt: Date.now(),
+      rendererRecoveryAttempt: attempt,
+      rendererGoneReason: String(details.reason || 'unknown'),
+    });
+    return true;
+  })().catch((error) => {
+    const log = writeStartupErrorLog('Runtime renderer recovery', 'MR-RUNTIME-RENDERER-LOAD', error);
+    console.error('[WindowRecovery] renderer reload failed:', error && error.message || error);
+    if (!appQuitting && !win.isDestroyed()) {
+      if (!keepIntentionallyHidden) {
+        try { win.show(); } catch (_) { }
+      }
+      if (attempt >= RENDERER_RECOVERY_MAX_ATTEMPTS) {
+        dialog.showErrorBox('Mineradio 显示恢复失败', `前台界面无法重新加载。\n日志：${log.file}`);
+      }
+    }
+    return false;
+  }).finally(() => {
+    mainWindowRendererRecoveryPromise = null;
+  });
+  return mainWindowRendererRecoveryPromise;
+}
+
 async function loadMainWindowWithRetry(win) {
   const port = mainServerPort || process.env.PORT || 3000;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -5717,6 +5195,7 @@ async function loadMainWindowWithRetry(win) {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     if (!win || win.isDestroyed()) throw new Error('Main BrowserWindow was destroyed before navigation');
     const targetUrl = `${baseUrl}/?startupAttempt=${attempt}&startupAt=${Date.now()}`;
+    const readySignal = createTrustedMainDocumentReadySignal(win, targetUrl);
     try {
       writeStartupState('navigation-attempt', { navigationAttempt: attempt, navigationAt: Date.now(), targetUrl });
       if (attempt === 1 && process.env.MINERADIO_STARTUP_TEST_FAIL_FIRST_NAV === '1') {
@@ -5724,19 +5203,45 @@ async function loadMainWindowWithRetry(win) {
         injected.code = 'MINERADIO_STARTUP_QA_INJECTED';
         throw injected;
       }
+      if (!win.isDestroyed()) win.__mineradioTrustedMainDocumentReady = null;
+      const loadPromise = win.loadURL(targetUrl);
+      const stallObservedLoadPromise = process.env.MINERADIO_STARTUP_TEST_STALL_LOAD_PROMISE === '1';
+      if (stallObservedLoadPromise) loadPromise.catch(() => {});
+      const observedLoadPromise = stallObservedLoadPromise ? new Promise(() => {}) : loadPromise;
       await withStartupTimeout(
-        win.loadURL(targetUrl),
+        Promise.race([observedLoadPromise, readySignal.promise]),
         STARTUP_NAVIGATION_TIMEOUT_MS,
         `loadURL attempt ${attempt}`,
-        () => { try { win.webContents.stop(); } catch (_) {} },
+        () => {
+          if (readySignal.isReady()) return;
+          try { win.webContents.stop(); } catch (_) {}
+        },
       );
+      writeStartupState('navigation-ready', {
+        navigationAttempt: attempt,
+        navigationReadyAt: Date.now(),
+        navigationReadyPhase: readySignal.phase() || 'load-url',
+        targetUrl,
+      });
       return targetUrl;
     } catch (error) {
+      if (error && error.code === 'MINERADIO_STARTUP_TIMEOUT' && readySignal.isReady()) {
+        const recoveredUrl = readySignal.url() || targetUrl;
+        writeStartupState('navigation-ready-recovered', {
+          navigationAttempt: attempt,
+          navigationReadyAt: Date.now(),
+          navigationReadyPhase: readySignal.phase() || 'trusted-current-document',
+          targetUrl: recoveredUrl,
+        });
+        return recoveredUrl;
+      }
       lastError = error;
       writeStartupState('navigation-retry', { navigationAttempt: attempt, retryAt: Date.now(), lastNavigationError: String(error && error.message || error) });
       console.warn(`[StartupWindow] navigation attempt ${attempt} failed:`, error.message || error);
       try { win.webContents.stop(); } catch (_) {}
       if (attempt < 2) await startupDelay(500);
+    } finally {
+      readySignal.cancel();
     }
   }
   const error = new Error(`loadURL failed after retry: ${startupErrorText(lastError)}`);
@@ -5800,6 +5305,7 @@ async function createWindowOnce() {
   });
   win.webContents.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace || !isTrustedMainDocumentUrl(url)) return;
+    win.__mineradioTrustedMainDocumentReady = null;
     stopWallpaperEngineRuntimeForRenderer('main-frame-navigation');
     closeWallpaperWindow('main-frame-navigation').catch(() => {});
   });
@@ -5819,11 +5325,20 @@ async function createWindowOnce() {
     console.warn('[StartupWindow] did-fail-load:', errorCode, errorDescription, validatedURL || '');
   });
   win.webContents.on('render-process-gone', (_event, details) => {
-    stopWallpaperEngineRuntimeForRenderer(`render-process-gone:${details && details.reason || 'unknown'}`);
-    closeWallpaperWindow(`main-renderer-gone:${details && details.reason || 'unknown'}`).catch(() => {});
+    const cleanupPromise = Promise.allSettled([
+      stopWallpaperEngineRuntimeForRenderer(`render-process-gone:${details && details.reason || 'unknown'}`),
+      closeWallpaperWindow(`main-renderer-gone:${details && details.reason || 'unknown'}`),
+    ]);
     const error = new Error(`renderer process gone: ${details && details.reason || 'unknown'} exitCode=${details && details.exitCode}`);
     console.error('[StartupWindow]', error.message);
-    if (!startupCompleted) writeStartupErrorLog('Renderer process gone', 'MR-BOOT-GPU', error);
+    writeStartupErrorLog(
+      startupCompleted ? 'Runtime renderer process gone' : 'Renderer process gone',
+      startupCompleted ? 'MR-RUNTIME-RENDERER-GONE' : 'MR-BOOT-GPU',
+      error
+    );
+    if (startupCompleted && String(details && details.reason || '') !== 'clean-exit') {
+      setTimeout(() => recoverMainWindowAfterRendererGone(win, details, cleanupPromise), 0);
+    }
   });
   win.on('unresponsive', () => {
     console.warn('[StartupWindow] main window became unresponsive', { startupCompleted });
@@ -5856,10 +5371,12 @@ async function createWindowOnce() {
     scheduleAppMemoryTrim('minimize', 1600);
   });
   win.on('restore', () => {
+    win.__mineradioIntentionalHide = false;
     sendWindowState(win);
     if (fullDesktopModeHostVisibilityTransitionDepth <= 0) resumeWallpaperEngineForVisibleHost(win, 'restore');
   });
   win.on('show', () => {
+    win.__mineradioIntentionalHide = false;
     if (fullDesktopModeHostVisibilityTransitionDepth > 0) return;
     sendWindowState(win);
     resumeWallpaperEngineForVisibleHost(win, 'show');
@@ -5916,6 +5433,7 @@ async function createWindowOnce() {
       event.preventDefault();
       win.__mineradioDesktopModeCloseArmed = false;
       createOrUpdateTray();
+      win.__mineradioIntentionalHide = true;
       flushMainWindowFxAutosave('tray-hide').finally(() => {
         if (win.isDestroyed()) return;
         win.hide();
@@ -5935,6 +5453,9 @@ async function createWindowOnce() {
   });
   win.on('closed', () => {
     mainWindowCloseFlushArmed = false;
+    clearMainWindowFullscreenVisibilityGuard();
+    mainWindowRendererRecoveryPromise = null;
+    mainWindowRendererRecoveryAttempts = [];
     win.__mineradioDesktopModeCloseArmed = false;
     if (win.__mineradioStartupShowTimer) {
       clearTimeout(win.__mineradioStartupShowTimer);
@@ -5963,6 +5484,7 @@ async function createWindowOnce() {
     windowFullscreenActive = true;
     setMainWindowFullscreenResizeGuard(win, true);
     sendWindowState(win);
+    startMainWindowFullscreenVisibilityGuard(win);
     // Some Windows builds coalesce the final resize event during native
     // fullscreen. Re-arm the settled debounce from the authoritative event.
     setTimeout(() => scheduleWallpaperEngineHostBoundsRestart(win, 'enter-full-screen'), 40);
@@ -5970,6 +5492,7 @@ async function createWindowOnce() {
   win.on('leave-full-screen', () => {
     windowFullscreenActive = false;
     setMainWindowFullscreenResizeGuard(win, false);
+    clearMainWindowFullscreenVisibilityGuard();
     setTimeout(() => {
       applyWindowedBounds(win);
       scheduleWallpaperEngineHostBoundsRestart(win, 'leave-full-screen');
@@ -6047,6 +5570,11 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     try {
+      await localMusicLibrary.installProtocol(protocol);
+    } catch (error) {
+      console.warn('[LocalMusic] media protocol unavailable:', error && error.message || error);
+    }
+    try {
       await wallpaperEngineLibrary.installProtocol(protocol);
     } catch (error) {
       console.warn('[Wallpaper Engine] local media protocol unavailable:', error && error.message || error);
@@ -6066,6 +5594,8 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
+    powerMonitor.on('resume', () => restoreUnexpectedFullscreenVisibility(mainWindow, 'system-resume'));
+    powerMonitor.on('unlock-screen', () => restoreUnexpectedFullscreenVisibility(mainWindow, 'screen-unlock'));
     await createWindow();
   }).catch((e) => reportWindowCreationFailure('Main', e));
 

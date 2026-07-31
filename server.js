@@ -68,6 +68,8 @@ const {
   resolveQQVipFromProbes,
   qqVipSessionCacheKey,
   qqVipCacheTtlMs,
+  qqVipEntitlementRights,
+  preserveQQVipStalePositive,
   qqVipObjectLooksExpired: qqVipObjectLooksExpiredStrict,
 } = require('./qq-vip-api');
 const {
@@ -82,6 +84,7 @@ const {
   handleKugouPlaylistAddSong,
   getKugouLoginInfo,
   normalizeKugouCookieInput,
+  clearKugouSessionCaches,
   kugouCookieHasPlayback,
   extractKugouAuth,
   kugouAudioReferer,
@@ -91,7 +94,6 @@ const {
   handleQishuiStatus,
   normalizeQishuiCookieInput,
   qishuiCookieHasLogin,
-  saveQishuiAccessToken,
   clearQishuiAccessToken,
   handleQishuiSearch,
   handleQishuiFeed,
@@ -108,6 +110,7 @@ const {
   handleQishuiLyric,
   handleQishuiSongUrl,
 } = require('./qishui-api');
+const qishuiQrLogin = require('./qishui-qr-login');
 const {
   getSpotifyConfig,
   clearSpotifyToken,
@@ -142,8 +145,8 @@ const LOGIN_EASTER_EGG_PROTECTED_ROUTES = new Set([
   '/api/login/qr/check',
   '/api/qq/login/cookie',
   '/api/kugou/login/cookie',
-  '/api/qishui/login/token',
-  '/api/qishui/login/cookie',
+  '/api/qishui/login/qrcode',
+  '/api/qishui/login/check',
   '/api/spotify/config',
 ]);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -156,7 +159,7 @@ const CUEFIELD_FEEDBACK_FILE = process.env.CUEFIELD_FEEDBACK_FILE || path.join(_
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.0.3';
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.1.0';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const qishuiAudioDecryptor = new TrackDecryptor();
 const qishuiAudioDecryptCache = new Map();
@@ -369,6 +372,7 @@ function saveQQCookie(c) {
 let kugouCookie = '';
 function saveKugouCookie(c) {
   kugouCookie = saveConfiguredCookieStore(configuredCookieStores.kugou, normalizeCookieHeader(c) || rawCookieFallback(c));
+  clearKugouSessionCaches();
 }
 
 let qishuiCookie = '';
@@ -398,6 +402,7 @@ function clearAllRuntimeLoginCredentials(reason) {
   clearNeteaseLoginInfoCache();
   qqVipInfoCache.clear();
   clearQQLikedPlaylistCoverCache();
+  clearKugouSessionCaches();
   const qishui = clearQishuiAccessToken();
   const spotify = clearSpotifyToken();
   return {
@@ -1060,7 +1065,8 @@ function normalizeQQUin(raw) {
 }
 function qqCookieUin(obj) {
   obj = obj || qqCookieObject();
-  const raw = Number(obj.login_type) === 2 ? (obj.wxuin || obj.uin || obj.p_uin) : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin);
+  const isWechat = !!obj.wxopenid || Number(obj.login_type) === 2;
+  const raw = isWechat ? (obj.wxuin || obj.uin || obj.p_uin) : (obj.uin || obj.qqmusic_uin || obj.wxuin || obj.p_uin);
   return normalizeQQUin(raw);
 }
 function qqCookieMusicKey(obj) {
@@ -1160,7 +1166,7 @@ function qqCookieAvatar(obj, uin) {
 }
 function normalizeQQCookieInput(cookieText) {
   const obj = parseCookieString(cookieText);
-  if (Number(obj.login_type) === 2 && obj.wxuin && !obj.uin) obj.uin = obj.wxuin;
+  if ((obj.wxopenid || Number(obj.login_type) === 2) && obj.wxuin) obj.uin = obj.wxuin;
   if (!obj.uin && (obj.qqmusic_uin || obj.p_uin)) obj.uin = obj.qqmusic_uin || obj.p_uin;
   if (obj.uin) obj.uin = normalizeQQUin(obj.uin);
   return serializeCookieObject(obj);
@@ -2574,18 +2580,24 @@ function withQQVipSyncState(info, probeAvailable) {
   info = info || {};
   const authIncomplete = !!(info.loggedIn && !info.playbackKeyReady);
   const membershipUnknown = !!(info.loggedIn && info.membershipKnown !== true);
+  const stalePositive = !!(info.loggedIn && info.membershipStale && info.isVip);
   const membershipStale = !!(info.loggedIn && (
     authIncomplete
     || membershipUnknown
+    || stalePositive
     || (info.profileUnavailable && !probeAvailable)
   ));
-  return {
+  const normalized = {
     ...info,
     membershipStale,
     authorizationIncomplete: authIncomplete,
     vipSyncState: authIncomplete
       ? 'authorization_incomplete'
-      : (membershipUnknown ? 'unknown' : (probeAvailable ? 'checked' : (membershipStale ? 'stale' : 'profile'))),
+      : (stalePositive ? 'stale_positive' : (membershipUnknown ? 'unknown' : (probeAvailable ? 'checked' : (membershipStale ? 'stale' : 'profile')))),
+  };
+  return {
+    ...normalized,
+    membershipRights: qqVipEntitlementRights(normalized),
   };
 }
 
@@ -2608,9 +2620,9 @@ function mergeQQVipStatus(info, vip, source) {
       vipSource: info.vipSource || 'profile',
     }, false);
   }
-  // A verified positive profile result wins over a stale ordinary response
-  // returned by one of QQ's replicated VIP query endpoints.
-  if (profilePositive && !vip.isVip) {
+  // A profile positive only survives an incomplete/conflicting probe. A
+  // current-account negative quorum is authoritative and must downgrade now.
+  if (profilePositive && !vip.isVip && vip.authoritativeNegative !== true) {
     return withQQVipSyncState({
       ...info,
       membershipKnown: true,
@@ -2637,6 +2649,14 @@ function mergeQQVipStatus(info, vip, source) {
     isSvip: !!vip.isSvip,
     vipLabel: vip.vipLabel || (vip.isVip ? 'VIP' : '无VIP'),
     membershipKnown: true,
+    membershipStale: !!vip.membershipStale,
+    vipEvidenceConflict: !!vip.vipEvidenceConflict,
+    probeDecision: vip.probeDecision || '',
+    authoritativeNegative: vip.authoritativeNegative === true,
+    probeIncomplete: vip.probeIncomplete === true,
+    negativeProbeCount: Math.max(0, Number(vip.negativeProbeCount) || 0),
+    negativeQuorum: Math.max(0, Number(vip.negativeQuorum) || 0),
+    staleUntil: Number(vip.staleUntil) || 0,
     expiresAt: Number(vip.expiresAt) || 0,
     vipCheckedAt: Date.now(),
     vipProbeAvailable: true,
@@ -2648,7 +2668,7 @@ async function fetchQQVipStatus(cookieObj, opts) {
   opts = opts || {};
   cookieObj = cookieObj || qqCookieObject();
   const uin = qqCookieUin(cookieObj);
-  const musicKey = qqCookieMusicKey(cookieObj);
+  const musicKey = qqCookiePlaybackKey(cookieObj);
   if (!uin || !musicKey) return null;
   const cacheKey = qqVipSessionCacheKey(uin, musicKey, cookieObj);
   const cached = cacheKey ? qqVipInfoCache.get(cacheKey) : null;
@@ -2699,6 +2719,11 @@ async function fetchQQVipStatus(cookieObj, opts) {
   const value = await resolveQQVipFromProbes(probes, async probe => {
     return qqMusicRequest(probe.body, { cookie: true, timeoutMs: 4200 });
   });
+  const now = Date.now();
+  const stableValue = preserveQQVipStalePositive(cached, value, { now });
+  if (stableValue && stableValue.membershipStale) {
+    return stableValue;
+  }
   if (value && value.resolved) {
     const ttlMs = qqVipCacheTtlMs(value, {
       positiveTtlMs: QQ_VIP_INFO_CACHE_TTL_MS,
@@ -2706,7 +2731,13 @@ async function fetchQQVipStatus(cookieObj, opts) {
     });
     if (cacheKey && ttlMs > 0) {
       qqVipInfoCache.set(cacheKey, {
-        expiresAt: Date.now() + ttlMs,
+        expiresAt: now + ttlMs,
+        staleUntil: value.isVip
+          ? Math.min(
+            now + ttlMs + 10 * 60 * 1000,
+            Number(value.expiresAt) > 0 ? Number(value.expiresAt) : Number.MAX_SAFE_INTEGER
+          )
+          : 0,
         value,
       });
     }
@@ -3612,8 +3643,8 @@ async function handleQQSongUrl(mid, mediaMid, qualityPreference, playbackHints) 
   const guid = String(10000000 + Math.floor(Math.random() * 90000000));
   const cookieObj = qqCookieObject();
   const uin = qqCookieUin(cookieObj) || '0';
-  const musicKey = qqCookieMusicKey(cookieObj);
   const playbackKey = qqCookiePlaybackKey(cookieObj);
+  const musicKey = playbackKey;
   const fileMediaMid = String(mediaMid || '').trim();
   const requestedQuality = normalizeQualityPreference(qualityPreference);
   const memberTrackHint = qqPlaybackMemberHints(playbackHints);
@@ -5228,6 +5259,95 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/qishui/login/qrcode') {
+    try {
+      const result = await qishuiQrLogin.createQrCode();
+      const data = result && result.data || {};
+      sendJSON(res, {
+        provider: 'qishui',
+        token: String(data.token || ''),
+        qrcode: String(data.qrcode || ''),
+        qrcodeIndexUrl: String(data.qrcode_index_url || ''),
+        expireTime: Number(data.expire_time || 0),
+        message: '请使用抖音 App 扫码并确认登录',
+      });
+    } catch (err) {
+      console.error('[QishuiQRCode]', err);
+      sendJSON(res, {
+        provider: 'qishui',
+        token: '',
+        qrcode: '',
+        error: err && err.code || 'QISHUI_QR_CREATE_FAILED',
+        message: err && err.message || '汽水音乐二维码生成失败',
+      }, 500);
+    }
+    return;
+  }
+
+  if (pn === '/api/qishui/login/check') {
+    try {
+      const token = String(url.searchParams.get('token') || '').trim();
+      if (!token) {
+        sendJSON(res, {
+          provider: 'qishui',
+          loggedIn: false,
+          status: 'missing_token',
+          error: 'QISHUI_QR_TOKEN_REQUIRED',
+          message: '二维码登录 token 缺失',
+        }, 400);
+        return;
+      }
+      const result = await qishuiQrLogin.checkQrConnect(token);
+      const data = result && result.data || {};
+      const errorCode = Number(data.error_code || 0);
+      const bridgeStatus = qishuiQrLogin.getStatus();
+      if (bridgeStatus.loggedIn) {
+        const cookie = qishuiQrLogin.getCookie();
+        if (!qishuiCookieHasLogin(cookie)) throw new Error('QISHUI_QR_SESSION_COOKIE_MISSING');
+        saveQishuiCookie(cookie);
+        const status = await handleQishuiStatus(qishuiCookie);
+        sendJSON(res, {
+          ...status,
+          provider: 'qishui',
+          ok: true,
+          loggedIn: true,
+          webSession: true,
+          cookieReady: true,
+          status: 'confirmed',
+          errorCode: 0,
+          error_code: 0,
+          message: '登录成功',
+        });
+        return;
+      }
+      let status = String(data.status || '').trim();
+      if (errorCode === 2) status = 'expired';
+      else if (errorCode === 7) status = 'rate_limited';
+      else if (status === '2') status = 'scanned';
+      else if (!status || status === '1') status = 'waiting';
+      sendJSON(res, {
+        provider: 'qishui',
+        loggedIn: false,
+        status,
+        errorCode,
+        error_code: errorCode,
+        retryAfterMs: errorCode === 7 ? 60000 : 0,
+        message: result && result.message || data.description || '',
+      });
+    } catch (err) {
+      console.error('[QishuiLoginCheck]', err);
+      const cancelled = err && err.code === 'QISHUI_MFA_CANCELLED';
+      sendJSON(res, {
+        provider: 'qishui',
+        loggedIn: false,
+        status: cancelled ? 'mfa_cancelled' : 'error',
+        error: err && err.code || 'QISHUI_QR_CHECK_FAILED',
+        message: err && err.message || '汽水音乐登录状态检查失败',
+      }, cancelled ? 409 : 500);
+    }
+    return;
+  }
+
   if (pn === '/api/qishui/status' || pn === '/api/qishui/login/status') {
     try {
       sendJSON(res, await handleQishuiStatus(qishuiCookie));
@@ -5238,45 +5358,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (pn === '/api/qishui/login/token') {
-    try {
-      const body = await readRequestBody(req);
-      const token = body.token || body.accessToken || body.access_token || body.data || body.text || '';
-      sendJSON(res, saveQishuiAccessToken(token));
-    } catch (err) {
-      console.error('[QishuiLoginToken]', err);
-      const invalid = err && (err.code === 'INVALID_QISHUI_TOKEN' || err.message === 'INVALID_QISHUI_TOKEN');
-      sendJSON(res, {
-        provider: 'qishui',
-        configured: getQishuiStatus(qishuiCookie).configured,
-        loggedIn: getQishuiStatus(qishuiCookie).loggedIn,
-        error: invalid ? 'INVALID_QISHUI_TOKEN' : err.message,
-        message: invalid ? '汽水 OpenAPI token 无效或太短' : err.message,
-      }, invalid ? 400 : 500);
-    }
-    return;
-  }
-
-  if (pn === '/api/qishui/login/cookie') {
-    try {
-      const body = await readRequestBody(req);
-      const raw = body.cookie || body.data || body.text || '';
-      const normalized = normalizeQishuiCookieInput(raw);
-      if (!qishuiCookieHasLogin(normalized)) {
-        sendJSON(res, { provider: 'qishui', loggedIn: false, error: 'INVALID_QISHUI_COOKIE', message: '汽水 cookie 无效或缺少登录态' }, 400);
-        return;
-      }
-      saveQishuiCookie(normalized);
-      sendJSON(res, { ...await handleQishuiStatus(qishuiCookie), saved: true });
-    } catch (err) {
-      console.error('[QishuiLoginCookie]', err);
-      sendJSON(res, { provider: 'qishui', loggedIn: false, error: err.message }, 500);
-    }
-    return;
-  }
-
   if (pn === '/api/qishui/logout') {
     try {
+      await qishuiQrLogin.clear();
       saveQishuiCookie('');
       sendJSON(res, { ...clearQishuiAccessToken(), webSession: false, cookieReady: false, configured: getQishuiStatus('').configured, loggedIn: getQishuiStatus('').loggedIn });
     } catch (err) {
@@ -5666,8 +5750,17 @@ const server = http.createServer(async (req, res) => {
       const raw = body.cookie || body.data || body.text || '';
       const normalized = normalizeQQCookieInput(raw);
       const obj = parseCookieString(normalized);
-      if (!qqCookieUin(obj) || !qqCookieMusicKey(obj)) {
-        sendJSON(res, { provider: 'qq', loggedIn: false, error: 'INVALID_QQ_COOKIE', message: 'QQ cookie 缺少 uin 或有效登录票据' }, 400);
+      if (!qqCookieUin(obj) || !qqCookiePlaybackKey(obj)) {
+        const hasWebSession = !!(qqCookieUin(obj) && qqCookieMusicKey(obj));
+        sendJSON(res, {
+          provider: 'qq',
+          loggedIn: false,
+          partial: hasWebSession,
+          error: hasWebSession ? 'QQ_PLAYBACK_AUTH_INCOMPLETE' : 'INVALID_QQ_COOKIE',
+          message: hasWebSession
+            ? 'QQ 账号验证已完成，但 QQ 音乐播放授权尚未生成，请重新打开官方登录窗口完成授权'
+            : 'QQ cookie 缺少 uin 或有效 QQ 音乐播放票据',
+        }, 400);
         return;
       }
       saveQQCookie(normalized);

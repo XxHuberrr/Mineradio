@@ -25,8 +25,8 @@ function serverFunctionSource(name, nextName) {
   return serverText.slice(start, end);
 }
 
-test('2.0.3 update metadata accepts only a bounded HTTPS external page', () => {
-  assert.equal(packageData.version, '2.0.3');
+test('2.1.0 update metadata accepts only a bounded HTTPS external page', () => {
+  assert.equal(packageData.version, '2.1.0');
   assert.equal(packageData.mineradio.update.preview, false);
   assert.match(serverText, /function safeExternalUpdateUrl\(value\)/);
   assert.match(serverText, /raw\.length > 2048/);
@@ -38,7 +38,7 @@ test('2.0.3 update metadata accepts only a bounded HTTPS external page', () => {
   assert.match(serverText, /\n\s+downloadPageUrl,/);
   assert.match(serverText, /\n\s+downloadPages,/);
   assert.match(serverText, /patchAvailable:\s*false/);
-  assert.match(htmlText, /id="update-modal-version"[^>]*>v2\.0\.3</);
+  assert.match(htmlText, /id="update-modal-version"[^>]*>v2\.1\.0</);
   assert.match(htmlText, /id="update-download-sources"/);
 });
 

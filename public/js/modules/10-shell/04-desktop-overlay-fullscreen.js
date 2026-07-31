@@ -444,7 +444,7 @@ function requestDesktopKeyboardFocus(reason) {
     || !mode.active
     || desktopWallpaperRuntimeState.softwareInteractionLocked === true) return false;
   try {
-    api.requestDesktopKeyboardFocus(reason || 'renderer-pointerdown');
+    Promise.resolve(api.requestDesktopKeyboardFocus(reason || 'renderer-pointerdown')).catch(function () {});
     return true;
   } catch (_) {
     return false;

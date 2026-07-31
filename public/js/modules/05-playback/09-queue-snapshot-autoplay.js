@@ -17,7 +17,7 @@ function playbackRestoreSongSnapshot(song) {
     'spotifyId', 'spotifyUri', 'spotifyUrl', 'uri', 'albumUri',
     'hash', 'fileHash', 'audioHash', 'albumId', 'album_id', 'albumMid', 'albummid', 'albumAudioId', 'album_audio_id', 'mixSongId', 'hqHash', 'sqHash', 'resHash',
     'name', 'title', 'artist', 'album', 'cover', 'duration', 'durationMs', 'dt', 'fee',
-    'playable', 'playbackMode', 'recommendationSource', 'programId', 'radioId', 'radioName', 'localKey'
+    'playable', 'playbackMode', 'recommendationSource', 'programId', 'radioId', 'radioName', 'localKey', 'localFileId'
   ].forEach(function (key) {
     if (song[key] != null && song[key] !== '') snap[key] = song[key];
   });

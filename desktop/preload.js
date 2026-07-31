@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
@@ -39,6 +39,26 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     ipcRenderer.on('mineradio-wallpaper-engine-host-bounds-changed', listener);
     return () => ipcRenderer.removeListener('mineradio-wallpaper-engine-host-bounds-changed', listener);
   },
+  listLocalMusicLibrary: () => ipcRenderer.invoke('mineradio-local-library-list'),
+  readLocalMusicLyric: (localFileId) => ipcRenderer.invoke('mineradio-local-library-lyric', String(localFileId || '')),
+  importLocalMusicFiles: async (files) => {
+    const entries = [];
+    for (const file of Array.from(files || [])) {
+      let filePath = '';
+      try {
+        filePath = webUtils && typeof webUtils.getPathForFile === 'function' ? webUtils.getPathForFile(file) : '';
+      } catch (_) {}
+      if (!filePath) continue;
+      entries.push({
+        path: filePath,
+        relativePath: String(file && (file.webkitRelativePath || file.name) || ''),
+      });
+    }
+    if (!entries.length) return { ok: false, count: 0, tracks: [], error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+    const authorization = await ipcRenderer.invoke('mineradio-local-library-authorize', { files: entries });
+    if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
+    return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
+  },
   readLyricCache: (key) => ipcRenderer.invoke('mineradio-cache-read-lyric', key || ''),
   writeLyricCache: (key, payload) => ipcRenderer.invoke('mineradio-cache-write-lyric', key || '', payload || {}),
   close: (behavior) => ipcRenderer.invoke('desktop-window-close', behavior),
@@ -53,7 +73,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   clearQQMusicLogin: () => ipcRenderer.invoke('qq-music-clear-login'),
   openKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-open-login'),
   clearKugouMusicLogin: () => ipcRenderer.invoke('kugou-music-clear-login'),
-  openQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-open-login'),
   clearQishuiMusicLogin: () => ipcRenderer.invoke('qishui-music-clear-login'),
   openSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-open-login'),
   clearSpotifyMusicLogin: () => ipcRenderer.invoke('spotify-music-clear-login'),
@@ -97,7 +116,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   updateDesktopIconShields: (payload) => ipcRenderer.send('mineradio-full-desktop-icon-shields', payload || {}),
   setDesktopSoftwareLocked: (locked) => ipcRenderer.invoke('mineradio-full-desktop-set-software-lock', locked === true),
   setDesktopIconsVisible: (visible) => ipcRenderer.invoke('mineradio-full-desktop-set-icons-visible', visible !== false),
-  requestDesktopKeyboardFocus: (reason) => ipcRenderer.send(
+  requestDesktopKeyboardFocus: (reason) => ipcRenderer.invoke(
     'mineradio-full-desktop-request-keyboard-focus',
     String(reason || 'renderer-pointerdown').slice(0, 80)
   ),

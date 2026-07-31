@@ -31,3 +31,27 @@ queue, and playback modules rather than the upstream LX/local-only data model.
 The combined application remains distributed under the repository's GNU GPL v3
 license. Preserve this notice and the corresponding source when redistributing
 modified builds.
+
+## Qishui Passport Web QR authentication
+
+- Upstream: `Wx2yZx/Mineradio-Qishui-QR-Login`
+- Reference revision: `aaadaab7d011714f94fbe45b382ba8dcc7cf17b9`
+- Declared license: `GPL-3.0-only`
+- Port date: 2026-07-30
+
+Mineradio ports only the official Passport Web QR authentication boundary:
+an isolated hidden Electron security host, the Qishui web signing bootstrap,
+QR creation and polling, account-session cookie persistence, and the official
+second-verification UI when the service requests it. The upstream whole-project
+installer was not run, and no application files were wholesale replaced.
+
+The QR bridge feeds the authenticated cookie into Mineradio's existing
+`qishui-api.js` provider. Search, playlists, likes, comments, entitlement checks,
+and audio playback remain Mineradio implementations. Legacy token/manual-cookie
+login controls and local SodaMusic cookie discovery are not exposed by the
+current login UI.
+
+The web security runtime resources under `qishui-auth-v6/` are retained
+byte-for-byte for protocol compatibility and remain the property of their
+respective rights holders. They are loaded only inside the isolated authentication
+partition for the user's own official login session.

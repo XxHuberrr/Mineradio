@@ -11,7 +11,7 @@ const QISHUI_RELATED_MEDIA_PATH = '/api/luna/v1/platform/feed/related-media/';
 const QISHUI_FEED_SONG_TAB_PATH = '/api/luna/v1/platform/feed/song-tab/';
 const QISHUI_SCOPE = 'luna.openapi.platform.play_core';
 const DEFAULT_QISHUI_TOKEN_FILE = path.join(__dirname, '.qishui-token');
-const QISHUI_UA = 'Mineradio/2.0.3 (Qishui official OpenAPI bridge)';
+const QISHUI_UA = 'Mineradio/2.1.0 (Qishui official OpenAPI bridge)';
 const QISHUI_OAUTH_AUTH_URL = (process.env.QISHUI_OAUTH_AUTH_URL || 'https://open.douyin.com/platform/oauth/connect').replace(/\/+$/, '');
 const QISHUI_OAUTH_TOKEN_URL = process.env.QISHUI_OAUTH_TOKEN_URL || 'https://open.douyin.com/oauth/access_token/';
 const QISHUI_PUBLIC_ENABLED = process.env.QISHUI_PUBLIC_ENABLED !== '0';
@@ -27,46 +27,16 @@ const QISHUI_WEB_API_BASES = (process.env.QISHUI_WEB_API_BASES || 'https://api5-
 const QISHUI_WEB_PC_API_BASE = (process.env.QISHUI_WEB_PC_API_BASE || 'https://api.qishui.com').replace(/\/+$/, '');
 const QISHUI_PUBLIC_HEADERS = {
   'Accept': 'application/json,text/plain,*/*',
-  'User-Agent': 'Mineradio/2.0.3 (Qishui public catalog bridge)',
+  'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)',
 };
 const QISHUI_WEB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) SodaMusic/3.1.0 Chrome/136.0.7103.59 Electron/36.4.0-rs.22.release.main.1 TTElectron/36.4.0-rs.22.release.main.1 Safari/537.36';
 const QISHUI_PC_APP_UA = 'LunaPC/3.3.0(359450208)';
-const QISHUI_PC_DEVICE_ID = String(Date.now());
-const QISHUI_PC_INSTALL_ID = String(Number(QISHUI_PC_DEVICE_ID) + 1);
-const QISHUI_PC_BIZ_TRACE_ID = crypto.randomBytes(4).toString('hex');
 const QISHUI_WEB_DEFAULT_PARAMS = {
   aid: '386088',
   app_name: 'luna_pc',
   device_platform: 'web',
   channel: 'pc_web',
 };
-const QISHUI_PC_FIXED = {
-  aid: '386088',
-  passport_jssdk_version: '2.4.13',
-  passport_jssdk_type: 'normal',
-  is_from_ttaccountsdk: '1',
-  next: 'https://api.qishui.com',
-  need_logo: 'false',
-  need_short_url: 'false',
-  is_frontier: 'true',
-  is_new_login: '1',
-  language: 'zh',
-  account_sdk_source: 'web',
-  p_js_v: '2.4.13',
-  p_js_t: 'pro',
-  p_zt: '3.3.5',
-  p_ver: '1.0.29',
-  request_host: 'app://resources',
-  p_bd: '1.0.0.41',
-  is_from_iesaccountsaas: '1',
-  device_platform: 'PC',
-  region: 'cn',
-  geo_region: 'cn',
-  os_region: 'cn',
-  sim_region: '',
-  version_code: '3.3.0',
-};
-
 function firstEnv(keys) {
   for (const key of keys) {
     const value = String(process.env[key] || '').trim();
@@ -206,6 +176,9 @@ const qishuiWebLibraryCache = createTtlCache(24, 90 * 1000);
 const qishuiWebPlaylistCache = createTtlCache(48, 90 * 1000);
 const qishuiWebPlaylistCursorCache = new Map();
 const qishuiMembershipCache = createTtlCache(24, 60 * 1000);
+const qishuiMembershipPositiveHistory = new Map();
+const QISHUI_MEMBERSHIP_POSITIVE_CACHE_MS = 10 * 1000;
+const QISHUI_MEMBERSHIP_POSITIVE_GRACE_MS = 20 * 1000;
 const qishuiTrackMetadataCache = createTtlCache(120, 20 * 1000);
 const qishuiPlaybackCache = createTtlCache(120, 4 * 60 * 1000);
 
@@ -314,59 +287,6 @@ function qishuiPcUrl(apiPath, params) {
   return urlWithParams(target, params || {});
 }
 
-function qishuiPcPassportParams(extra) {
-  return Object.assign({
-    passport_jssdk_version: QISHUI_PC_FIXED.passport_jssdk_version,
-    passport_jssdk_type: QISHUI_PC_FIXED.passport_jssdk_type,
-    is_from_ttaccountsdk: QISHUI_PC_FIXED.is_from_ttaccountsdk,
-    aid: QISHUI_PC_FIXED.aid,
-    language: QISHUI_PC_FIXED.language,
-    account_sdk_source: QISHUI_PC_FIXED.account_sdk_source,
-    p_js_v: QISHUI_PC_FIXED.p_js_v,
-    p_js_t: QISHUI_PC_FIXED.p_js_t,
-    p_zt: QISHUI_PC_FIXED.p_zt,
-    p_ver: QISHUI_PC_FIXED.p_ver,
-    request_host: QISHUI_PC_FIXED.request_host,
-    p_bd: QISHUI_PC_FIXED.p_bd,
-    biz_trace_id: QISHUI_PC_BIZ_TRACE_ID,
-    is_new_login: QISHUI_PC_FIXED.is_new_login,
-    is_from_iesaccountsaas: QISHUI_PC_FIXED.is_from_iesaccountsaas,
-    device_id: QISHUI_PC_DEVICE_ID,
-    install_id: QISHUI_PC_INSTALL_ID,
-    did: QISHUI_PC_DEVICE_ID,
-    iid: QISHUI_PC_INSTALL_ID,
-    device_platform: QISHUI_PC_FIXED.device_platform,
-    version_code: QISHUI_PC_FIXED.version_code,
-  }, extra || {});
-}
-
-function qishuiOrderedForm(params, order) {
-  params = params || {};
-  const picked = new Set();
-  const out = new URLSearchParams();
-  (order || []).forEach(key => {
-    if (Object.prototype.hasOwnProperty.call(params, key)) {
-      out.append(key, String(params[key] == null ? '' : params[key]));
-      picked.add(key);
-    }
-  });
-  Object.keys(params).sort().forEach(key => {
-    if (!picked.has(key)) out.append(key, String(params[key] == null ? '' : params[key]));
-  });
-  return out.toString();
-}
-
-function qishuiSetCookieHeader(headers) {
-  const raw = headers && (headers['set-cookie'] || headers['Set-Cookie']) || [];
-  const cookies = Array.isArray(raw) ? raw : [raw];
-  return normalizeQishuiCookieInput(cookies);
-}
-
-function qishuiSetCookieSessionId(headers) {
-  const obj = qishuiCookieObject(qishuiSetCookieHeader(headers));
-  return normalizeText(obj.sessionid || obj.sessionid_ss || obj.sid_guard || obj.sid_tt || '');
-}
-
 function qishuiSessionCookieHeader(cookieText) {
   const normalized = normalizeQishuiCookieInput(cookieText);
   const obj = qishuiCookieObject(normalized);
@@ -382,83 +302,6 @@ function qishuiHeadersWithCookie(headers, cookieText) {
   return out;
 }
 
-function qishuiPassportCsrfHeaders(cookieText) {
-  const obj = qishuiCookieObject(cookieText);
-  const csrf = normalizeText(obj.passport_csrf_token || obj.passport_csrf_token_default || '');
-  return csrf ? { 'x-tt-passport-csrf-token': csrf } : {};
-}
-
-function qishuiPassportHeaders(cookieText, accept) {
-  return qishuiHeadersWithCookie({
-    'Accept': accept || 'application/json,text/javascript',
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'User-Agent': QISHUI_WEB_UA,
-    'Referer': 'app://resources/',
-    'sec-ch-ua': '"Not.A/Brand";v="99", "Chromium";v="136"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': '"Windows"',
-    'bd-ticket-guard-version': '2',
-    'bd-ticket-guard-iteration-version': '2',
-    'bd-ticket-guard-ree-public-key': 'BAnIxKL96Jby5x+Um9i7HZ2c8O6lfZJRxm6yk73Mqcr06l2qIw2iqu2Mtm3U/6OI98usukA9dqxUlsctVWK9rKA=',
-    'bd-ticket-guard-server-cert-sn': '0',
-    'X-Tt-Passport-Trace-Id': QISHUI_PC_BIZ_TRACE_ID,
-    ...qishuiPassportCsrfHeaders(cookieText),
-  }, cookieText);
-}
-
-function qishuiPcQrNextFromIndexUrl(indexUrl) {
-  const value = normalizeText(indexUrl);
-  if (!/^https?:\/\//i.test(value)) return '';
-  try {
-    const parsed = new URL(value);
-    const next = normalizeText(parsed.searchParams.get('next_url') || parsed.searchParams.get('next') || '');
-    return /^https?:\/\//i.test(next) ? next : '';
-  } catch (_) {
-    return '';
-  }
-}
-
-function qishuiPcQrNextFromPayload(payload) {
-  payload = payload && typeof payload === 'object' ? payload : {};
-  const raw = payload.next || payload.nextUrl || payload.next_url || qishuiPcQrNextFromIndexUrl(payload.qrcodeIndexUrl || payload.qrcode_index_url);
-  return /^https?:\/\//i.test(String(raw || '')) ? String(raw).trim() : QISHUI_PC_FIXED.next;
-}
-
-function qishuiQrBoolParam(value, fallback) {
-  if (value === true || value === false) return value ? 'true' : 'false';
-  const text = normalizeText(value).toLowerCase();
-  if (text === 'true' || text === '1') return 'true';
-  if (text === 'false' || text === '0') return 'false';
-  return fallback;
-}
-
-function qishuiPcQrStatusMessage(status, hasCookie) {
-  const key = normalizeText(status).toLowerCase();
-  if (hasCookie) return '汽水登录已确认，正在同步歌单';
-  if (!key || key === 'new' || key === 'wait') return '等待汽水音乐 App 扫码';
-  if (/scan|scanned/.test(key)) return '已扫码，等待在汽水音乐 App 内确认';
-  if (/confirm|success|login/.test(key)) return '已确认，正在换取汽水登录态';
-  if (/verify|mfa|sms/.test(key)) return '已确认，汽水要求短信验证';
-  if (/expire/.test(key)) return '二维码已过期，请重新打开汽水授权';
-  if (/error|fail/.test(key)) return '扫码状态异常，正在继续确认当前二维码';
-  return '等待确认：' + status;
-}
-
-function qishuiQrErrorCode(data, json) {
-  const raw = data && (data.error_code || data.errorCode || data.err_code || data.errCode) ||
-    json && (json.error_code || json.errorCode || json.err_code || json.errCode) || 0;
-  const code = Number(raw);
-  return Number.isFinite(code) ? code : 0;
-}
-
-function qishuiQrAccountFlow(data, json) {
-  return normalizeText(
-    data && (data.account_flow || data.accountFlow || data.flow || data.verify_flow) ||
-    json && (json.account_flow || json.accountFlow || json.flow || json.verify_flow) ||
-    ''
-  ).toLowerCase();
-}
-
 function qishuiPcStatusError(payload, fallback) {
   if (!payload || typeof payload !== 'object') return null;
   const code = Number(payload.status_code == null ? payload.error_code : payload.status_code);
@@ -470,175 +313,6 @@ function qishuiPcStatusError(payload, fallback) {
   err.statusCode = code;
   err.body = payload;
   return err;
-}
-
-function qishuiPcQrRedirectUrl(json, data) {
-  data = data && typeof data === 'object' ? data : {};
-  json = json && typeof json === 'object' ? json : {};
-  const raw = data.redirect_url || data.redirectUrl || data.login_url || data.loginUrl ||
-    data.location || data.next || json.redirect_url || json.redirectUrl || json.location || '';
-  const value = normalizeText(raw);
-  if (!/^https?:\/\//i.test(value)) return '';
-  try {
-    const host = new URL(value).hostname.replace(/^\./, '').toLowerCase();
-    if (host === 'qishui.com' || host.endsWith('.qishui.com') || host === 'douyin.com' || host.endsWith('.douyin.com')) return value;
-  } catch (_) {}
-  return '';
-}
-
-async function qishuiResolvePcQrLoginCookie(redirectUrl, cookieText) {
-  let currentUrl = normalizeText(redirectUrl);
-  let cookie = normalizeQishuiCookieInput(cookieText);
-  if (!currentUrl) return '';
-  for (let i = 0; i < 6; i++) {
-    const meta = await requestTextWithMeta(currentUrl, {
-      timeoutMs: 9000,
-      headers: qishuiHeadersWithCookie({
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'User-Agent': QISHUI_WEB_UA,
-        'Referer': 'https://api.qishui.com/',
-      }, cookie),
-    });
-    cookie = normalizeQishuiCookieInput([cookie, qishuiSetCookieHeader(meta.headers)]);
-    if (qishuiCookieHasLogin(cookie)) return cookie;
-    const location = normalizeText(meta.headers && (meta.headers.location || meta.headers.Location));
-    if (!location || !/^(301|302|303|307|308)$/.test(String(meta.statusCode))) break;
-    currentUrl = new URL(location, currentUrl).toString();
-  }
-  return qishuiCookieHasLogin(cookie) ? cookie : '';
-}
-
-async function createQishuiPcQrLogin() {
-  const targetUrl = qishuiPcUrl('/passport/web/get_qrcode/', qishuiPcPassportParams({
-    next: QISHUI_PC_FIXED.next,
-    need_logo: QISHUI_PC_FIXED.need_logo,
-    need_short_url: QISHUI_PC_FIXED.need_short_url,
-    is_frontier: QISHUI_PC_FIXED.is_frontier,
-  }));
-  const meta = await requestJsonWithMeta(targetUrl, {
-    timeoutMs: 9000,
-    headers: qishuiPassportHeaders('', 'application/json,text/javascript'),
-  });
-  const json = meta.json || {};
-  const err = qishuiPcStatusError(json, 'QISHUI_QR_CREATE_FAILED');
-  if (err) throw err;
-  const data = (json && json.data) || {};
-  const token = normalizeText(data.token);
-  if (!token) throw new Error('QISHUI_QR_TOKEN_MISSING');
-  const qrcodeIndexUrl = data.qrcode_index_url || data.qrcodeIndexUrl || '';
-  const next = qishuiPcQrNextFromIndexUrl(qrcodeIndexUrl) || QISHUI_PC_FIXED.next;
-  const isFrontier = qishuiQrBoolParam(data.is_frontier, QISHUI_PC_FIXED.is_frontier);
-  return {
-    provider: 'qishui',
-    token,
-    qrcode: data.qrcode || '',
-    qrcodeIndexUrl,
-    next,
-    passportNext: QISHUI_PC_FIXED.next,
-    isFrontier,
-    passportIsFrontier: QISHUI_PC_FIXED.is_frontier,
-    deviceId: QISHUI_PC_DEVICE_ID,
-    expireTime: Number(data.expire_time || data.expireTime || 0) || 0,
-    copywriting: data.copywriting || '',
-    cookie: qishuiSetCookieHeader(meta.headers),
-    raw: json,
-  };
-}
-
-async function checkQishuiPcQrLogin(token, cookieText, qrOptions) {
-  token = normalizeText(token);
-  if (!token) throw new Error('QISHUI_QR_TOKEN_REQUIRED');
-  const seedCookie = normalizeQishuiCookieInput(cookieText);
-  qrOptions = qrOptions && typeof qrOptions === 'object' ? qrOptions : {};
-  const next = normalizeText(qrOptions.passportNext) || QISHUI_PC_FIXED.next;
-  const isFrontier = qishuiQrBoolParam(qrOptions.passportIsFrontier, QISHUI_PC_FIXED.is_frontier);
-  const checkParams = qishuiPcPassportParams();
-  const formParams = {
-    need_logo: QISHUI_PC_FIXED.need_logo,
-    need_short_url: QISHUI_PC_FIXED.need_short_url,
-    is_frontier: isFrontier,
-    token,
-    is_new_login: QISHUI_PC_FIXED.is_new_login,
-    next,
-  };
-  const headers = qishuiPassportHeaders(seedCookie, 'application/json,text/javascript');
-  let meta;
-  try {
-    meta = await requestJsonWithMeta(qishuiPcUrl('/passport/web/check_qrconnect/', checkParams), {
-      method: 'POST',
-      timeoutMs: 9000,
-      headers,
-    }, qishuiOrderedForm(formParams, [
-      'need_logo',
-      'need_short_url',
-      'is_frontier',
-      'token',
-      'is_new_login',
-      'next',
-      'passport_mfa_retry_tag',
-      'std_verify_flow_id',
-      'std_verify_scene',
-      'std_verify_template',
-      'std_verify_token',
-      'std_verify_type',
-      'std_verify_way',
-    ]));
-  } catch (postErr) {
-    const getParams = Object.assign({}, checkParams, formParams);
-    meta = await requestJsonWithMeta(qishuiPcUrl('/passport/web/check_qrconnect/', getParams), {
-      method: 'GET',
-      timeoutMs: 9000,
-      headers,
-    });
-    meta.postError = postErr && (postErr.message || postErr.code || String(postErr));
-  }
-  const json = meta.json || {};
-  const err = qishuiPcStatusError(json, 'QISHUI_QR_CHECK_FAILED');
-  const data = json.data || {};
-  const errorCode = qishuiQrErrorCode(data, json);
-  const accountFlow = qishuiQrAccountFlow(data, json);
-  const errorDescription = normalizeText(data.description || data.message || json.description || json.status_msg || json.message || '');
-  if (err && errorCode !== 7 && errorCode !== 2046 && !/scan|confirm|new|wait|error|fail|expire|verify|mfa|sms/i.test(err.message || '')) throw err;
-  let status = normalizeText(data.status || data.qr_status || json.status || json.message || '');
-  if (!status && errorCode === 7) status = 'wait';
-  else if (!status && errorCode) status = 'error';
-  if (errorCode === 2046 || /verify|mfa|sms/.test(accountFlow)) status = 'verify';
-  const responseCookie = qishuiSetCookieHeader(meta.headers);
-  const baseCookie = normalizeQishuiCookieInput([seedCookie, responseCookie]);
-  let loginCookie = qishuiCookieHasLogin(baseCookie) ? baseCookie : '';
-  const redirectUrl = qishuiPcQrRedirectUrl(json, data);
-  if (!loginCookie && redirectUrl) {
-    try {
-      loginCookie = await qishuiResolvePcQrLoginCookie(redirectUrl, baseCookie);
-    } catch (_) {}
-  }
-  const sessionObj = qishuiCookieObject(loginCookie || baseCookie);
-  const sessionid = normalizeText(sessionObj.sessionid || sessionObj.sessionid_ss || sessionObj.sid_guard || sessionObj.sid_tt || '');
-  const needsSms = status === 'verify' || errorCode === 2046 || /verify|mfa|sms/.test(accountFlow);
-  const retryAfterMs = errorCode === 7 ? 60000 : 0;
-  let message = qishuiPcQrStatusMessage(status, !!loginCookie);
-  if (errorCode === 7) message = '汽水确认接口临时限流，已自动降频继续确认当前二维码';
-  else if (needsSms) message = '汽水已确认扫码，但账号要求短信或二次验证，当前二维码不能直接换到登录态';
-  else if (/confirm|confirmed|success|login/i.test(status) && !loginCookie) message = '汽水已确认扫码，正在等待登录态下发';
-  else if (errorCode) message = '汽水扫码返回 error_code=' + errorCode + (errorDescription ? ('：' + errorDescription) : '，保留当前二维码继续确认');
-  return {
-    provider: 'qishui',
-    ok: true,
-    token,
-    status,
-    confirmed: !!loginCookie || (!needsSms && /confirmed|confirm|success|login/i.test(status)),
-    sessionid,
-    cookie: loginCookie,
-    message,
-    errorCode,
-    errorDescription,
-    accountFlow,
-    needsSms,
-    retryAfterMs,
-    pollCookie: baseCookie,
-    redirectUrl: redirectUrl ? true : false,
-    raw: json,
-  };
 }
 
 function qishuiTokenFile() {
@@ -737,6 +411,7 @@ function clearQishuiRuntimeCaches() {
   qishuiWebPlaylistCache.clear && qishuiWebPlaylistCache.clear();
   qishuiWebPlaylistCursorCache.clear();
   qishuiMembershipCache.clear && qishuiMembershipCache.clear();
+  qishuiMembershipPositiveHistory.clear();
   qishuiTrackMetadataCache.clear && qishuiTrackMetadataCache.clear();
   qishuiPlaybackCache.clear && qishuiPlaybackCache.clear();
 }
@@ -878,11 +553,14 @@ function getQishuiStatus(cookieText) {
     tokenConfigured,
     webSession,
     cookieReady: webSession,
-    loggedIn: configured,
+    // Only an authenticated Passport Web session is an account login.
+    // A legacy OpenAPI token may still power catalogue/recommendation calls,
+    // but must never bypass the official QR login or impersonate a user.
+    loggedIn: webSession,
     playbackMode: webSession ? 'direct-url' : 'recommend-match',
     scope: QISHUI_SCOPE,
     userId: webSession ? qishuiCookieUserId(cookie) : '',
-    nickname: webSession ? '汽水音乐账号' : (tokenConfigured ? '汽水开放平台' : ''),
+    nickname: webSession ? '汽水音乐账号' : '',
     vipType: 0,
     vipLevel: 'none',
     isVip: false,
@@ -909,12 +587,12 @@ function getQishuiStatus(cookieText) {
       webSession,
     },
     message: webSession
-      ? '本机汽水 PC 登录态已导入，可同步汽水歌单与我的喜欢，并直接解析播放地址。'
+      ? '汽水音乐官方扫码登录已连接，可同步歌单与我的喜欢，并按账号权益播放。'
       : tokenConfigured
-      ? '汽水开放平台 token 已配置，可使用官方推荐/相关歌曲能力。'
+      ? '已有旧版开放平台目录授权；账号功能仍需完成官方扫码登录。'
       : (QISHUI_PUBLIC_ENABLED
-        ? '请先登录本机汽水音乐 PC 客户端，再由 Mineradio 读取本地会话；未导入时仅保留公开搜索匹配。'
-        : '请先登录本机汽水音乐 PC 客户端，再由 Mineradio 读取本地会话。'),
+        ? '请使用抖音 App 扫描 Mineradio 中的汽水官方二维码；未登录时仅保留公开搜索匹配。'
+        : '请使用抖音 App 扫描 Mineradio 中的汽水官方二维码完成登录。'),
   };
 }
 
@@ -1125,10 +803,14 @@ const QISHUI_SVIP_CONTAINER_KEYS = new Set([
 const QISHUI_MEMBERSHIP_STATUS_KEYS = new Set([
   'status', 'state', 'active', 'valid', 'enabled', 'isactive', 'isvalid', 'isenabled',
 ]);
-const QISHUI_MEMBERSHIP_EXPIRY_KEYS = new Set([
+const QISHUI_MEMBERSHIP_GENERIC_EXPIRY_KEYS = new Set([
   'expiretime', 'expiresat', 'expirationtime', 'expiredat', 'endtime', 'validuntil',
+]);
+const QISHUI_VIP_EXPIRY_KEYS = new Set([
   'vipexpiretime', 'vipexpiresat', 'vipexpiredat', 'vipendtime',
   'memberexpiretime', 'memberexpiresat', 'memberexpiredat', 'memberendtime',
+]);
+const QISHUI_SVIP_EXPIRY_KEYS = new Set([
   'svipexpiretime', 'svipexpiresat', 'svipexpiredat', 'svipendtime',
 ]);
 
@@ -1172,29 +854,53 @@ function qishuiMembershipExpiryMillis(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function qishuiMembershipObjectState(value) {
+function qishuiMembershipObjectState(value, level) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return { known: false, active: null, expiresAt: 0 };
   }
   let known = false;
   let statusPositive = false;
   let statusNegative = false;
-  let expiryExpired = false;
-  let futureExpiry = 0;
+  let genericExpiryKnown = false;
+  let genericExpiryExpired = false;
+  let genericFutureExpiry = 0;
+  let levelExpiryKnown = false;
+  let levelExpiryExpired = false;
+  let levelFutureExpiry = 0;
+  const levelExpiryKeys = level === 'svip'
+    ? QISHUI_SVIP_EXPIRY_KEYS
+    : (level === 'vip' ? QISHUI_VIP_EXPIRY_KEYS : null);
   for (const [key, item] of Object.entries(value)) {
     const normalizedKey = qishuiNormalizedFieldKey(key);
-    if (QISHUI_MEMBERSHIP_EXPIRY_KEYS.has(normalizedKey)) {
+    const isGenericExpiry = QISHUI_MEMBERSHIP_GENERIC_EXPIRY_KEYS.has(normalizedKey);
+    const isLevelExpiry = levelExpiryKeys
+      ? levelExpiryKeys.has(normalizedKey)
+      : (QISHUI_VIP_EXPIRY_KEYS.has(normalizedKey) || QISHUI_SVIP_EXPIRY_KEYS.has(normalizedKey));
+    if (isGenericExpiry || isLevelExpiry) {
       const expiresAt = qishuiMembershipExpiryMillis(item);
-      if (expiresAt > 0) {
-        known = true;
-        if (expiresAt <= Date.now()) {
-          expiryExpired = true;
-        } else if (!futureExpiry || expiresAt < futureExpiry) {
-          futureExpiry = expiresAt;
+      const isKnownExpiry = expiresAt > 0 || (
+        item !== '' &&
+        item !== null &&
+        item !== undefined &&
+        Number.isFinite(Number(item)) &&
+        Number(item) <= 0
+      );
+      if (!isKnownExpiry) continue;
+      known = true;
+      if (isLevelExpiry) {
+        levelExpiryKnown = true;
+        if (expiresAt > Date.now()) {
+          levelFutureExpiry = Math.max(levelFutureExpiry, expiresAt);
+        } else {
+          levelExpiryExpired = true;
         }
-      } else if (item !== '' && item !== null && item !== undefined && Number.isFinite(Number(item)) && Number(item) <= 0) {
-        known = true;
-        expiryExpired = true;
+      } else {
+        genericExpiryKnown = true;
+        if (expiresAt > Date.now()) {
+          genericFutureExpiry = Math.max(genericFutureExpiry, expiresAt);
+        } else {
+          genericExpiryExpired = true;
+        }
       }
       continue;
     }
@@ -1207,9 +913,16 @@ function qishuiMembershipObjectState(value) {
       statusPositive = true;
     }
   }
-  const active = expiryExpired || statusNegative
+  // Tier-specific expiry is authoritative for that tier. Generic expiry is a
+  // fallback only when the object has no expiry for the requested tier. This
+  // keeps an expired/zero SVIP field from cancelling a valid VIP, and vice
+  // versa, when both tiers are returned in the same official response object.
+  const expiryKnown = levelExpiryKnown || genericExpiryKnown;
+  const expiryExpired = levelExpiryKnown ? levelExpiryExpired : genericExpiryExpired;
+  const futureExpiry = levelExpiryKnown ? levelFutureExpiry : genericFutureExpiry;
+  const active = statusNegative || expiryExpired
     ? false
-    : (futureExpiry > 0 || statusPositive ? true : null);
+    : (futureExpiry > 0 || (!expiryKnown && statusPositive) ? true : (expiryKnown ? false : null));
   return {
     known,
     active,
@@ -1261,32 +974,36 @@ function qishuiMembershipFromData(value) {
       node.slice(0, 120).forEach(item => visit(item, depth + 1));
       return;
     }
-    const objectState = qishuiMembershipObjectState(node);
+    const vipObjectState = qishuiMembershipObjectState(node, 'vip');
+    const svipObjectState = qishuiMembershipObjectState(node, 'svip');
     for (const [key, item] of Object.entries(node).slice(0, 160)) {
       const normalizedKey = qishuiNormalizedFieldKey(key);
       if (QISHUI_SVIP_NUMBER_KEYS.has(normalizedKey)) {
         membershipKnown = true;
         const number = Number(item);
-        if (Number.isFinite(number) && number > 0) applyLevel('svip', number, objectState.active, objectState.expiresAt);
+        if (Number.isFinite(number) && number > 0) applyLevel('svip', number, svipObjectState.active, svipObjectState.expiresAt);
       } else if (QISHUI_VIP_NUMBER_KEYS.has(normalizedKey)) {
         membershipKnown = true;
         const number = Number(item);
-        if (Number.isFinite(number) && number > 0) applyLevel('vip', number, objectState.active, objectState.expiresAt);
+        if (Number.isFinite(number) && number > 0) applyLevel('vip', number, vipObjectState.active, vipObjectState.expiresAt);
       } else if (QISHUI_SVIP_FLAG_KEYS.has(normalizedKey)) {
         membershipKnown = true;
-        if (qishuiExplicitPositive(item)) applyLevel('svip', 1, objectState.active, objectState.expiresAt);
+        if (qishuiExplicitPositive(item)) applyLevel('svip', 1, svipObjectState.active, svipObjectState.expiresAt);
       } else if (QISHUI_VIP_FLAG_KEYS.has(normalizedKey)) {
         membershipKnown = true;
-        if (qishuiExplicitPositive(item)) applyLevel('vip', 1, objectState.active, objectState.expiresAt);
+        if (qishuiExplicitPositive(item)) applyLevel('vip', 1, vipObjectState.active, vipObjectState.expiresAt);
       } else if (QISHUI_MEMBERSHIP_LABEL_KEYS.has(normalizedKey)) {
         membershipKnown = true;
-        applyLevel(qishuiMembershipLevelValue(item), 1, objectState.active, objectState.expiresAt);
+        const level = qishuiMembershipLevelValue(item);
+        const state = level === 'svip' ? svipObjectState : vipObjectState;
+        applyLevel(level, 1, state.active, state.expiresAt);
       } else if (QISHUI_SVIP_CONTAINER_KEYS.has(normalizedKey) || QISHUI_VIP_CONTAINER_KEYS.has(normalizedKey)) {
         membershipKnown = true;
-        const state = qishuiMembershipObjectState(item);
+        const level = QISHUI_SVIP_CONTAINER_KEYS.has(normalizedKey) ? 'svip' : 'vip';
+        const state = qishuiMembershipObjectState(item, level);
         if (state.active === true) {
           applyLevel(
-            QISHUI_SVIP_CONTAINER_KEYS.has(normalizedKey) ? 'svip' : 'vip',
+            level,
             1,
             true,
             state.expiresAt
@@ -1478,6 +1195,10 @@ const QISHUI_TRACK_VIP_KEYS = new Set([
   'onlyvipplayable', 'viprequired', 'needvip', 'isvip', 'isviponly', 'viponly', 'onlyvip',
   'onlymemberplayable', 'memberrequired', 'needmember', 'payplay',
 ]);
+const QISHUI_TRACK_SVIP_KEYS = new Set([
+  'onlysvipplayable', 'sviprequired', 'needsvip', 'issvip', 'issviponly', 'sviponly', 'onlysvip',
+  'onlysupervipplayable', 'superviprequired', 'needsupervip', 'issuperviponly', 'superviponly',
+]);
 const QISHUI_TRACK_ACCOUNT_CONTAINER_KEYS = new Set([
   'membership', 'membershipinfo', 'usermembership', 'accountmembership',
   'account', 'userinfo', 'userprofile', 'me',
@@ -1485,11 +1206,12 @@ const QISHUI_TRACK_ACCOUNT_CONTAINER_KEYS = new Set([
 
 function qishuiTrackPlaybackRestriction(value) {
   let vipRequired = false;
+  let svipRequired = false;
   let membershipHintKnown = false;
   let visited = 0;
   const evidence = [];
   const visit = (node, depth, pathKeys) => {
-    if (!node || typeof node !== 'object' || depth > 7 || visited > 800 || vipRequired) return;
+    if (!node || typeof node !== 'object' || depth > 7 || visited > 800) return;
     visited += 1;
     if (Array.isArray(node)) {
       node.slice(0, 160).forEach(item => visit(item, depth + 1, pathKeys));
@@ -1499,45 +1221,107 @@ function qishuiTrackPlaybackRestriction(value) {
       const normalizedKey = qishuiNormalizedFieldKey(key);
       const nextPath = pathKeys.concat(normalizedKey);
       if (QISHUI_TRACK_ACCOUNT_CONTAINER_KEYS.has(normalizedKey)) continue;
-      if (QISHUI_TRACK_VIP_KEYS.has(normalizedKey)) {
+      if (QISHUI_TRACK_SVIP_KEYS.has(normalizedKey)) {
+        membershipHintKnown = true;
+        if (qishuiExplicitPositive(item)) {
+          svipRequired = true;
+          vipRequired = true;
+          evidence.push(nextPath.join('.'));
+        }
+      } else if (QISHUI_TRACK_VIP_KEYS.has(normalizedKey)) {
         membershipHintKnown = true;
         if (qishuiExplicitPositive(item)) {
           vipRequired = true;
           evidence.push(nextPath.join('.'));
-          return;
         }
       } else if (normalizedKey === 'fee') {
         membershipHintKnown = true;
         if (Number(item) === 1) {
           vipRequired = true;
           evidence.push(nextPath.join('.'));
-          return;
         }
       } else if (normalizedKey === 'privilege') {
         membershipHintKnown = true;
         if (Number(item) >= 9) {
           vipRequired = true;
           evidence.push(nextPath.join('.'));
-          return;
         }
       }
       if (item && typeof item === 'object') visit(item, depth + 1, nextPath);
-      if (vipRequired) return;
     }
   };
   visit(value, 0, []);
-  return { vipRequired, membershipHintKnown, evidence };
+  return {
+    vipRequired,
+    svipRequired,
+    requiredTier: svipRequired ? 'svip' : (vipRequired ? 'vip' : 'free'),
+    membershipHintKnown,
+    evidence,
+  };
 }
 
 function qishuiTrackRequiresVip(value) {
   return qishuiTrackPlaybackRestriction(value).vipRequired;
 }
 
+const QISHUI_TIER_RANK = Object.freeze({ free: 0, vip: 1, svip: 2 });
+
+function qishuiNormalizeRequiredTier(value) {
+  const text = normalizeText(value).toLowerCase().replace(/[-_\s]/g, '');
+  if (/^(svip|supervip|hires|highres|highresolution|master|atmos|dolby|spatial)$/.test(text)) return 'svip';
+  if (/^(vip|member|premium|lossless|sq|flac|exhigh|high|higher|highest|hq|320)$/.test(text)) return 'vip';
+  return 'free';
+}
+
+function qishuiHigherRequiredTier(a, b) {
+  a = qishuiNormalizeRequiredTier(a);
+  b = qishuiNormalizeRequiredTier(b);
+  return QISHUI_TIER_RANK[b] > QISHUI_TIER_RANK[a] ? b : a;
+}
+
+function qishuiStreamRequiredTier(stream) {
+  stream = stream && typeof stream === 'object' ? stream : {};
+  let requiredTier = qishuiNormalizeRequiredTier(
+    stream.requiredTier || stream.required_tier || stream.membershipTier || stream.membership_tier || ''
+  );
+  const quality = normalizeText(stream.quality || stream.definition || '').toLowerCase().replace(/[-_\s]/g, '');
+  const format = normalizeText(stream.format || '').toLowerCase();
+  const bitrate = qishuiNormalizeBitrateKbps(stream.bitrate);
+  if (/svip|supervip|hires|highres|highresolution|master|atmos|dolby|spatial/.test(quality)) {
+    requiredTier = qishuiHigherRequiredTier(requiredTier, 'svip');
+  } else if (
+    /lossless|flac|sq/.test(quality) ||
+    /flac|alac|wav/.test(format) ||
+    bitrate >= 900
+  ) {
+    requiredTier = qishuiHigherRequiredTier(requiredTier, 'vip');
+  } else if (
+    /highest|excellent|superhigh|higher|high|hq|exhigh|320/.test(quality) ||
+    bitrate > 192
+  ) {
+    requiredTier = qishuiHigherRequiredTier(requiredTier, 'vip');
+  }
+  return requiredTier;
+}
+
+function qishuiMembershipTier(membership) {
+  if (!(membership && membership.membershipKnown)) return 'unknown';
+  if (membership.isSvip) return 'svip';
+  if (membership.isVip) return 'vip';
+  return 'free';
+}
+
+function qishuiRequiredTierAllowed(requiredTier, membership) {
+  requiredTier = qishuiNormalizeRequiredTier(requiredTier);
+  if (requiredTier === 'free') return true;
+  if (!(membership && membership.membershipKnown)) return false;
+  if (requiredTier === 'svip') return !!membership.isSvip;
+  return !!membership.isVip;
+}
+
 function qishuiStreamAllowedForMembership(stream, membership) {
   if (!stream || !stream.url) return false;
-  if (membership && membership.isVip) return true;
-  const rank = qishuiQualityRank(stream.quality, stream.format, stream.bitrate);
-  return rank <= 50;
+  return qishuiRequiredTierAllowed(qishuiStreamRequiredTier(stream), membership);
 }
 
 function qishuiBestStreamCandidateForMembership(candidates, membership) {
@@ -1588,7 +1372,7 @@ function qishuiStreamFromObject(value, inherited) {
     qishuiObjectNumber(meta, ['bitrate', 'Bitrate', 'real_bitrate', 'RealBitrate', 'bit_rate', 'BitRate']) ||
     qishuiBitrateFromUrl(url) ||
     qishuiBitrateFromSize(size, duration);
-  return {
+  const stream = {
     url,
     auth: qishuiObjectString(value, ['play_auth', 'PlayAuth', 'spade_a', 'SpadeA']) || qishuiVideoModelPlayAuth(value) || inherited.auth || '',
     size,
@@ -1599,6 +1383,8 @@ function qishuiStreamFromObject(value, inherited) {
       qishuiVideoModelQualityHint(qishuiObjectString(value, ['gear_des_key', 'GearDesKey']) || inherited.keyHint || ''),
     duration,
   };
+  stream.requiredTier = qishuiStreamRequiredTier(stream);
+  return stream;
 }
 
 function qishuiMaybeParseJson(value) {
@@ -1883,17 +1669,7 @@ async function qishuiWebRequestJson(apiPath, params, cookieText, opts) {
 async function fetchQishuiPlaybackMembership(cookieText) {
   const cookie = normalizeQishuiCookieInput(cookieText);
   if (!qishuiCookieHasLogin(cookie)) {
-    return {
-      membershipKnown: false,
-      vipType: 0,
-      vipLevel: 'none',
-      isVip: false,
-      isSvip: false,
-      vipLabel: '无VIP',
-      expiresAt: 0,
-      sessionValidated: false,
-      error: 'QISHUI_COOKIE_REQUIRED',
-    };
+    return qishuiUnknownMembership('QISHUI_COOKIE_REQUIRED');
   }
   const cacheKey = 'membership|' + qishuiCookieFingerprint(cookie);
   return qishuiMembershipCache.wrap(cacheKey, qishuiMembershipCacheTtlMs, async () => {
@@ -1907,7 +1683,7 @@ async function fetchQishuiPlaybackMembership(cookieText) {
       });
       const data = (json && json.data) || json || {};
       const profile = qishuiProfileFromMeData(data);
-      return {
+      return qishuiApplyMembershipObservation(cacheKey, {
         membershipKnown: !!profile.membershipKnown,
         vipType: Number(profile.vipType) || 0,
         vipLevel: profile.vipLevel || 'none',
@@ -1917,30 +1693,106 @@ async function fetchQishuiPlaybackMembership(cookieText) {
         expiresAt: Number(profile.expiresAt) || 0,
         sessionValidated: !!profile.profileReady,
         userId: profile.userId || '',
-      };
+        entitlementSource: 'official-pc-me',
+      });
     } catch (err) {
-      return {
-        membershipKnown: false,
-        vipType: 0,
-        vipLevel: 'none',
-        isVip: false,
-        isSvip: false,
-        vipLabel: '无VIP',
-        expiresAt: 0,
-        sessionValidated: false,
-        error: err && err.message || 'QISHUI_MEMBERSHIP_CHECK_FAILED',
-      };
+      return qishuiApplyMembershipObservation(
+        cacheKey,
+        qishuiUnknownMembership(err && err.message || 'QISHUI_MEMBERSHIP_CHECK_FAILED')
+      );
     }
   });
 }
 
-function qishuiMembershipCacheTtlMs(membership) {
-  const maxTtlMs = 60 * 1000;
+function qishuiUnknownMembership(error) {
+  return {
+    membershipKnown: false,
+    membershipStatus: 'unknown',
+    reason: 'membership_unknown',
+    vipType: 0,
+    vipLevel: 'unknown',
+    isVip: false,
+    isSvip: false,
+    vipLabel: '未知会员状态',
+    expiresAt: 0,
+    sessionValidated: false,
+    error: normalizeText(error || 'QISHUI_MEMBERSHIP_UNKNOWN'),
+  };
+}
+
+function qishuiApplyMembershipObservation(historyKey, membership, now) {
+  historyKey = normalizeText(historyKey);
+  membership = membership && typeof membership === 'object'
+    ? Object.assign({}, membership)
+    : qishuiUnknownMembership('QISHUI_MEMBERSHIP_UNKNOWN');
+  now = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const membershipKnown = !!membership.membershipKnown;
+  const expiresAt = Number(membership.expiresAt) || 0;
+  const positive = membershipKnown && !!(membership.isVip || membership.isSvip);
+
+  if (membershipKnown) {
+    if (historyKey) qishuiMembershipPositiveHistory.delete(historyKey);
+    if (positive && expiresAt > now && historyKey) {
+      const retainedUntil = Math.min(expiresAt, now + QISHUI_MEMBERSHIP_POSITIVE_GRACE_MS);
+      qishuiMembershipPositiveHistory.set(historyKey, {
+        membership: Object.assign({}, membership, {
+          membershipStatus: membership.isSvip ? 'svip' : 'vip',
+        }),
+        observedAt: now,
+        expiresAt,
+        retainedUntil,
+      });
+      while (qishuiMembershipPositiveHistory.size > 48) {
+        const oldestKey = qishuiMembershipPositiveHistory.keys().next().value;
+        if (!oldestKey) break;
+        qishuiMembershipPositiveHistory.delete(oldestKey);
+      }
+    }
+    return Object.assign(membership, {
+      membershipStatus: positive ? (membership.isSvip ? 'svip' : 'vip') : 'free',
+    });
+  }
+
+  const previous = historyKey ? qishuiMembershipPositiveHistory.get(historyKey) : null;
+  if (
+    previous &&
+    previous.expiresAt > now &&
+    previous.retainedUntil > now &&
+    previous.membership &&
+    previous.membership.membershipKnown
+  ) {
+    return Object.assign({}, previous.membership, {
+      retainedOfficialPositive: true,
+      retainedUntil: previous.retainedUntil,
+      entitlementSource: 'recent-official-positive',
+      membershipCheckError: membership.error || membership.reason || 'membership_unknown',
+    });
+  }
+  if (previous && historyKey) qishuiMembershipPositiveHistory.delete(historyKey);
+  return Object.assign(qishuiUnknownMembership(membership.error || membership.reason), membership, {
+    membershipKnown: false,
+    membershipStatus: 'unknown',
+    reason: 'membership_unknown',
+    vipType: 0,
+    vipLevel: 'unknown',
+    isVip: false,
+    isSvip: false,
+    vipLabel: '未知会员状态',
+    expiresAt: 0,
+  });
+}
+
+function qishuiMembershipCacheTtlMs(membership, now) {
+  now = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  if (!(membership && membership.membershipKnown)) return 1;
+  if (!(membership.isVip || membership.isSvip)) return QISHUI_MEMBERSHIP_POSITIVE_CACHE_MS;
   const expiresAt = Number(membership && membership.expiresAt) || 0;
-  if (!(membership && membership.isVip) || expiresAt <= 0) return maxTtlMs;
-  const remainingMs = expiresAt - Date.now();
+  if (expiresAt <= 0) return 1;
+  let remainingMs = expiresAt - now;
+  const retainedUntil = Number(membership.retainedUntil) || 0;
+  if (retainedUntil > 0) remainingMs = Math.min(remainingMs, retainedUntil - now);
   if (remainingMs <= 0) return 1;
-  return Math.max(1, Math.min(maxTtlMs, remainingMs - 250));
+  return Math.max(1, Math.min(QISHUI_MEMBERSHIP_POSITIVE_CACHE_MS, remainingMs - 250));
 }
 
 async function qishuiPcPostJson(apiPath, payload, cookieText, opts) {
@@ -3400,6 +3252,10 @@ async function fetchQishuiPlayerInfo(playerInfoUrl, cookieText, membership) {
   const streams = list.map(item => qishuiStreamFromObject(item)).filter(Boolean);
   const best = qishuiBestStreamCandidateForMembership(streams, membership);
   if (best) return best;
+  // Keep a blocked candidate internal so the caller can report the precise
+  // VIP/SVIP boundary without ever exposing its URL in an unavailable result.
+  const blocked = qishuiBestStreamCandidate(streams);
+  if (blocked) return blocked;
   const error = pickObject(json && json.ResponseMetadata && json.ResponseMetadata.Error, json && json.responseMetadata && json.responseMetadata.error);
   if (error && (error.Message || error.message)) throw new Error(normalizeText(error.Message || error.message));
   return null;
@@ -3441,11 +3297,21 @@ async function resolveQishuiDownloadInfo(trackId, payload, cookieText, membershi
   if (!best) {
     const unrestricted = qishuiBestStreamCandidate(collected.streams) ||
       qishuiBestStreamCandidate(collected.fallbackStreams);
-    const entitlementLimited = !!(unrestricted && !(membership && membership.isVip));
-    const err = new Error(entitlementLimited
-      ? 'QISHUI_STANDARD_AUDIO_SOURCE_EMPTY'
-      : (collected.playerInfoError || 'QISHUI_AUDIO_SOURCE_EMPTY'));
-    err.code = entitlementLimited ? 'QISHUI_STANDARD_AUDIO_SOURCE_EMPTY' : 'QISHUI_AUDIO_SOURCE_EMPTY';
+    const requiredTier = unrestricted ? qishuiStreamRequiredTier(unrestricted) : 'free';
+    const entitlementLimited = !!(unrestricted && !qishuiRequiredTierAllowed(requiredTier, membership));
+    let errorCode = 'QISHUI_AUDIO_SOURCE_EMPTY';
+    if (entitlementLimited && !(membership && membership.membershipKnown)) {
+      errorCode = 'QISHUI_MEMBERSHIP_UNKNOWN';
+    } else if (entitlementLimited && requiredTier === 'svip') {
+      errorCode = 'QISHUI_SVIP_REQUIRED';
+    } else if (entitlementLimited && requiredTier === 'vip') {
+      errorCode = 'QISHUI_VIP_REQUIRED';
+    }
+    const err = new Error(errorCode === 'QISHUI_AUDIO_SOURCE_EMPTY'
+      ? (collected.playerInfoError || errorCode)
+      : errorCode);
+    err.code = errorCode;
+    err.requiredTier = requiredTier;
     throw err;
   }
   return Object.assign(collected, { best });
@@ -3496,17 +3362,28 @@ async function handleQishuiSongUrl(opts, cookieText) {
     try {
       const trackRestriction = qishuiTrackPlaybackRestriction(payload);
       const requestRestriction = qishuiTrackPlaybackRestriction(opts);
-      if ((trackRestriction.vipRequired || requestRestriction.vipRequired) && !membership.isVip) {
-        return qishuiUnavailable('汽水音乐歌曲需要会员权限，当前账号未取得可验证的会员权益。', 'vip_required', {
+      let requiredTier = qishuiHigherRequiredTier(trackRestriction.requiredTier, requestRestriction.requiredTier);
+      if (!qishuiRequiredTierAllowed(requiredTier, membership)) {
+        const reason = !membership.membershipKnown
+          ? 'membership_unknown'
+          : (requiredTier === 'svip' ? 'svip_required' : 'vip_required');
+        const message = reason === 'membership_unknown'
+          ? '汽水音乐暂时无法验证当前账号的会员状态，请稍后重试。'
+          : (reason === 'svip_required'
+            ? '该汽水音乐歌曲或音质需要可验证的 SVIP 权益。'
+            : '该汽水音乐歌曲或音质需要可验证的 VIP 权益。');
+        return qishuiUnavailable(message, reason, {
           loggedIn: true,
           playbackKeyReady: true,
-          vipRequired: true,
+          vipRequired: requiredTier !== 'free',
+          svipRequired: requiredTier === 'svip',
+          requiredTier,
           membershipKnown: !!membership.membershipKnown,
           vipType: membership.vipType || 0,
-          vipLevel: membership.vipLevel || 'none',
-          isVip: false,
-          isSvip: false,
-          vipLabel: '无VIP',
+          vipLevel: membership.vipLevel || (membership.membershipKnown ? 'none' : 'unknown'),
+          isVip: !!membership.isVip,
+          isSvip: !!membership.isSvip,
+          vipLabel: membership.vipLabel || (membership.membershipKnown ? '无VIP' : '未知会员状态'),
           entitlementEvidence: trackRestriction.evidence.concat(requestRestriction.evidence),
         });
       }
@@ -3533,6 +3410,7 @@ async function handleQishuiSongUrl(opts, cookieText) {
         vipLabel: membership.vipLabel || (membership.isVip ? 'VIP' : '无VIP'),
         level,
         quality: normalizeText(stream.quality || stream.format || level),
+        requiredTier: qishuiStreamRequiredTier(stream),
         br: qishuiBitrateForUi(stream.bitrate),
         size: Number(stream.size) || 0,
         duration,
@@ -3541,14 +3419,24 @@ async function handleQishuiSongUrl(opts, cookieText) {
         encrypted: !!stream.auth,
       };
     } catch (err) {
-      const standardOnly = !!(err && err.code === 'QISHUI_STANDARD_AUDIO_SOURCE_EMPTY');
+      const entitlementReason = err && err.code === 'QISHUI_MEMBERSHIP_UNKNOWN'
+        ? 'membership_unknown'
+        : (err && err.code === 'QISHUI_SVIP_REQUIRED'
+          ? 'svip_required'
+          : (err && err.code === 'QISHUI_VIP_REQUIRED' ? 'vip_required' : ''));
+      const message = entitlementReason === 'membership_unknown'
+        ? '汽水音乐暂时无法验证当前账号的会员状态，请稍后重试。'
+        : (entitlementReason === 'svip_required'
+          ? '汽水音乐仅返回了需要 SVIP 权益的音质。'
+          : (entitlementReason === 'vip_required'
+            ? '汽水音乐仅返回了需要 VIP 权益的音质。'
+            : 'Qishui did not return a playable audio source: ' + (err && err.message || String(err))));
       return qishuiUnavailable(
-        standardOnly
-          ? '汽水音乐没有为当前普通或未知会员状态返回标准音质的可播放地址。'
-          : 'Qishui did not return a playable audio source: ' + (err && err.message || String(err)),
-        standardOnly ? 'quality_unavailable' : 'source_unavailable', {
+        message,
+        entitlementReason || 'source_unavailable', {
         loggedIn: true,
         playbackKeyReady: true,
+        requiredTier: err && err.requiredTier || 'free',
         membershipKnown: !!membership.membershipKnown,
         vipType: membership.vipType || 0,
         vipLevel: membership.vipLevel || 'none',
@@ -3569,8 +3457,6 @@ module.exports = {
   getQishuiOAuthConfig,
   buildQishuiOAuthAuthorizeUrl,
   exchangeQishuiOAuthCode,
-  createQishuiPcQrLogin,
-  checkQishuiPcQrLogin,
   saveQishuiAccessToken,
   clearQishuiAccessToken,
   handleQishuiSearch,
@@ -3597,9 +3483,15 @@ module.exports = {
     qishuiMembershipFromData,
     qishuiPlaybackMembershipFromPayload,
     qishuiMembershipCacheTtlMs,
+    qishuiUnknownMembership,
+    qishuiApplyMembershipObservation,
     qishuiTrackPlaybackRestriction,
     qishuiTrackRequiresVip,
+    qishuiStreamRequiredTier,
+    qishuiMembershipTier,
+    qishuiRequiredTierAllowed,
     qishuiStreamAllowedForMembership,
     qishuiBestStreamCandidateForMembership,
+    clearQishuiRuntimeCaches,
   },
 };

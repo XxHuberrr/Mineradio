@@ -20,7 +20,7 @@ const DEFAULT_SPOTIFY_SCOPES = [
   'playlist-modify-public',
 ];
 const SPOTIFY_LIKED_PLAYLIST_ID = 'spotify-liked';
-const SPOTIFY_UA = 'Mineradio/2.0.3 (Spotify Web API bridge)';
+const SPOTIFY_UA = 'Mineradio/2.1.0 (Spotify Web API bridge)';
 const SPOTIFY_SEARCH_LIMIT_MAX = 10;
 const SPOTIFY_PLAYLIST_PAGE_LIMIT = 50;
 

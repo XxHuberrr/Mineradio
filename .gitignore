@@ -23,6 +23,8 @@ win-unpacked/
 .qishui-cookie
 .qishui-token
 .qishui-oauth.json
+.qishui-qr-identity.json
+.qishui-qr-login.json
 .spotify-credentials.json
 spotify-credentials.json
 .spotify-token.json
