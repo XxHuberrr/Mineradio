@@ -10,9 +10,9 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 | 下载入口 | 推荐人群 | 链接 |
 | --- | --- | --- |
-| 夸克盘 | 夸克用户 | [下载 Mineradio 2.1.0](https://pan.quark.cn/s/f40289e1c5d3) |
-| 百度云 | 百度网盘用户（提取码 `sjhp`） | [下载 Mineradio 2.1.0](https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp) |
-| 蓝奏云 | 直接下载 | [下载 Mineradio 2.1.0](https://xxhuber.lanzout.com/mineradio2) |
+| 夸克盘 | 夸克用户 | [下载 Mineradio 2.1.0](https://pan.quark.cn/s/df00d9520835) |
+| 百度云 | 百度网盘用户（提取码 `SJHP`） | [下载 Mineradio 2.1.0](https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP) |
+| 蓝奏云 | 直接下载 | [下载 Mineradio 2.1.0](https://xxhuber.lanzout.com/s/Mineradio) |
 | GitHub Release | GitHub 用户、版本说明与源码 | [下载 Mineradio 2.1.0](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.1.0) |
 
 安装时只需要下载并运行 `Mineradio-2.1.0-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
