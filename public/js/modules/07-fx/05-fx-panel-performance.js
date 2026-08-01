@@ -508,7 +508,7 @@ function ensureFxSliderResetButton(id, key) {
 var fxPanelTab = 'home';
 var fxPanelTabScroll = {};
 function setFxPanelTab(tab) {
-  var allowed = { home: 1, interface: 1, lyrics: 1, motion: 1, shelf: 1, system: 1 };
+  var allowed = { home: 1, interface: 1, lyrics: 1, audio: 1, motion: 1, shelf: 1, system: 1 };
   var panel = document.getElementById('fx-panel');
   var nextTab = allowed[tab] ? tab : 'home';
   var previousTab = fxPanelTab;

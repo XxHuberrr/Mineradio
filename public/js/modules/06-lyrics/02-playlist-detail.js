@@ -118,6 +118,85 @@ function normalizePlaylistProvider(provider) {
   if (provider === 'qq' || provider === 'kugou' || provider === 'qishui' || provider === 'spotify') return provider;
   return 'netease';
 }
+
+// ---------- 离线歌单缓存 (修复: 离线时在线歌单仍可显示) ----------
+var PLAYLIST_OFFLINE_DETAIL_PREFIX = 'mineradio-offline-pldetail:';
+var PLAYLIST_OFFLINE_DETAIL_INDEX = 'mineradio-offline-pldetail-index';
+var PLAYLIST_OFFLINE_DETAIL_MAX_TRACKS = 800;
+var PLAYLIST_OFFLINE_DETAIL_MAX_PLAYLISTS = 60;
+var offlinePlaylistBannerHtml = '';
+
+function saveOfflinePlaylistDetailSnapshot(key, snapshot) {
+  try {
+    localStorage.setItem(PLAYLIST_OFFLINE_DETAIL_PREFIX + key, JSON.stringify(snapshot));
+    var idx = {};
+    try { idx = JSON.parse(localStorage.getItem(PLAYLIST_OFFLINE_DETAIL_INDEX) || '{}') || {}; } catch (e) {}
+    idx[key] = Date.now();
+    var keys = Object.keys(idx).sort(function (a, b) { return idx[b] - idx[a]; });
+    if (keys.length > PLAYLIST_OFFLINE_DETAIL_MAX_PLAYLISTS) {
+      keys.slice(PLAYLIST_OFFLINE_DETAIL_MAX_PLAYLISTS).forEach(function (k) {
+        localStorage.removeItem(PLAYLIST_OFFLINE_DETAIL_PREFIX + k);
+        delete idx[k];
+      });
+    }
+    localStorage.setItem(PLAYLIST_OFFLINE_DETAIL_INDEX, JSON.stringify(idx));
+  } catch (e) {}
+}
+function readOfflinePlaylistDetailSnapshot(key) {
+  try {
+    var raw = localStorage.getItem(PLAYLIST_OFFLINE_DETAIL_PREFIX + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function mergeOfflinePlaylistDetailSnapshot(prev, incoming) {
+  var seen = Object.create(null);
+  var tracks = [];
+  (prev && prev.tracks || []).concat(incoming.tracks || []).forEach(function (song) {
+    if (!song) return;
+    var k = queuePanelItemKey(song, 'm:' + tracks.length);
+    if (seen[k]) return;
+    seen[k] = true;
+    tracks.push(song);
+  });
+  if (tracks.length > PLAYLIST_OFFLINE_DETAIL_MAX_TRACKS) tracks = tracks.slice(0, PLAYLIST_OFFLINE_DETAIL_MAX_TRACKS);
+  return {
+    name: incoming.name || (prev && prev.name) || '',
+    tracks: tracks,
+    total: Math.max(prev && prev.total || 0, incoming.total || 0, tracks.length),
+    hasMore: !!(incoming.hasMore),
+    playlist: incoming.playlist || (prev && prev.playlist) || null,
+    savedAt: Date.now(),
+    partial: !!(incoming.hasMore)
+  };
+}
+function applyOfflinePlaylistDetail(key, snap) {
+  cancelPlaylistPanelDetailRequest();
+  var parts = key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  var pid = parts.slice(1).join(':');
+  var pl = snap.playlist || (userPlaylists.find(function (item) {
+    return playlistPanelKey(normalizePlaylistProvider(item.provider), item.id) === key;
+  }) || { id: pid, provider: provider, name: snap.name || '离线歌单' });
+  playlistPanelDetailState = {
+    key: key, loading: false, loadingMore: false, playlist: pl,
+    tracks: (snap.tracks || []).map(function (s) { return cloneSong(s); }),
+    token: playlistPanelDetailState.token,
+    total: snap.total || (snap.tracks || []).length,
+    nextOffset: (snap.tracks || []).length,
+    hasMore: false, scrollTop: 0, controller: null, warmTimer: 0,
+    renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, error: '', message: '', offline: true
+  };
+  offlinePlaylistBannerHtml = '<div class="offline-playlist-banner">⚠ 离线模式 · 显示已缓存的歌单与歌曲（联网后刷新可更新）</div>';
+  renderPlaylistPanelDetailState();
+  scrollPlaylistPanelDetailIntoView(key);
+}
+function showOfflinePlaylistBanner() {
+  offlinePlaylistBannerHtml = '<div class="offline-playlist-banner">⚠ 离线模式 · 显示已缓存的歌单（联网后刷新可更新）</div>';
+}
+function clearOfflinePlaylistBanner() {
+  offlinePlaylistBannerHtml = '';
+  if (playlistPanelDetailState) playlistPanelDetailState.offline = false;
+}
 function playlistProviderLabel(provider) {
   provider = normalizePlaylistProvider(provider);
   return provider === 'qq' ? 'QQ' : (provider === 'kugou' ? 'KG' : (provider === 'qishui' ? 'QS' : (provider === 'spotify' ? 'SP' : 'NE')));
@@ -177,10 +256,13 @@ function playlistPanelDetailRowsHtml(options) {
     var i = start + localIndex;
     var thumb = songCoverSrc(song, 60);
     var imgTag = thumb ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06);flex:0 0 auto"></div>';
+    var cached = (typeof hasOfflineAudio === 'function' && hasOfflineAudio(song));
+    var dlIcon = (typeof downloadIconSvg === 'function') ? downloadIconSvg() : '↓';
     return '<div class="pl-detail-row" data-pl-detail-row="' + i + '">' +
       imgTag +
       '<div style="flex:1;min-width:0"><div class="pl-detail-row-title">' + escHtml(song.name || '') + '</div>' +
       '<button type="button" class="pl-detail-row-artist" data-pl-detail-artist="' + i + '">' + escHtml(song.artist || '未知歌手') + '</button></div>' +
+      '<button type="button" class="offline-dl-btn' + (cached ? ' cached' : '') + '" title="' + (cached ? '已离线' : '离线下载') + '" data-offline-pl-index="' + i + '" onclick="event.stopPropagation();downloadPlaylistDetailOffline(' + i + ')">' + (cached ? '✓' : dlIcon) + '</button>' +
       '</div>';
   }).join('');
   rows += '<div class="pl-detail-virtual-spacer" aria-hidden="true" style="height:' + (Math.max(0, tracks.length - end) * PLAYLIST_DETAIL_ROW_STEP) + 'px"></div>';
@@ -284,7 +366,7 @@ function playlistPanelDetailHtml(pl, provider, detailWindow) {
   return '<div class="pl-inline-detail" data-pl-detail="' + escHtml(key) + '" style="height:' + playlistPanelDetailShellHeight() + 'px">' +
     '<div class="pl-detail-sticky">' +
     '<div class="pl-detail-head">' + img + '<div style="flex:1;min-width:0"><div class="pl-detail-title">' + escHtml(pl.name || '歌单详情') + '</div><div class="pl-detail-sub">' + escHtml((expectedTotal || tracks.length || 0) + ' 首 · ' + (pl.creator || playlistProviderName(provider))) + '</div></div><div class="pl-detail-count">' + (loading && !tracks.length ? '载入中' : (tracks.length + (expectedTotal > tracks.length ? '/' + expectedTotal : ''))) + '</div></div>' +
-    '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button>' + collectionButton + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
+    '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button>' + collectionButton + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-download-all="1">缓存整页 (' + tracks.length + ')</button><button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
     '</div>' +
     '<div class="pl-detail-list" data-pl-detail-scroll="' + escHtml(key) + '">' + rows + '</div>' +
     '</div>';
@@ -383,6 +465,16 @@ async function loadMorePlaylistPanelDetailTracks(reason) {
     st.message = (r && (r.message || r.warning)) || '';
     if (r && r.playlist) st.playlist = Object.assign({}, st.playlist || {}, r.playlist);
     if (reason === 'initial') {
+      // 在线拉取成功拿到真实数据: 清掉离线横幅(若有)
+      if (rawTracks.length > 0 && playlistPanelDetailState.offline) clearOfflinePlaylistBanner();
+      // 初始返回为空(多为离线/源不可达且未抛错): 若有缓存则回退展示(不依赖 navigator.onLine)
+      if (rawTracks.length === 0) {
+        var offSnapEmpty = readOfflinePlaylistDetailSnapshot(st.key);
+        if (offSnapEmpty && offSnapEmpty.tracks && offSnapEmpty.tracks.length) {
+          applyOfflinePlaylistDetail(st.key, offSnapEmpty);
+          return false;
+        }
+      }
       renderPlaylistPanelDetailState();
       scrollPlaylistPanelDetailIntoView(st.key);
       if (st.hasMore) {
@@ -394,6 +486,16 @@ async function loadMorePlaylistPanelDetailTracks(reason) {
     } else {
       renderPlaylistPanelDetailRows();
     }
+    try {
+      // 仅在有真实曲目时落盘快照, 避免离线空响应覆盖掉有用缓存
+      if (rawTracks.length > 0) {
+        var snap = mergeOfflinePlaylistDetailSnapshot(readOfflinePlaylistDetailSnapshot(st.key), {
+          name: (st.playlist && st.playlist.name) || '',
+          tracks: st.tracks, total: st.total, hasMore: st.hasMore, playlist: st.playlist
+        });
+        saveOfflinePlaylistDetailSnapshot(st.key, snap);
+      }
+    } catch (e) {}
     return added > 0;
   } catch (e) {
     if (playlistPanelDetailState.token !== token || (e && e.name === 'AbortError')) return false;
@@ -403,8 +505,14 @@ async function loadMorePlaylistPanelDetailTracks(reason) {
     st.hasMore = false;
     st.error = 'PLAYLIST_DETAIL_PAGE_FAILED';
     st.message = st.tracks.length ? '后续歌曲载入失败，可继续滚动重试' : '歌单详情加载失败，请稍后重试';
-    if (reason === 'initial') renderPlaylistPanelDetailState();
-    else renderPlaylistPanelDetailRows();
+    if (reason === 'initial') {
+      var offSnap = readOfflinePlaylistDetailSnapshot(st.key);
+      if (offSnap && offSnap.tracks && offSnap.tracks.length) {
+        applyOfflinePlaylistDetail(st.key, offSnap);
+      } else {
+        renderPlaylistPanelDetailState();
+      }
+    } else renderPlaylistPanelDetailRows();
     return false;
   } finally {
     if (timer) clearTimeout(timer);
@@ -428,8 +536,15 @@ async function openPlaylistPanelDetail(provider, pid, title) {
     return;
   }
   cancelPlaylistPanelDetailRequest();
+  clearOfflinePlaylistBanner();
+  var offlineSnap = readOfflinePlaylistDetailSnapshot(key);
+  var hasOffline = !!(offlineSnap && offlineSnap.tracks && offlineSnap.tracks.length);
+  if (hasOffline) {
+    // 先展示已缓存歌单(即时占位), 随后始终发起在线刷新; 离线时在线请求失败会回退到缓存
+    applyOfflinePlaylistDetail(key, offlineSnap);
+  }
   var token = ++playlistPanelDetailState.token;
-  playlistPanelDetailState = { key: key, loading: true, loadingMore: false, playlist: pl, tracks: [], token: token, total: Number(pl.trackCount) || 0, nextOffset: 0, hasMore: true, scrollTop: 0, controller: null, warmTimer: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, error: '', message: '' };
+  playlistPanelDetailState = { key: key, loading: !hasOffline, loadingMore: false, playlist: pl, tracks: playlistPanelDetailState.tracks, token: token, total: Number(pl.trackCount) || 0, nextOffset: 0, hasMore: true, scrollTop: 0, controller: null, warmTimer: 0, renderLimit: PLAYLIST_DETAIL_INITIAL_RENDER, error: '', message: '', offline: hasOffline };
   renderPlaylistPanelDetailState();
   scrollPlaylistPanelDetailIntoView(key);
   await loadMorePlaylistPanelDetailTracks('initial');
@@ -672,6 +787,7 @@ function renderUserPlaylistsList(opts) {
     }
   }
   html += '<div class="playlist-virtual-spacer" aria-hidden="true" style="height:' + Math.round(bottomHeight) + 'px"></div>' + playlistCatalogFooterHtml();
+  if (offlinePlaylistBannerHtml) html = offlinePlaylistBannerHtml + html;
   $pl.innerHTML = html;
   if (panel && opts.preserveScroll) panel.scrollTop = keepTop;
   bindPlaylistPanelDetailScroller();
@@ -735,6 +851,13 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
     e.preventDefault();
     e.stopPropagation();
     togglePlaylistPanelCollection(collection.getAttribute('data-pl-detail-collection') === '1');
+    return;
+  }
+  var dlAll = e.target && e.target.closest ? e.target.closest('[data-pl-detail-download-all]') : null;
+  if (dlAll) {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadPlaylistDetailAllOffline();
     return;
   }
   var artist = e.target && e.target.closest ? e.target.closest('[data-pl-detail-artist]') : null;

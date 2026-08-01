@@ -93,15 +93,20 @@
         "https://gh.llkk.cc/",
         "https://ghfast.top/",
         "https://gh-proxy.com/"
-      ]
+      ],
+      "disabled": true
     }
   },
   "dependencies": {
     "gsap": "^3.15.0",
     "mpg123-decoder": "^1.0.3",
+    "gsap": "^3.15.0",
+    "mpg123-decoder": "^1.0.3",
     "music-metadata": "11.14.0",
     "NeteaseCloudMusicApi": "^4.32.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "node-id3": "0.2.9",
+    "flac-metadata": "0.1.1"
   },
   "overrides": {
     "axios": "1.18.1",

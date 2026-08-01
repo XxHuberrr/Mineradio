@@ -525,8 +525,23 @@ function mergePlaylistCatalogRows(existing, incoming, provider) {
   });
   return out;
 }
+var PLAYLIST_OFFLINE_LIST_KEY = 'mineradio-offline-playlists';
+function saveOfflineUserPlaylists(list) {
+  try {
+    // 仅在有内容时落盘, 避免离线空响应覆盖掉已有缓存
+    if (!list || !list.length) return;
+    localStorage.setItem(PLAYLIST_OFFLINE_LIST_KEY, JSON.stringify(list.map(function (pl) {
+      return { id: pl.id, provider: pl.provider, name: pl.name, cover: pl.cover, trackCount: pl.trackCount, specialType: pl.specialType, subscribed: pl.subscribed, source: pl.source, shelfPane: pl.shelfPane };
+    })));
+  } catch (e) {}
+}
+function readOfflineUserPlaylists() {
+  try { var raw = localStorage.getItem(PLAYLIST_OFFLINE_LIST_KEY); return raw ? JSON.parse(raw) : []; } catch (e) { return []; }
+}
 function rebuildUserPlaylistsFromCatalog(opts) {
   opts = opts || {};
+  if (typeof clearOfflinePlaylistBanner === 'function') clearOfflinePlaylistBanner();
+  saveOfflineUserPlaylists(userPlaylists);
   userPlaylists = neteasePlaylists.concat(qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists);
   if (typeof applyUserPlaylistOrder === 'function') applyUserPlaylistOrder();
   playlistCatalogRevision += 1;
@@ -607,12 +622,23 @@ function requestNextPlaylistCatalogPage(reason) {
 }
 async function refreshUserPlaylists(force) {
   if (!loginStatus.loggedIn && !qqLoginStatus.loggedIn && !kugouLoginStatus.loggedIn && !qishuiLoginStatus.loggedIn && !spotifyLoginStatus.loggedIn) {
+    var offPls = (typeof readOfflineUserPlaylists === 'function') ? readOfflineUserPlaylists() : [];
+    if (offPls.length) {
+      userPlaylists = offPls;
+      playlistCatalogRevision += 1;
+      playlistCatalogSyncState.error = '';
+      if (typeof showOfflinePlaylistBanner === 'function') showOfflinePlaylistBanner();
+      renderUserPlaylistsList({ animate: false, preserveScroll: false });
+      return;
+    }
     resetPlaylistPanelRenderLimit();
     document.getElementById('pl-list').innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">登录后显示个人歌单</div>';
     var podcastListLoggedOut = document.getElementById('podcast-list');
     if (podcastListLoggedOut) podcastListLoggedOut.innerHTML = '<div style="text-align:center;padding:14px 0;color:rgba(255,255,255,.28);font-size:11.5px">登录后显示我的播客</div>';
     return;
   }
+  // 注: 不再依赖 navigator.onLine 提前 return —— Electron 下该标志常误报 false,
+  // 会导致"实际在线却显示缓存/空白"。离线场景交由下方在线拉取失败后的缓存兜底处理。
   var catalogNeedsNewProvider = playlistCatalogSyncState.loading && ['netease', 'qq', 'kugou', 'qishui', 'spotify'].some(function (provider) {
     var state = playlistCatalogSyncState.providers && playlistCatalogSyncState.providers[provider];
     return playlistCatalogProviderLoggedIn(provider) && (!state || !state.enabled);
@@ -666,6 +692,14 @@ async function refreshUserPlaylists(force) {
   await Promise.allSettled(firstPageTasks.concat([podcastTask]));
   if (playlistCatalogSyncState.token !== token) return;
   playlistCatalogSyncState.loading = playlistCatalogHasPendingPages();
+  if (!userPlaylists.length) {
+    var offPls2 = (typeof readOfflineUserPlaylists === 'function') ? readOfflineUserPlaylists() : [];
+    if (offPls2.length) {
+      userPlaylists = offPls2;
+      playlistCatalogRevision += 1;
+      if (typeof showOfflinePlaylistBanner === 'function') showOfflinePlaylistBanner();
+    }
+  }
   if (userPlaylists.length) renderUserPlaylistsList({ animate: isPlaylistPanelVisibleForRender(), preserveScroll: true });
   if (playlistCatalogSyncState.loading) requestNextPlaylistCatalogPage('after-first-pages');
 }
