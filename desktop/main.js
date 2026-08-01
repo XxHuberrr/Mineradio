@@ -3858,6 +3858,29 @@ ipcMain.on('mineradio-full-desktop-pointer-route', (event, payload = {}) => {
   }, 'renderer-pointer-route');
 });
 
+ipcMain.handle('mineradio-open-local-folder', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow || undefined, { title: '选择本地音乐文件夹', properties: ['openDirectory'] });
+    if (!result || result.canceled || !result.filePaths || !result.filePaths.length) return { ok: true, canceled: true, path: '' };
+    return { ok: true, canceled: false, path: result.filePaths[0] };
+  } catch (e) { return { ok: false, error: e.message || 'OPEN_FOLDER_FAILED' }; }
+});
+ipcMain.handle('mineradio-scan-local-folder', async (_event, folderPath) => {
+  const fsMod = require('fs'); const pathMod = require('path');
+  const dir = String(folderPath || '');
+  if (!dir) return { ok: false, error: 'MISSING_PATH' };
+  let entries;
+  try { entries = fsMod.readdirSync(dir, { withFileTypes: true }); } catch (e) { return { ok: false, error: 'READ_DIR_FAILED', message: e.message }; }
+  const AUDIO = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.wma'];
+  const songs = entries.filter(e => e.isFile() && AUDIO.includes(pathMod.extname(e.name).toLowerCase())).map(e => { const fp = pathMod.join(dir, e.name); return { filePath: fp, fileName: e.name, name: pathMod.basename(e.name, pathMod.extname(e.name)), artist: '', localKey: fp, localPath: fp, localUrl: '/api/local-audio?path=' + encodeURIComponent(fp), cover: '', durationMs: 0 }; });
+  return { ok: true, count: songs.length, songs };
+});
+ipcMain.handle('mineradio-register-local-folders', async (_event, arr) => {
+  const srv = require('./server');
+  const list = Array.isArray(arr) ? arr : [];
+  list.forEach(p => { if (p) srv.registerLocalAudioFolder(p); });
+  return { ok: true, registered: list };
+});
 ipcMain.handle('mineradio-get-gpu-diagnostics', () => {
   return getGpuDiagnostics();
 });

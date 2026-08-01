@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
+  openLocalFolder: () => ipcRenderer.invoke('mineradio-open-local-folder'),
+  scanLocalFolder: (folderPath) => ipcRenderer.invoke('mineradio-scan-local-folder', folderPath || ''),
+  registerLocalFolders: (arr) => ipcRenderer.invoke('mineradio-register-local-folders', arr || []),
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   restore: () => ipcRenderer.invoke('desktop-window-restore'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
