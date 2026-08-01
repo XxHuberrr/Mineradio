@@ -14,12 +14,15 @@
 
 ## 网盘分发
 
-- 夸克盘：<https://pan.quark.cn/s/f40289e1c5d3>
-- 百度云：<https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp>（提取码 `sjhp`）
-- 蓝奏云：<https://xxhuber.lanzout.com/mineradio2>
+- 夸克盘：<https://pan.quark.cn/s/df00d9520835>
+- 百度云：<https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP>（提取码 `SJHP`）
+- 蓝奏云：<https://xxhuber.lanzout.com/s/Mineradio>
+
+以上三条为长期固定文件夹链接。以后发布新版本时只更新文件夹内的安装包，软件内更新入口与公开文档继续复用同一组地址。
 
 ## 公开更新说明
 
+- 修复三大音乐接口的登录、账号识别与播放稳定性问题。
 - 优化 Wallpaper Engine 壁纸与全屏模式的兼容性。
 - 改进登录、账号状态和本地曲库体验。
 - 提升长时间运行与连续播放稳定性。

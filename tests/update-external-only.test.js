@@ -64,15 +64,15 @@ test('release body preserves all three labelled HTTPS download pages', () => {
     serverFunctionSource('extractReleaseDownloadPages', 'extractReleaseDownloadPage'),
   ].join('\n'), sandbox);
   const pages = sandbox.extractReleaseDownloadPages([
-    '<!-- mineradio-download-page: 夸克盘|https://pan.quark.cn/s/f40289e1c5d3 -->',
-    '<!-- mineradio-download-page: 百度云|https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp -->',
-    '<!-- mineradio-download-page: 蓝奏云|https://xxhuber.lanzout.com/mineradio2 -->',
+    '<!-- mineradio-download-page: 夸克盘|https://pan.quark.cn/s/df00d9520835 -->',
+    '<!-- mineradio-download-page: 百度云|https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP -->',
+    '<!-- mineradio-download-page: 蓝奏云|https://xxhuber.lanzout.com/s/Mineradio -->',
     '<!-- mineradio-download-page: 不安全|http://example.com/file -->',
   ].join('\n'));
   assert.deepEqual(JSON.parse(JSON.stringify(pages)), [
-    { label: '夸克盘', url: 'https://pan.quark.cn/s/f40289e1c5d3' },
-    { label: '百度云', url: 'https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp' },
-    { label: '蓝奏云', url: 'https://xxhuber.lanzout.com/mineradio2' },
+    { label: '夸克盘', url: 'https://pan.quark.cn/s/df00d9520835' },
+    { label: '百度云', url: 'https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP' },
+    { label: '蓝奏云', url: 'https://xxhuber.lanzout.com/s/Mineradio' },
   ]);
 });
 
