@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
+const path = require('path');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
@@ -59,6 +60,67 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
     return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
   },
+  importLocalPlaylistFiles: async (files) => {
+    // m3u / m3u8 / pls 播放列表导入：主进程解析出音频文件路径后复用 authorize + import 管线。
+    const entries = [];
+    for (const file of Array.from(files || [])) {
+      let filePath = '';
+      try {
+        filePath = webUtils && typeof webUtils.getPathForFile === 'function' ? webUtils.getPathForFile(file) : '';
+      } catch (_) {}
+      if (!filePath) continue;
+      entries.push({ path: filePath, relativePath: String(file && (file.webkitRelativePath || file.name) || '') });
+    }
+    if (!entries.length) return { ok: false, count: 0, tracks: [], error: 'NO_AUTHORIZED_PLAYLIST' };
+    const parsed = await ipcRenderer.invoke('mineradio-local-library-parse-playlist', { files: entries });
+    if (!parsed || parsed.ok !== true || !Array.isArray(parsed.entries) || !parsed.entries.length) {
+      return {
+        ok: false,
+        count: 0,
+        tracks: [],
+        urls: parsed && parsed.urls || [],
+        missing: parsed && parsed.missing || [],
+        error: parsed && parsed.error || 'LOCAL_PLAYLIST_PARSE_EMPTY',
+      };
+    }
+    const authorization = await ipcRenderer.invoke('mineradio-local-library-authorize', { files: parsed.entries });
+    if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
+    return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
+  },
+  scanLocalMusicDirectory: async (files) => {
+    // 目录扫描：由 webkitdirectory 返回的文件推导所选目录绝对路径，主进程递归扫描后走导入管线。
+    let firstPath = '';
+    let firstRel = '';
+    for (const file of Array.from(files || [])) {
+      let filePath = '';
+      try {
+        filePath = webUtils && typeof webUtils.getPathForFile === 'function' ? webUtils.getPathForFile(file) : '';
+      } catch (_) {}
+      if (!filePath) continue;
+      firstPath = filePath;
+      firstRel = String(file && (file.webkitRelativePath || file.name) || '');
+      break;
+    }
+    if (!firstPath) return { ok: false, count: 0, tracks: [], error: 'NO_AUTHORIZED_LOCAL_AUDIO' };
+    // webkitRelativePath 形如 "所选目录名/子路径/.../文件名"，第一段即所选目录名。
+    // 从文件绝对路径的 dirname 向上推 (relSegments.length - 2) 层即可回到所选目录。
+    const relSegments = firstRel.split(/[\\/]+/).filter(Boolean);
+    let directory = path.dirname(firstPath);
+    if (relSegments.length > 1) {
+      for (let i = 0; i < relSegments.length - 2; i += 1) directory = path.dirname(directory);
+    }
+    const scanned = await ipcRenderer.invoke('mineradio-local-library-scan-directory', { path: directory });
+    if (!scanned || scanned.ok !== true || !Array.isArray(scanned.entries) || !scanned.entries.length) {
+      return { ok: false, count: 0, tracks: [], error: scanned && scanned.error || 'LOCAL_LIBRARY_SCAN_EMPTY' };
+    }
+    const authorization = await ipcRenderer.invoke('mineradio-local-library-authorize', { files: scanned.entries });
+    if (!authorization || authorization.ok !== true || !authorization.token) return authorization;
+    return ipcRenderer.invoke('mineradio-local-library-import', { token: authorization.token });
+  },
+  exportLocalQueueAsM3U: (tracks) => ipcRenderer.invoke('mineradio-local-library-export-m3u', {
+    tracks: Array.isArray(tracks) ? tracks : [],
+    defaultName: 'mineradio-queue.m3u',
+  }),
   readLyricCache: (key) => ipcRenderer.invoke('mineradio-cache-read-lyric', key || ''),
   writeLyricCache: (key, payload) => ipcRenderer.invoke('mineradio-cache-write-lyric', key || '', payload || {}),
   close: (behavior) => ipcRenderer.invoke('desktop-window-close', behavior),
@@ -79,6 +141,8 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   openUpdatePage: (url) => ipcRenderer.invoke('mineradio-open-update-page', String(url || '')),
   restartApp: () => ipcRenderer.invoke('mineradio-restart-app'),
   configureGlobalHotkeys: (bindings) => ipcRenderer.invoke('mineradio-hotkeys-configure-global', bindings || []),
+  configureMediaKeys: (enabled) => ipcRenderer.invoke('mineradio-media-keys-configure', enabled !== false),
+  setThumbarPlaying: (playing) => ipcRenderer.send('mineradio-thumbar-playback', !!playing),
   copyText: (text) => {
     clipboard.writeText(String(text || ''));
     return { ok: true };

@@ -5172,6 +5172,7 @@ async function checkLargePlaylistVirtualizationGuard() {
   if (detailRowsStart < 0 || detailRowsEnd < 0) fail('playlist detail virtual row helper missing');
   const detailRowsSandbox = {
     playlistPanelDetailState: {
+      key: '',
       loading: false,
       loadingMore: false,
       tracks: Array.from({ length: 10000 }, (_, index) => ({ id: index, name: 'Track ' + index, artist: 'Artist' })),
@@ -5185,6 +5186,7 @@ async function checkLargePlaylistVirtualizationGuard() {
     PLAYLIST_DETAIL_INITIAL_RENDER: 96,
     window: { innerHeight: 900 },
     songCoverSrc: () => '',
+    normalizePlaylistProvider: provider => ['qq', 'kugou', 'qishui', 'spotify'].includes(provider) ? provider : 'netease',
     escHtml: value => String(value == null ? '' : value),
     Math,
     Number,
@@ -5246,6 +5248,8 @@ async function checkLargePlaylistVirtualizationGuard() {
       };
     },
     cloneSong: song => Object.assign({}, song),
+    normalizePlaylistProvider: provider => ['qq', 'kugou', 'qishui', 'spotify'].includes(provider) ? provider : 'netease',
+    applyPlaylistOrderToTracks: tracks => tracks,
     markSongsLiked: () => {},
     syncLikeStatusForSongs: () => {},
     safeRenderQueuePanel: () => {},

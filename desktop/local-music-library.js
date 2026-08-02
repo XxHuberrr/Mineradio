@@ -274,6 +274,145 @@ async function defaultParseMetadata(filePath) {
   return module.parseFile(filePath, { duration: true, skipCovers: false });
 }
 
+const PLAYLIST_EXTENSION_RE = /\.(m3u|m3u8|pls)$/i;
+
+function stripPlaylistQuotes(value) {
+  const text = String(value || '').trim();
+  if (text.length >= 2 && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")))) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function parseM3U(text, baseDirectory) {
+  // m3u / m3u8 解析：#EXTM3U 头、#EXTINF 元信息、普通路径行。
+  // 条目形态：相对路径（相对 m3u 所在目录）、绝对路径、http(s) 网络条目（跳过不做下载）。
+  const entries = [];
+  const urls = [];
+  let pendingTitle = '';
+  const lines = String(text || '').split(/\r\n|\n|\r/);
+  for (const rawLine of lines) {
+    const line = stripPlaylistQuotes(rawLine.replace(/\ufeff/g, '').trim());
+    if (!line) continue;
+    if (line.startsWith('#')) {
+      const extinf = /^#EXTINF\s*:\s*(-?\d+)\s*,\s*(.*)$/i.exec(line);
+      if (extinf) pendingTitle = String(extinf[2] || '').trim() || pendingTitle;
+      continue;
+    }
+    const title = pendingTitle;
+    pendingTitle = '';
+    if (/^https?:\/\//i.test(line)) {
+      urls.push({ url: line, title });
+      continue;
+    }
+    if (/^[\\/]{2}/.test(line)) continue; // UNC / 协议相对路径不做处理
+    const resolved = normalizedAbsoluteFilePath(path.resolve(baseDirectory || '', line));
+    if (!resolved) continue;
+    entries.push({ path: resolved, relativePath: '', title });
+  }
+  return { entries, urls };
+}
+
+function parsePLS(text, baseDirectory) {
+  // pls 解析：[playlist] 段内 FileN=/TitleN=/LengthN= 形式。
+  const entries = [];
+  const urls = [];
+  const files = new Map();
+  const titles = new Map();
+  const lines = String(text || '').split(/\r\n|\n|\r/);
+  for (const rawLine of lines) {
+    const line = stripPlaylistQuotes(rawLine.replace(/\ufeff/g, '').trim());
+    if (!line || line === '[playlist]') continue;
+    const fileMatch = /^File(\d+)\s*=\s*(.+)$/i.exec(line);
+    if (fileMatch) {
+      files.set(Number(fileMatch[1]), String(fileMatch[2] || '').trim());
+      continue;
+    }
+    const titleMatch = /^Title(\d+)\s*=\s*(.+)$/i.exec(line);
+    if (titleMatch) titles.set(Number(titleMatch[1]), String(titleMatch[2] || '').trim());
+  }
+  const keys = Array.from(files.keys()).sort((a, b) => a - b);
+  for (const key of keys) {
+    const value = files.get(key);
+    const title = titles.get(key) || '';
+    if (/^https?:\/\//i.test(value)) {
+      urls.push({ url: value, title });
+      continue;
+    }
+    if (/^[\\/]{2}/.test(value)) continue;
+    const resolved = normalizedAbsoluteFilePath(path.resolve(baseDirectory || '', value));
+    if (!resolved) continue;
+    entries.push({ path: resolved, relativePath: '', title });
+  }
+  return { entries, urls };
+}
+
+function parsePlaylistText(text, format, baseDirectory) {
+  if (format === 'pls') return parsePLS(text, baseDirectory);
+  return parseM3U(text, baseDirectory);
+}
+
+function serializeM3U(entries) {
+  // 导出 m3u（UTF-8）：本地曲目写绝对路径行；在线/无本地文件曲目写 # 注释占位行，保证主流播放器可读。
+  const lines = ['#EXTM3U'];
+  for (const item of Array.isArray(entries) ? entries : []) {
+    if (!item) continue;
+    const name = cleanText(item.name || item.title || '', '', 500);
+    const artist = cleanText(item.artist, '', 500);
+    const pathValue = cleanText(item.path, '', 4000);
+    if (!pathValue || /^https?:\/\//i.test(pathValue)) {
+      if (name) lines.push(`# ${name}${artist ? ' - ' + artist : ''}`);
+      continue;
+    }
+    const duration = Number.isFinite(Number(item.duration)) && Number(item.duration) >= 0 ? Math.round(Number(item.duration)) : -1;
+    lines.push(`#EXTINF:${duration},${name || path.basename(pathValue)}`);
+    lines.push(pathValue);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function scanDirectory(directoryPath, options = {}) {
+  // 递归遍历目录，按扩展名收集音频文件（受 MAX_IMPORT_FILES 上限约束），供批量导入管线使用。
+  const maxFiles = Math.max(1, Math.min(MAX_IMPORT_FILES, Number(options.maxFiles) || MAX_IMPORT_FILES));
+  const root = normalizedAbsoluteFilePath(directoryPath);
+  if (!root) return { ok: false, count: 0, entries: [], error: 'LOCAL_DIRECTORY_INVALID' };
+  let stat;
+  try {
+    stat = await fs.promises.stat(root);
+  } catch (_) {
+    return { ok: false, count: 0, entries: [], error: 'LOCAL_DIRECTORY_NOT_FOUND' };
+  }
+  if (!stat.isDirectory()) return { ok: false, count: 0, entries: [], error: 'LOCAL_DIRECTORY_NOT_DIRECTORY' };
+  const entries = [];
+  const seen = new Set();
+  const queue = [root];
+  while (queue.length && entries.length < maxFiles) {
+    const directory = queue.shift();
+    let names = [];
+    try {
+      names = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch (_) {
+      continue;
+    }
+    for (const name of names) {
+      if (entries.length >= maxFiles) break;
+      const fullPath = path.join(directory, name.name);
+      if (name.isDirectory()) {
+        queue.push(fullPath);
+        continue;
+      }
+      if (!name.isFile() || !supportedAudioPath(fullPath)) continue;
+      const identity = normalizedPathIdentity(fullPath);
+      if (!identity || seen.has(identity)) continue;
+      seen.add(identity);
+      entries.push({ path: fullPath, relativePath: path.relative(root, fullPath) });
+    }
+  }
+  entries.sort((a, b) => String(a.relativePath).localeCompare(String(b.relativePath), 'zh-CN', { numeric: true, sensitivity: 'base' }));
+  return { ok: true, count: entries.length, entries, truncated: entries.length >= maxFiles };
+}
+
 async function buildLrcSidecarIndex(entries) {
   const directories = Array.from(new Set(entries.map((entry) => path.dirname(entry.path))));
   const maps = new Map();
@@ -386,6 +525,13 @@ class LocalMusicLibrary {
       if (index > 0 && index % 400 === 0) await new Promise((resolve) => setImmediate(resolve));
     }
     return { ok: true, version: LOCAL_LIBRARY_VERSION, count: tracks.length, tracks };
+  }
+
+  audioPathForId(value) {
+    const id = cleanText(value, '', 64).replace(/^local:/, '').toLowerCase();
+    if (!/^[a-f0-9]{24}$/.test(id)) return '';
+    const record = this.records.get(id);
+    return record ? record.audioPath : '';
   }
 
   lyricForTrack(value) {
@@ -721,11 +867,17 @@ module.exports = {
   AUDIO_MIME,
   LOCAL_MUSIC_SCHEME,
   LocalMusicLibrary,
+  PLAYLIST_EXTENSION_RE,
   coverWithinBudget,
   decodeLyricBuffer,
   embeddedImageDimensions,
   embeddedLyricText,
   localFileId,
   parseByteRange,
+  parseM3U,
+  parsePLS,
+  parsePlaylistText,
   registerLocalMusicScheme,
+  scanDirectory,
+  serializeM3U,
 };

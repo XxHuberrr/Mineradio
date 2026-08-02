@@ -745,3 +745,492 @@ function cyclePlayMode() {
   showToast('播放模式: ' + playModeLabel(playMode));
 }
 updatePlayModeButton(false);
+
+// ============================================================
+//  均衡器面板 UI（动态注入播放器控制台，跟随现有玻璃拟态样式）
+// ============================================================
+var EQ_UI_PRESETS = ['flat', 'pop', 'rock', 'classical', 'bass', 'vocal'];
+function eqFreqLabel(hz) {
+  return hz >= 1000 ? (hz / 1000) + 'k' : String(hz);
+}
+function eqDbLabel(db) {
+  return (db > 0 ? '+' : '') + db + ' dB';
+}
+function buildEqualizerDom() {
+  var wrap = document.createElement('div');
+  wrap.id = 'eq-control';
+  wrap.className = 'volume-control';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'eq-btn';
+  btn.className = 'ctrl-btn';
+  btn.title = '均衡器 / 响度归一化';
+  btn.setAttribute('aria-label', '均衡器');
+  btn.innerHTML = '<svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M5 5v14"/><path d="M12 5v14"/><path d="M19 5v14"/>'
+    + '<circle cx="5" cy="8" r="2"/><circle cx="12" cy="16" r="2"/><circle cx="19" cy="11" r="2"/></svg>';
+  var pop = document.createElement('div');
+  pop.className = 'eq-popover volume-popover';
+  pop.style.width = '316px';
+  pop.style.maxHeight = 'min(560px, calc(100vh - 150px))';
+  pop.style.overflowY = 'auto';
+  pop.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  // 头部：标题 + 预设按钮组（玻璃拟态，与整体 UI 一致）+ 复位按钮
+  var head = document.createElement('div');
+  head.style.cssText = 'display:flex;align-items:center;gap:8px;padding-bottom:2px';
+  var title = document.createElement('span');
+  title.textContent = '均衡器';
+  title.style.cssText = 'font-size:12px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap';
+  var presetGroup = document.createElement('div');
+  presetGroup.id = 'eq-preset-buttons';
+  presetGroup.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0';
+  var presetButtons = [];
+  var presetOptions = [['flat', '平直'], ['pop', '流行'], ['rock', '摇滚'], ['classical', '古典'], ['bass', '低音增强'], ['vocal', '人声'], ['custom', '自定义']];
+  presetOptions.forEach(function (p) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'eq-preset-btn';
+    b.setAttribute('data-preset', p[0]);
+    b.textContent = p[1];
+    b.title = 'EQ 预设：' + p[1];
+    b.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 8px;cursor:pointer;white-space:nowrap;transition:background .16s,border-color .16s,color .16s';
+    presetGroup.appendChild(b);
+    presetButtons.push(b);
+  });
+  var resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.id = 'eq-reset-btn';
+  resetBtn.textContent = '复位';
+  resetBtn.title = '一键复位（全部归零）';
+  resetBtn.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:3px 8px;cursor:pointer;white-space:nowrap';
+  head.appendChild(title);
+  head.appendChild(presetGroup);
+  head.appendChild(resetBtn);
+  pop.appendChild(head);
+
+  // 10 段滑杆
+  var bands = document.createElement('div');
+  bands.id = 'eq-bands';
+  bands.style.cssText = 'display:grid;grid-template-columns:1fr;gap:5px;margin-top:6px';
+  var sliders = [];
+  for (var i = 0; i < EQ_BAND_COUNT; i++) {
+    var row = document.createElement('div');
+    row.className = 'fade-control-row';
+    var label = document.createElement('label');
+    label.textContent = eqFreqLabel(EQ_FREQUENCIES[i]) + 'Hz';
+    label.title = EQ_FREQUENCIES[i] + ' Hz';
+    var slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = -EQ_GAIN_RANGE_DB;
+    slider.max = EQ_GAIN_RANGE_DB;
+    slider.step = 1;
+    slider.value = eqGains[i];
+    slider.setAttribute('aria-label', EQ_FREQUENCIES[i] + 'Hz 增益');
+    slider.dataset.index = String(i);
+    var value = document.createElement('span');
+    value.className = 'eq-band-value';
+    value.textContent = eqDbLabel(eqGains[i]);
+    row.appendChild(label);
+    row.appendChild(slider);
+    row.appendChild(value);
+    bands.appendChild(row);
+    sliders.push(slider);
+  }
+  pop.appendChild(bands);
+
+  // 响度归一化开关
+  var loudRow = document.createElement('div');
+  loudRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.09)';
+  var loudLabel = document.createElement('label');
+  loudLabel.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(255,255,255,.72);cursor:pointer;white-space:nowrap';
+  var loudCheck = document.createElement('input');
+  loudCheck.type = 'checkbox';
+  loudCheck.id = 'eq-loudness-toggle';
+  loudCheck.checked = !!eqLoudnessEnabled;
+  loudCheck.style.cssText = 'accent-color:var(--fc-accent);cursor:pointer';
+  loudLabel.appendChild(loudCheck);
+  loudLabel.appendChild(document.createTextNode('响度归一化'));
+  var loudHint = document.createElement('span');
+  loudHint.id = 'eq-agc-hint';
+  loudHint.textContent = '目标 -18dBFS · 补偿 ±6dB';
+  loudHint.style.cssText = 'font-size:10px;color:rgba(255,255,255,.4);white-space:nowrap';
+  loudRow.appendChild(loudLabel);
+  loudRow.appendChild(loudHint);
+  pop.appendChild(loudRow);
+
+  wrap.appendChild(btn);
+  wrap.appendChild(pop);
+  return { wrap: wrap, btn: btn, pop: pop, presetButtons: presetButtons, resetBtn: resetBtn, sliders: sliders, loudCheck: loudCheck };
+}
+function toggleEqualizerPanel(e) {
+  if (e) e.stopPropagation();
+  var wrap = document.getElementById('eq-control');
+  if (!wrap) return;
+  if (!wrap.classList.contains('open')) {
+    if (typeof closeVolumePanel === 'function') closeVolumePanel(true);
+    wrap.classList.add('open');
+  } else {
+    wrap.classList.remove('open');
+  }
+}
+function updateEqUi() {
+  var sliders = document.querySelectorAll('#eq-bands input[type="range"]');
+  var values = document.querySelectorAll('#eq-bands .eq-band-value');
+  for (var i = 0; i < EQ_BAND_COUNT; i++) {
+    if (sliders[i] && Math.abs(parseFloat(sliders[i].value) - eqGains[i]) > 0.001) sliders[i].value = eqGains[i];
+    if (values[i]) values[i].textContent = eqDbLabel(eqGains[i]);
+  }
+  var btns = document.querySelectorAll('#eq-preset-buttons .eq-preset-btn');
+  var activePreset = EQ_UI_PRESETS.indexOf(eqPreset) >= 0 ? eqPreset : 'custom';
+  for (var bi = 0; bi < btns.length; bi++) {
+    var isActive = btns[bi].getAttribute('data-preset') === activePreset;
+    btns[bi].style.background = isActive ? 'rgba(79,124,255,.30)' : 'rgba(255,255,255,.06)';
+    btns[bi].style.borderColor = isActive ? 'rgba(79,124,255,.60)' : 'rgba(255,255,255,.12)';
+    btns[bi].style.color = isActive ? '#fff' : 'rgba(255,255,255,.8)';
+  }
+  var loud = document.getElementById('eq-loudness-toggle');
+  if (loud && loud.checked !== !!eqLoudnessEnabled) loud.checked = !!eqLoudnessEnabled;
+}
+function initEqualizerUi() {
+  if (document.getElementById('eq-control')) return;
+  var modesCluster = document.querySelector('#controls .control-cluster.modes');
+  var volumeControl = document.getElementById('volume-control');
+  if (!modesCluster || !volumeControl) return;
+  var ui = buildEqualizerDom();
+  modesCluster.insertBefore(ui.wrap, volumeControl.nextSibling);
+
+  ui.btn.addEventListener('click', toggleEqualizerPanel);
+  ui.wrap.addEventListener('mouseenter', function () { ui.wrap.classList.add('open'); });
+  ui.wrap.addEventListener('mouseleave', function () { ui.wrap.classList.remove('open'); });
+
+  ui.sliders.forEach(function (slider) {
+    slider.addEventListener('input', function () {
+      var idx = Number(slider.dataset.index) | 0;
+      setEqBandGain(idx, Number(slider.value));
+    });
+    slider.addEventListener('change', function () {
+      var idx = Number(slider.dataset.index) | 0;
+      if (typeof showToast === 'function') {
+        showToast('EQ ' + eqFreqLabel(EQ_FREQUENCIES[idx]) + 'Hz: ' + eqDbLabel(eqGains[idx]));
+      }
+    });
+  });
+  ui.presetButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      applyEqPreset(b.getAttribute('data-preset'));
+    });
+  });
+  ui.resetBtn.addEventListener('click', function () {
+    resetEqAll();
+    if (typeof showToast === 'function') showToast('均衡器已复位');
+  });
+  ui.loudCheck.addEventListener('change', function () {
+    setEqLoudnessEnabled(ui.loudCheck.checked);
+    if (typeof showToast === 'function') {
+      showToast(ui.loudCheck.checked ? '响度归一化已开启' : '响度归一化已关闭');
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (!ui.wrap.contains(e.target)) ui.wrap.classList.remove('open');
+  });
+
+  updateEqUi();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initEqualizerUi);
+else initEqualizerUi();
+
+// ============================================================
+//  睡眠定时（Sleep Timer）— 到点自动暂停播放，不退出程序
+// ============================================================
+var SLEEP_TIMER_STORE_KEY = 'mineradio-sleep-timer-v1';
+var SLEEP_TIMER_PRESETS = [10, 30, 60];
+var sleepTimerState = {
+  enabled: false,
+  deadline: 0,
+  totalMs: 0,
+  timeoutId: null,
+  intervalId: null
+};
+
+function sleepTimerPad2(n) {
+  return (n < 10 ? '0' : '') + n;
+}
+function sleepTimerFormatRemaining(secs) {
+  secs = Math.max(0, Math.round(Number(secs) || 0));
+  var h = Math.floor(secs / 3600);
+  var m = Math.floor((secs % 3600) / 60);
+  var s = secs % 60;
+  return h > 0 ? h + ':' + sleepTimerPad2(m) + ':' + sleepTimerPad2(s) : sleepTimerPad2(m) + ':' + sleepTimerPad2(s);
+}
+function sleepTimerSavePersisted() {
+  try {
+    localStorage.setItem(SLEEP_TIMER_STORE_KEY, JSON.stringify({
+      version: 1,
+      deadline: sleepTimerState.deadline,
+      totalMs: sleepTimerState.totalMs,
+      startedAt: sleepTimerState.deadline - sleepTimerState.totalMs
+    }));
+  } catch (e) { }
+}
+function sleepTimerLoadPersisted() {
+  try {
+    var raw = localStorage.getItem(SLEEP_TIMER_STORE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data || !data.deadline || !isFinite(Number(data.deadline))) return null;
+    data.deadline = Number(data.deadline);
+    data.totalMs = Math.max(0, Number(data.totalMs) || 60000);
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+function sleepTimerClearPersisted() {
+  try { localStorage.removeItem(SLEEP_TIMER_STORE_KEY); } catch (e) { }
+}
+function sleepTimerStopTimers() {
+  if (sleepTimerState.timeoutId) { clearTimeout(sleepTimerState.timeoutId); sleepTimerState.timeoutId = null; }
+  if (sleepTimerState.intervalId) { clearInterval(sleepTimerState.intervalId); sleepTimerState.intervalId = null; }
+}
+function sleepTimerStartTimers() {
+  sleepTimerStopTimers();
+  var delay = Math.max(0, sleepTimerState.deadline - Date.now());
+  sleepTimerState.timeoutId = setTimeout(function () { sleepTimerFire(); }, delay + 60);
+  sleepTimerState.intervalId = setInterval(function () { sleepTimerTick(); }, 1000);
+  sleepTimerTick();
+}
+function sleepTimerStart(minutes) {
+  var totalMinutes = Math.round(Number(minutes) || 0);
+  if (!isFinite(totalMinutes) || totalMinutes < 1 || totalMinutes > 999) {
+    if (typeof showToast === 'function') showToast('请输入 1-999 之间的分钟数');
+    return;
+  }
+  sleepTimerStopTimers();
+  sleepTimerState.enabled = true;
+  sleepTimerState.totalMs = totalMinutes * 60000;
+  sleepTimerState.deadline = Date.now() + sleepTimerState.totalMs;
+  sleepTimerSavePersisted();
+  sleepTimerStartTimers();
+  sleepTimerUpdateUi();
+  if (typeof showToast === 'function') showToast('睡眠定时已设定：' + totalMinutes + ' 分钟后暂停播放');
+}
+function sleepTimerCancel() {
+  if (!sleepTimerState.enabled) return;
+  sleepTimerStopTimers();
+  sleepTimerState.enabled = false;
+  sleepTimerState.deadline = 0;
+  sleepTimerClearPersisted();
+  sleepTimerUpdateUi();
+  if (typeof showToast === 'function') showToast('睡眠定时已取消');
+}
+function sleepTimerPausePlayback() {
+  if (!(audio && !audio.paused)) return;
+  if (typeof cuefieldAutoMixExecuting !== 'undefined' && cuefieldAutoMixExecuting && typeof resetCuefieldAutoMix === 'function') {
+    resetCuefieldAutoMix('sleep-timer-pause');
+  }
+  if (typeof albumGaplessState !== 'undefined' && albumGaplessState && albumGaplessState.preload && (albumGaplessState.preload.mixPending || albumGaplessState.preload.mixStarted) && typeof clearAlbumGaplessPreload === 'function') {
+    clearAlbumGaplessPreload('sleep-timer-pause');
+  }
+  if (typeof fadeOutAndPauseAudio === 'function') {
+    Promise.resolve(fadeOutAndPauseAudio()).then(function () {
+      if (audio && !audio.paused) return;
+      playing = false;
+      setPlayIcon(false);
+      hideLoading();
+      forcePlaybackControlsInteractive();
+      if (typeof safePlaybackStep === 'function') safePlaybackStep('sleep-timer-pause', function () {
+        if (typeof syncPlaybackStateFromAudioEvent === 'function') syncPlaybackStateFromAudioEvent('sleep-timer-pause');
+      });
+    }).catch(function (err) {
+      console.warn('[SleepTimer] pause failed:', err && (err.message || err));
+    });
+    return;
+  }
+  try { audio.pause(); } catch (err) { console.warn('[SleepTimer] pause failed:', err && (err.message || err)); }
+  playing = false;
+  setPlayIcon(false);
+}
+function sleepTimerFire() {
+  if (!sleepTimerState.enabled) return;
+  sleepTimerStopTimers();
+  sleepTimerState.enabled = false;
+  sleepTimerState.deadline = 0;
+  sleepTimerClearPersisted();
+  var wasPlaying = !!(audio && !audio.paused);
+  if (wasPlaying) sleepTimerPausePlayback();
+  sleepTimerUpdateUi();
+  if (typeof showToast === 'function') showToast(wasPlaying ? '睡眠定时到点，播放已暂停' : '睡眠定时到点');
+}
+function sleepTimerTick() {
+  if (!sleepTimerState.enabled) return;
+  if (Date.now() >= sleepTimerState.deadline) { sleepTimerFire(); return; }
+  sleepTimerUpdateCountdown();
+}
+function sleepTimerUpdateCountdown() {
+  var el = document.getElementById('sleep-timer-countdown');
+  if (!el) return;
+  var label = '--:--';
+  if (sleepTimerState.enabled) {
+    var secs = Math.max(0, Math.ceil((sleepTimerState.deadline - Date.now()) / 1000));
+    label = sleepTimerFormatRemaining(secs);
+  }
+  el.textContent = label;
+  var btn = document.getElementById('sleep-timer-btn');
+  if (btn) btn.title = sleepTimerState.enabled ? '睡眠定时（剩余 ' + label + '）' : '睡眠定时';
+}
+function sleepTimerUpdateUi() {
+  var btn = document.getElementById('sleep-timer-btn');
+  if (btn) {
+    btn.classList.toggle('active', sleepTimerState.enabled);
+    btn.title = sleepTimerState.enabled ? '睡眠定时进行中' : '睡眠定时';
+  }
+  var active = document.getElementById('sleep-timer-active');
+  if (active) active.style.display = sleepTimerState.enabled ? 'grid' : 'none';
+  var status = document.getElementById('sleep-timer-status');
+  if (status) status.textContent = sleepTimerState.enabled ? '已启用' : '';
+  sleepTimerUpdateCountdown();
+}
+function buildSleepTimerDom() {
+  var wrap = document.createElement('div');
+  wrap.id = 'sleep-timer-control';
+  wrap.className = 'volume-control';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'sleep-timer-btn';
+  btn.className = 'ctrl-btn';
+  btn.title = '睡眠定时';
+  btn.setAttribute('aria-label', '睡眠定时');
+  btn.innerHTML = '<svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  var pop = document.createElement('div');
+  pop.className = 'sleep-timer-popover volume-popover';
+  pop.style.width = '248px';
+  pop.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  var head = document.createElement('div');
+  head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:2px';
+  var title = document.createElement('span');
+  title.textContent = '睡眠定时';
+  title.style.cssText = 'font-size:12px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap';
+  var status = document.createElement('span');
+  status.id = 'sleep-timer-status';
+  status.style.cssText = 'font-size:11px;color:rgba(0,245,212,.75);white-space:nowrap';
+  head.appendChild(title);
+  head.appendChild(status);
+  pop.appendChild(head);
+
+  var hint = document.createElement('div');
+  hint.textContent = '到点自动暂停播放，不退出程序';
+  hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,.4);padding-top:2px';
+  pop.appendChild(hint);
+
+  var presets = document.createElement('div');
+  presets.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px';
+  var presetButtons = [];
+  SLEEP_TIMER_PRESETS.forEach(function (m) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.min = String(m);
+    b.textContent = m + ' 分钟';
+    b.title = '设定 ' + m + ' 分钟后暂停播放';
+    b.style.cssText = 'font-size:11px;color:rgba(255,255,255,.82);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:6px 0;cursor:pointer;white-space:nowrap';
+    presetButtons.push(b);
+    presets.appendChild(b);
+  });
+  pop.appendChild(presets);
+
+  var custom = document.createElement('div');
+  custom.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:6px';
+  var input = document.createElement('input');
+  input.type = 'number';
+  input.id = 'sleep-timer-custom-input';
+  input.min = '1';
+  input.max = '999';
+  input.placeholder = '自定义分钟';
+  input.setAttribute('aria-label', '自定义睡眠定时分钟数');
+  input.style.cssText = 'flex:1;min-width:0;font-size:11px;color:rgba(255,255,255,.85);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 8px;outline:none';
+  var applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.id = 'sleep-timer-custom-apply';
+  applyBtn.textContent = '设定';
+  applyBtn.title = '按自定义分钟数启动睡眠定时';
+  applyBtn.style.cssText = 'font-size:11px;color:rgba(255,255,255,.82);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 10px;cursor:pointer;white-space:nowrap';
+  custom.appendChild(input);
+  custom.appendChild(applyBtn);
+  pop.appendChild(custom);
+
+  var active = document.createElement('div');
+  active.id = 'sleep-timer-active';
+  active.style.cssText = 'display:none;grid-template-columns:1fr;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.09)';
+  var countdown = document.createElement('div');
+  countdown.id = 'sleep-timer-countdown';
+  countdown.textContent = '--:--';
+  countdown.style.cssText = 'text-align:center;font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;color:rgba(0,245,212,.9);text-shadow:0 0 14px rgba(0,245,212,.18)';
+  var cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.id = 'sleep-timer-cancel-btn';
+  cancelBtn.textContent = '取消定时';
+  cancelBtn.title = '取消睡眠定时';
+  cancelBtn.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 0;cursor:pointer;white-space:nowrap';
+  active.appendChild(countdown);
+  active.appendChild(cancelBtn);
+  pop.appendChild(active);
+
+  wrap.appendChild(btn);
+  wrap.appendChild(pop);
+  return { wrap: wrap, btn: btn, pop: pop, presetButtons: presetButtons, customInput: input, customApply: applyBtn, cancelBtn: cancelBtn };
+}
+function toggleSleepTimerPanel(e) {
+  if (e) e.stopPropagation();
+  var wrap = document.getElementById('sleep-timer-control');
+  if (!wrap) return;
+  if (!wrap.classList.contains('open')) {
+    if (typeof closeVolumePanel === 'function') closeVolumePanel(true);
+    var eqWrap = document.getElementById('eq-control');
+    if (eqWrap) eqWrap.classList.remove('open');
+    wrap.classList.add('open');
+  } else {
+    wrap.classList.remove('open');
+  }
+}
+function initSleepTimerUi() {
+  if (document.getElementById('sleep-timer-control')) return;
+  var modesCluster = document.querySelector('#controls .control-cluster.modes');
+  var anchor = document.getElementById('eq-control') || document.getElementById('volume-control');
+  if (!modesCluster || !anchor) return;
+  var ui = buildSleepTimerDom();
+  modesCluster.insertBefore(ui.wrap, anchor.nextSibling);
+
+  ui.btn.addEventListener('click', toggleSleepTimerPanel);
+  ui.wrap.addEventListener('mouseenter', function () { ui.wrap.classList.add('open'); });
+  ui.wrap.addEventListener('mouseleave', function () { ui.wrap.classList.remove('open'); });
+
+  ui.presetButtons.forEach(function (b) {
+    b.addEventListener('click', function () { sleepTimerStart(Number(b.dataset.min) || 30); });
+  });
+  ui.customApply.addEventListener('click', function () {
+    sleepTimerStart(parseInt(ui.customInput.value, 10));
+  });
+  ui.customInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); ui.customApply.click(); }
+  });
+  ui.cancelBtn.addEventListener('click', function () { sleepTimerCancel(); });
+
+  document.addEventListener('click', function (e) {
+    if (!ui.wrap.contains(e.target)) ui.wrap.classList.remove('open');
+  });
+
+  var saved = sleepTimerLoadPersisted();
+  if (saved && saved.deadline > Date.now()) {
+    sleepTimerState.enabled = true;
+    sleepTimerState.deadline = saved.deadline;
+    sleepTimerState.totalMs = saved.totalMs > 0 ? saved.totalMs : 60000;
+    sleepTimerStartTimers();
+  } else {
+    sleepTimerClearPersisted();
+  }
+  sleepTimerUpdateUi();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initSleepTimerUi);
+else initSleepTimerUi();

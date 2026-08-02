@@ -444,6 +444,38 @@ bindSmoothQueueScrolling();
 bindPlaylistPanelLazyRender();
 bindLongPressPanelReorder();
 bindModalBackdropClose();
+function buildQueueSortToolbar() {
+  if (document.getElementById('queue-sort-row')) return;
+  var pane = document.getElementById('queue-pane');
+  var list = document.getElementById('queue-list');
+  if (!pane || !list) return;
+  var row = document.createElement('div');
+  row.className = 'queue-toolbar';
+  row.id = 'queue-sort-row';
+  row.style.position = 'relative';
+  row.style.zIndex = '6';
+  row.style.marginTop = '0';
+  row.innerHTML =
+    '<span class="queue-chip" style="flex-shrink:0" title="排序仅作用于本地队列，不写回平台歌单">排序</span>' +
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="title" onclick="sortQueueBy(\'title\')" style="height:26px;padding:0 9px;font-size:11px" title="按标题排序队列">标题</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="artist" onclick="sortQueueBy(\'artist\')" style="height:26px;padding:0 9px;font-size:11px" title="按歌手排序队列">歌手</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="duration" onclick="sortQueueBy(\'duration\')" style="height:26px;padding:0 9px;font-size:11px" title="按时长排序队列">时长</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="random" onclick="sortQueueBy(\'random\')" style="height:26px;padding:0 9px;font-size:11px" title="随机打乱队列">随机</button>' +
+    '<button type="button" class="fx-mini-btn ghost" onclick="moveCurrentQueueSongToTop()" style="height:26px;padding:0 9px;font-size:11px" title="当前播放曲移到队列首位">当前置顶</button>' +
+    '<button type="button" class="fx-mini-btn ghost" onclick="moveCurrentQueueSongToBottom()" style="height:26px;padding:0 9px;font-size:11px" title="当前播放曲移到队列末尾">置底</button>' +
+    '</div>';
+  pane.insertBefore(row, list);
+  updateQueueSortToolbarActive();
+}
+function updateQueueSortToolbarActive() {
+  var row = document.getElementById('queue-sort-row');
+  if (!row) return;
+  Array.prototype.forEach.call(row.querySelectorAll('[data-queue-sort]'), function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-queue-sort') === queueSortMode);
+  });
+}
+buildQueueSortToolbar();
 function renderQueuePanel(opts) {
   opts = opts || {};
   var $ql = document.getElementById('queue-list');

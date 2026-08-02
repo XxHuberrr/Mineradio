@@ -1,4 +1,182 @@
 // ============================================================
+//  均衡器 + 响度归一化
+//  EQ 链位于 analyser 之后、gainNode/analysisSinkNode 之前，
+//  analyser/beatAnalyser 始终观察原始信号（视觉与节拍不受 EQ 影响）。
+// ============================================================
+function defaultEqGains() {
+  return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+}
+function eqPresetCurve(name) {
+  switch (name) {
+    case 'pop':       return [3, 4, 4.5, 3, 1, -1, -2, 1.5, 3, 3.5];   // 流行
+    case 'rock':      return [5, 4, 3, 1.5, 0, -1, 0, 2, 3.5, 4];      // 摇滚
+    case 'classical': return [4, 3, 2, 0.5, -1, -2, -1.5, 0.5, 2, 3];  // 古典
+    case 'bass':      return [7, 6, 5, 3, 1, 0, 0, 0, 0, 0];           // 低音增强
+    case 'vocal':     return [-2, -1.5, 0, 2, 3.5, 4.5, 4, 3, 1.5, 0]; // 人声
+    default:          return defaultEqGains();                         // 平直
+  }
+}
+// 注：readEqPreference 已在 00-core-stores.js 定义（本文件加载顺序靠后，不能重复定义覆盖）
+function saveEqPreference() {
+  try {
+    localStorage.setItem(EQ_STORE_KEY, JSON.stringify({ gains: eqGains, preset: eqPreset, loudness: eqLoudnessEnabled }));
+  } catch (e) { }
+}
+// EQ/AGC 状态兜底：真实应用由 00-core-stores.js 先定义这些全局；
+// 若本文件被独立加载（如单模块测试 harness），这里提供默认值避免 ReferenceError，
+// typeof 检查保证不覆盖已定义值。
+if (typeof eqFilters === 'undefined') { var eqFilters = []; }
+if (typeof eqGains === 'undefined') { var eqGains = defaultEqGains(); }
+if (typeof eqPreset === 'undefined') { var eqPreset = 'flat'; }
+if (typeof eqLoudnessEnabled === 'undefined') { var eqLoudnessEnabled = false; }
+if (typeof eqAgcGainNode === 'undefined') { var eqAgcGainNode = null; }
+if (typeof eqAgcGain === 'undefined') { var eqAgcGain = 1; }
+if (typeof eqAgcFrame === 'undefined') { var eqAgcFrame = 0; }
+if (typeof eqAgcLastAt === 'undefined') { var eqAgcLastAt = 0; }
+function buildEqFilterChain() {
+  var filters = [];
+  if (!audioCtx || audioCtx.state === 'closed') return filters;
+  for (var i = 0; i < EQ_BAND_COUNT; i++) {
+    try {
+      var filter = audioCtx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = EQ_FREQUENCIES[i];
+      filter.Q.value = 1.1;
+      filter.gain.value = eqGains[i];
+      if (filters.length) filters[filters.length - 1].connect(filter);
+      filters.push(filter);
+    } catch (e) { }
+  }
+  return filters;
+}
+function eqLiveChainReady() {
+  return Array.isArray(eqFilters) && eqFilters.length === EQ_BAND_COUNT;
+}
+function applyEqGainsToLiveChain() {
+  if (!eqLiveChainReady()) return;
+  for (var i = 0; i < EQ_BAND_COUNT; i++) {
+    try { eqFilters[i].gain.value = eqGains[i]; } catch (e) { }
+  }
+}
+function ensureEqAgcGainNode() {
+  if (eqAgcGainNode && eqAgcGainNode.context === audioCtx) return eqAgcGainNode;
+  if (!audioCtx || audioCtx.state === 'closed') return null;
+  eqAgcGainNode = audioCtx.createGain();
+  eqAgcGainNode.gain.value = eqLoudnessEnabled ? eqAgcGain : 1;
+  return eqAgcGainNode;
+}
+function applyEqChain(input, output) {
+  // 在 analyser(input) 与 gainNode/analysisSinkNode(output) 之间插入
+  // 10 段 peaking EQ 链 + AGC 增益节点；重复调用会先断开旧链再重建。
+  if (!input || !output || !audioCtx || audioCtx.state === 'closed') return false;
+  if (Array.isArray(eqFilters) && eqFilters.length) {
+    eqFilters.forEach(function (f) { try { f.disconnect(); } catch (_) { } });
+  }
+  eqFilters = buildEqFilterChain();
+  var agcNode = ensureEqAgcGainNode();
+  if (!agcNode) {
+    // AGC 节点创建失败时回退直连，保证 analyser → output 不中断
+    input.connect(output);
+    return false;
+  }
+  try { input.disconnect(); } catch (e) { }
+  if (eqFilters.length) {
+    input.connect(eqFilters[0]);
+    eqFilters[eqFilters.length - 1].connect(agcNode);
+  } else {
+    input.connect(agcNode);
+  }
+  agcNode.connect(output);
+  return true;
+}
+function eqAgcMeasuredLevel() {
+  if (!analyser) return 0;
+  try {
+    analyser.getByteTimeDomainData(timeDomainData);
+    var sum = 0;
+    var n = 0;
+    var step = Math.max(1, Math.floor(timeDomainData.length / 128));
+    for (var i = 0; i < timeDomainData.length; i += step) {
+      var v = (timeDomainData[i] - 128) / 128;
+      sum += v * v;
+      n++;
+    }
+    return Math.sqrt(sum / Math.max(1, n));
+  } catch (e) {
+    return 0;
+  }
+}
+function tickEqAgc(nowMs) {
+  if (!eqLoudnessEnabled) {
+    eqAgcFrame = 0;
+    return;
+  }
+  if (eqAgcGainNode && analyser && audio && !audio.paused && !audio.ended && audio.src && !audio.muted) {
+    var level = eqAgcMeasuredLevel();
+    var levelDb = level > 0.00001 ? (20 * Math.log10(level)) : -90;
+    var deltaDb = clampRange(EQ_AGC_TARGET_DB - levelDb, -EQ_AGC_MAX_COMPENSATION_DB, EQ_AGC_MAX_COMPENSATION_DB);
+    var targetGain = Math.pow(10, deltaDb / 20);
+    var dt = eqAgcLastAt ? Math.min(0.5, Math.max(0.016, (nowMs - eqAgcLastAt) / 1000)) : 0.05;
+    // 慢速 attack/release 平滑，避免泵浦效应
+    var coef = 1 - Math.exp(-dt / (targetGain > eqAgcGain ? EQ_AGC_ATTACK_SECONDS : EQ_AGC_RELEASE_SECONDS));
+    eqAgcGain += (targetGain - eqAgcGain) * coef;
+    try { eqAgcGainNode.gain.value = eqAgcGain; } catch (e) { }
+    eqAgcLastAt = nowMs;
+  } else {
+    eqAgcLastAt = 0;
+  }
+  eqAgcFrame = requestAnimationFrame(tickEqAgc);
+}
+function startEqAgcLoop() {
+  if (!eqLoudnessEnabled) return;
+  if (eqAgcFrame) cancelAnimationFrame(eqAgcFrame);
+  eqAgcLastAt = 0;
+  eqAgcFrame = requestAnimationFrame(tickEqAgc);
+}
+function stopEqAgcLoop() {
+  if (eqAgcFrame) { cancelAnimationFrame(eqAgcFrame); eqAgcFrame = 0; }
+  eqAgcLastAt = 0;
+}
+function setEqBandGain(index, db) {
+  index = Number(index) | 0;
+  if (index < 0 || index >= EQ_BAND_COUNT) return;
+  eqGains[index] = clampRange(Number(db) || 0, -EQ_GAIN_RANGE_DB, EQ_GAIN_RANGE_DB);
+  if (eqLiveChainReady()) {
+    try { eqFilters[index].gain.value = eqGains[index]; } catch (e) { }
+  }
+  if (eqPreset !== 'custom') eqPreset = 'custom';
+  saveEqPreference();
+  if (typeof updateEqUi === 'function') updateEqUi();
+}
+function applyEqPreset(name) {
+  var curve = eqPresetCurve(name);
+  eqGains = curve.slice();
+  eqPreset = name;
+  applyEqGainsToLiveChain();
+  saveEqPreference();
+  if (typeof updateEqUi === 'function') updateEqUi();
+}
+function resetEqAll() {
+  eqGains = defaultEqGains();
+  eqPreset = 'flat';
+  applyEqGainsToLiveChain();
+  saveEqPreference();
+  if (typeof updateEqUi === 'function') updateEqUi();
+}
+function setEqLoudnessEnabled(on) {
+  eqLoudnessEnabled = !!on;
+  if (eqLoudnessEnabled) {
+    if (!eqAgcGainNode) ensureEqAgcGainNode();
+    else { try { eqAgcGainNode.gain.value = eqAgcGain; } catch (e) { } }
+    startEqAgcLoop();
+  } else {
+    eqAgcGain = 1;
+    if (eqAgcGainNode) { try { eqAgcGainNode.gain.value = 1; } catch (e) { } }
+    stopEqAgcLoop();
+  }
+  saveEqPreference();
+  if (typeof updateEqUi === 'function') updateEqUi();
+}
 function audioGraphHealthy() {
   return !!(audio && audioReady && audioCtx && audioCtx.state !== 'closed' && source && audioSourceMedia === audio && analyser && beatAnalyser && (gainNode || analysisSinkNode));
 }
@@ -7,6 +185,16 @@ function disconnectAudioGraphNodes(keepSource) {
     if (!node) return;
     try { node.disconnect(); } catch (e) { }
   });
+  if (typeof eqFilters !== 'undefined' && Array.isArray(eqFilters) && eqFilters.length) {
+    eqFilters.forEach(function (filter) {
+      try { filter.disconnect(); } catch (e) { }
+    });
+    eqFilters = [];
+  }
+  if (typeof eqAgcGainNode !== 'undefined' && eqAgcGainNode) {
+    try { eqAgcGainNode.disconnect(); } catch (e) { }
+    eqAgcGainNode = null;
+  }
   if (!keepSource) {
     source = null;
     audioSourceMedia = null;
@@ -69,6 +257,8 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
 }
 function resetPlaybackAudioGraphForSourceSwitch(reason) {
   if (!audio) return;
+  // 切歌时让 AGC 从 1 重新适应新曲目音量；gapless 无缝接棒则保留平滑值
+  if (reason !== 'album-gapless-handoff') eqAgcGain = 1;
   var preparedGraph = audio.__mineradioPreparedAudioGraph;
   var previousSourceMedia = audioSourceMedia;
   var sourceUsesCapture = !!(source && source.__mineradioUsesCapture);
@@ -101,6 +291,10 @@ function resetPlaybackAudioGraphForSourceSwitch(reason) {
     audio.__mineradioMediaSourceBound = true;
     preparedGraph.adopted = true;
     audioReady = true;
+    // 恢复预加载图后重建 EQ 链（preparedGraph 旧链已在 applyEqChain 中断开）
+    if (typeof applyEqChain === 'function') applyEqChain(analyser, gainNode);
+    else { try { analyser.connect(gainNode); } catch (e) { } }
+    if (typeof eqLoudnessEnabled !== 'undefined' && eqLoudnessEnabled && typeof startEqAgcLoop === 'function') startEqAgcLoop();
   }
 }
 function initAudio() {
@@ -183,10 +377,14 @@ function initAudio() {
   source.connect(analyser);
   source.connect(beatAnalyser);
   if (gainNode) {
-    analyser.connect(gainNode);
+    // 主链: analyser → EQ 链 → AGC → gainNode → destination
+    if (typeof applyEqChain === 'function') applyEqChain(analyser, gainNode);
+    else { try { analyser.connect(gainNode); } catch (e) { } }
     gainNode.connect(audioCtx.destination);
   } else if (analysisSinkNode) {
-    analyser.connect(analysisSinkNode);
+    // capture 回退: analyser → EQ 链 → AGC → analysisSinkNode(静音) → destination
+    if (typeof applyEqChain === 'function') applyEqChain(analyser, analysisSinkNode);
+    else { try { analyser.connect(analysisSinkNode); } catch (e) { } }
     analysisSinkNode.connect(audioCtx.destination);
   }
   applyVolumeToAudio();
@@ -195,6 +393,7 @@ function initAudio() {
   beatTimeDomainData.fill(128);
   resetRealtimeBeatEngine();
   audioReady = true;
+  if (typeof eqLoudnessEnabled !== 'undefined' && eqLoudnessEnabled && typeof startEqAgcLoop === 'function') startEqAgcLoop();
   applyAudioOutputDevice(audio);
   return true;
 }

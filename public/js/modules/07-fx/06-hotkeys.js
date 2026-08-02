@@ -1,5 +1,5 @@
 function getHotkeyDefaults() {
-  var defaults = { local: {}, global: {} };
+  var defaults = { local: {}, global: {}, mediaKeysEnabled: true };
   HOTKEY_ACTIONS.forEach(function (action) {
     defaults.local[action.key] = action.local || '';
     defaults.global[action.key] = action.global || '';
@@ -12,7 +12,8 @@ function readHotkeySettings() {
     var raw = JSON.parse(localStorage.getItem(HOTKEY_SETTINGS_STORE_KEY) || '{}') || {};
     return {
       local: Object.assign({}, defaults.local, raw.local || {}),
-      global: Object.assign({}, defaults.global, raw.global || {})
+      global: Object.assign({}, defaults.global, raw.global || {}),
+      mediaKeysEnabled: raw.mediaKeysEnabled !== false
     };
   } catch (e) {
     return defaults;
@@ -185,10 +186,39 @@ function ensureHotkeyModal() {
     '<div class="hotkey-note">按 Backspace / Delete 可清空当前功能热键</div>' +
     '</div>' +
     '<div id="hotkey-local-section" class="hotkey-section active"></div>' +
+    '<div id="hotkey-media-keys-row" class="hotkey-row hotkey-media-row">' +
+    '<div class="hotkey-name hotkey-media-name"><span>系统媒体键</span><span class="hotkey-media-note">播放 / 暂停、上一首、下一首（含任务栏缩略图按钮）</span></div>' +
+    '<label class="hotkey-switch"><input type="checkbox" id="hotkey-media-keys-toggle"><span class="hotkey-switch-track"></span></label>' +
+    '<div class="hotkey-media-status" id="hotkey-media-keys-status">已开启</div>' +
+    '</div>' +
     '<div id="hotkey-global-section" class="hotkey-section"></div>' +
     '<div class="hotkey-capture-tip" id="hotkey-capture-tip">正在录入组合键，按 Esc 取消。</div>' +
     '</div>';
   document.body.appendChild(modal);
+  // 注入系统媒体键开关行样式（与热键面板现有样式保持一致）
+  if (!document.getElementById('mineradio-hotkey-media-style')) {
+    var hotkeyMediaStyle = document.createElement('style');
+    hotkeyMediaStyle.id = 'mineradio-hotkey-media-style';
+    hotkeyMediaStyle.textContent =
+      '.hotkey-media-row{grid-template-columns:minmax(180px,1fr) auto minmax(96px,1fr)}' +
+      '.hotkey-media-name{display:flex;flex-direction:column;gap:3px;white-space:normal}' +
+      '.hotkey-media-note{font-size:10.5px;font-weight:560;color:rgba(255,255,255,.42)}' +
+      '.hotkey-switch{position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:26px;cursor:pointer}' +
+      '.hotkey-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}' +
+      '.hotkey-switch-track{position:relative;width:40px;height:22px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.30);transition:background .18s ease,border-color .18s ease;pointer-events:none}' +
+      '.hotkey-switch-track::after{content:"";position:absolute;left:3px;top:50%;width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,.62);transform:translateY(-50%);transition:transform .18s ease,background .18s ease}' +
+      '.hotkey-switch input:checked + .hotkey-switch-track{border-color:rgba(var(--fc-accent-rgb),.55);background:rgba(var(--fc-accent-rgb),.26)}' +
+      '.hotkey-switch input:checked + .hotkey-switch-track::after{transform:translate(18px,-50%);background:#fff}' +
+      '.hotkey-media-status{font-size:11px;font-weight:700;text-align:right;color:rgba(255,255,255,.55)}';
+    document.head.appendChild(hotkeyMediaStyle);
+  }
+  var mediaKeysToggle = document.getElementById('hotkey-media-keys-toggle');
+  if (mediaKeysToggle && !mediaKeysToggle.__mineradioMediaKeysBound) {
+    mediaKeysToggle.__mineradioMediaKeysBound = true;
+    mediaKeysToggle.addEventListener('change', function () {
+      setMediaKeysEnabled(mediaKeysToggle.checked);
+    });
+  }
   modal.addEventListener('click', function (e) {
     if (e.target === modal || e.target.closest('[data-hotkey-close]')) closeHotkeySettings();
     var scopeBtn = e.target.closest('[data-hotkey-scope]');
@@ -245,8 +275,19 @@ function renderHotkeySettings() {
   var global = document.getElementById('hotkey-global-section');
   if (local) local.classList.toggle('active', active === 'local');
   if (global) global.classList.toggle('active', active === 'global');
+  // 系统媒体键开关行只在「全局热键」标签下显示
+  var mediaRow = document.getElementById('hotkey-media-keys-row');
+  if (mediaRow) mediaRow.style.display = active === 'global' ? '' : 'none';
   renderHotkeyScope('local');
   renderHotkeyScope('global');
+  // 同步系统媒体键开关状态
+  var mediaToggle = document.getElementById('hotkey-media-keys-toggle');
+  if (mediaToggle) {
+    var mediaEnabled = !hotkeySettings || hotkeySettings.mediaKeysEnabled !== false;
+    mediaToggle.checked = mediaEnabled;
+    var mediaStatus = document.getElementById('hotkey-media-keys-status');
+    if (mediaStatus) mediaStatus.textContent = mediaEnabled ? '已开启' : '已关闭';
+  }
 }
 function setHotkeyModalScope(scope) {
   var modal = ensureHotkeyModal();
@@ -259,6 +300,7 @@ function openHotkeySettings() {
   modal.setAttribute('data-scope', modal.getAttribute('data-scope') || 'local');
   renderHotkeySettings();
   registerGlobalHotkeys();
+  registerMediaKeys();
 }
 function closeHotkeySettings() {
   hotkeyCaptureState = null;
@@ -311,6 +353,43 @@ function registerGlobalHotkeys() {
     renderHotkeySettings();
   });
 }
+// 系统媒体键：默认开启，可在热键设置面板中开关
+function registerMediaKeys() {
+  var api = getDesktopWindowApi && getDesktopWindowApi();
+  if (!api || typeof api.configureMediaKeys !== 'function') return Promise.resolve();
+  var enabled = !hotkeySettings || hotkeySettings.mediaKeysEnabled !== false;
+  return api.configureMediaKeys(enabled).catch(function () { });
+}
+function setMediaKeysEnabled(enabled) {
+  if (!hotkeySettings) hotkeySettings = getHotkeyDefaults();
+  hotkeySettings.mediaKeysEnabled = enabled !== false;
+  saveHotkeySettings();
+  renderHotkeySettings();
+  registerMediaKeys();
+}
+// 播放状态轮询：任务栏缩略图按钮图标随播放/暂停切换（仅桌面环境启用）
+var thumbarPlayingWatcherActive = false;
+var thumbarPlayingLast = null;
+function startThumbarPlayingWatcher() {
+  var api = getDesktopWindowApi && getDesktopWindowApi();
+  if (!api || typeof api.setThumbarPlaying !== 'function' || thumbarPlayingWatcherActive) return;
+  thumbarPlayingWatcherActive = true;
+  var check = function () {
+    if (!thumbarPlayingWatcherActive) return;
+    var next = typeof playing === 'boolean' ? playing : false;
+    if (next !== thumbarPlayingLast) {
+      thumbarPlayingLast = next;
+      // preload 的 setThumbarPlaying 走 ipcRenderer.send（返回 undefined），
+      // 不能直接 .catch——先判空再取 catch，避免 TypeError 中断 bindFxPanel 绑定链
+      try {
+        var thumbarResult = api.setThumbarPlaying(next);
+        if (thumbarResult && typeof thumbarResult.catch === 'function') thumbarResult.catch(function () { });
+      } catch (e) { }
+    }
+  };
+  check();
+  setInterval(check, 300);
+}
 var globalHotkeyListenerBound = false;
 function bindHotkeySettings() {
   ensureHotkeySettingsButton();
@@ -326,6 +405,8 @@ function bindHotkeySettings() {
     }
   }
   registerGlobalHotkeys();
+  registerMediaKeys();
+  startThumbarPlayingWatcher();
 }
 document.addEventListener('keydown', function (e) {
   var hotkeyModal = document.getElementById('hotkey-modal');

@@ -219,7 +219,7 @@ function claimCuefieldPreparedAudioForPlayback(media) {
 function disposeCuefieldPreparedAudioGraph(media) {
   var graph = media && media.__mineradioPreparedAudioGraph;
   if (!graph || graph.adopted) return;
-  [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].forEach(function (node) {
+  [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].concat(graph.eqFilters || []).concat(graph.agcGainNode ? [graph.agcGainNode] : []).forEach(function (node) {
     try { if (node) node.disconnect(); } catch (_) { }
   });
   try { delete media.__mineradioPreparedAudioGraph; } catch (_) { }
@@ -338,7 +338,13 @@ async function runCuefieldAutoMixPrepare(token, currentIndex, nextIndex, attempt
     || audio.paused
     || cuefieldSongKey(playQueue[currentIndex]) !== cuefieldSongKey(currentSong)
     || cuefieldSongKey(playQueue[nextIndex]) !== cuefieldSongKey(nextSong)
-  ) return;
+  ) {
+    // 校验失败（切歌/暂停/队列漂移）：清理可能残留的预载 B deck 与 pending 规划，
+    // 避免音频元素与网络资源泄漏（下一次 prepare 会重建）
+    stopCuefieldPreparedAudio();
+    if (cuefieldAutoMix) cuefieldAutoMix.reset('stale');
+    return;
+  }
   updateCuefieldAutoMixUi(result && result.status);
   if (result && result.status === 'ready' && result.pending) {
     prepareCuefieldPendingAudio(result.pending);
@@ -385,7 +391,7 @@ function cuefieldCreatePreparedAudioGraph(media) {
   try {
     if ((!audioCtx || audioCtx.state === 'closed') && typeof initAudio === 'function') initAudio();
     if (!audioCtx || audioCtx.state === 'closed' || !audioCtx.createMediaElementSource) return null;
-    graph = { context: audioCtx, source: null, analyser: null, beatAnalyser: null, gainNode: null, adopted: false };
+    graph = { context: audioCtx, source: null, analyser: null, beatAnalyser: null, gainNode: null, eqFilters: null, agcGainNode: null, adopted: false };
     graph.source = audioCtx.createMediaElementSource(media);
     // A media element cannot be safely returned to direct-output mode after a
     // MediaElementSource has been created for it. Mark it immediately so a
@@ -401,13 +407,24 @@ function cuefieldCreatePreparedAudioGraph(media) {
     graph.gainNode.gain.value = 0;
     graph.source.connect(graph.analyser);
     graph.source.connect(graph.beatAnalyser);
-    graph.analyser.connect(graph.gainNode);
+    // 预加载图同样接入 EQ 链 + AGC 增益节点，
+    // 保证 automix/gapless 接棒（恢复为活动图）后 EQ 与响度归一化持续生效。
+    graph.eqFilters = buildEqFilterChain();
+    graph.agcGainNode = audioCtx.createGain();
+    graph.agcGainNode.gain.value = eqLoudnessEnabled ? eqAgcGain : 1;
+    if (graph.eqFilters.length) {
+      graph.analyser.connect(graph.eqFilters[0]);
+      graph.eqFilters[graph.eqFilters.length - 1].connect(graph.agcGainNode);
+    } else {
+      graph.analyser.connect(graph.agcGainNode);
+    }
+    graph.agcGainNode.connect(graph.gainNode);
     graph.gainNode.connect(audioCtx.destination);
     media.__mineradioPreparedAudioGraph = graph;
     return graph;
   } catch (error) {
     if (graph) {
-      [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].forEach(function (node) {
+      [graph.source, graph.analyser, graph.beatAnalyser, graph.gainNode].concat(graph.eqFilters || []).concat(graph.agcGainNode ? [graph.agcGainNode] : []).forEach(function (node) {
         try { if (node) node.disconnect(); } catch (_) { }
       });
     }

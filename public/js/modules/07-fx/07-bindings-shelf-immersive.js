@@ -1,3 +1,5 @@
+// 歌词显示行数滑杆防抖定时器（拖动时避免高频重建歌词舞台）
+var lyricCustomLineRefreshTimer = 0;
 function bindFxPanel() {
   liftFxFloatingPopups();
   relabelFxPanelControls();
@@ -65,6 +67,11 @@ function bindFxPanel() {
         fx.lyricCustomLineCount = lyricCustomLineCountValue();
         fx.lyricDisplayMode = 'custom';
         updateLyricDisplayModeControls();
+        // 防抖 60ms 后按新行数重建当前歌词舞台显示（拖动滑杆时避免高频全量重建）
+        clearTimeout(lyricCustomLineRefreshTimer);
+        lyricCustomLineRefreshTimer = setTimeout(function () {
+          if (typeof refreshCurrentLyricStyle === 'function') refreshCurrentLyricStyle();
+        }, 60);
       }
       if (pair[1] === 'backgroundOpacity') {
         fx.backgroundOpacity = clampRange(fx.backgroundOpacity, 0, 1);
