@@ -141,5 +141,18 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 window.addEventListener('DOMContentLoaded', () => {
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');
-  if (process.platform === 'darwin') document.body.classList.add('desktop-native-frame');
+  if (process.platform === 'darwin') {
+    document.body.classList.add('desktop-native-frame');
+    
+    // macOS fullscreen optimization
+    document.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement) {
+        document.body.classList.add('desktop-fullscreen');
+        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
+      } else {
+        document.body.classList.remove('desktop-fullscreen');
+        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = ''; });
+      }
+    });
+  }
 });

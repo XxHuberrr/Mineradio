@@ -436,6 +436,23 @@ body.desktop-shell.desktop-native-frame {
   background: #050608
 }
 
+/* macOS fullscreen optimizations */
+body.desktop-shell.desktop-native-frame.desktop-fullscreen #desktop-window-shell {
+  border-radius: 0 !important;
+  clip-path: none !important;
+  box-shadow: none !important;
+  margin: 0;
+  padding: 0;
+}
+
+body.desktop-shell.desktop-native-frame.desktop-fullscreen #desktop-titlebar {
+  display: none;
+}
+
+body.desktop-shell.desktop-native-frame.desktop-fullscreen .desktop-window-btn {
+  display: none !important;
+}
+
 body.desktop-shell.desktop-window-minimizing #desktop-window-shell {
   opacity: .08;
   transform: translate3d(0, 18px, 0) scale(.965);

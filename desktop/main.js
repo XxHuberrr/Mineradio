@@ -5491,6 +5491,13 @@ async function createWindowOnce() {
     setMainWindowFullscreenResizeGuard(win, true);
     sendWindowState(win);
     startMainWindowFullscreenVisibilityGuard(win);
+    // macOS: Hide titlebar buttons in fullscreen
+    if (process.platform === 'darwin') {
+      win.webContents.executeJavaScript(`
+        document.body.classList.add('desktop-fullscreen');
+        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
+      `).catch(() => {});
+    }
     // Some Windows builds coalesce the final resize event during native
     // fullscreen. Re-arm the settled debounce from the authoritative event.
     setTimeout(() => scheduleWallpaperEngineHostBoundsRestart(win, 'enter-full-screen'), 40);
@@ -5499,6 +5506,13 @@ async function createWindowOnce() {
     windowFullscreenActive = false;
     setMainWindowFullscreenResizeGuard(win, false);
     clearMainWindowFullscreenVisibilityGuard();
+    // macOS: Restore titlebar buttons when leaving fullscreen
+    if (process.platform === 'darwin') {
+      win.webContents.executeJavaScript(`
+        document.body.classList.remove('desktop-fullscreen');
+        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = ''; });
+      `).catch(() => {});
+    }
     setTimeout(() => {
       applyWindowedBounds(win);
       scheduleWallpaperEngineHostBoundsRestart(win, 'leave-full-screen');
