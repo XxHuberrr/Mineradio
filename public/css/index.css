@@ -426,6 +426,16 @@ html:fullscreen body.desktop-shell #desktop-window-shell {
   box-shadow: none !important
 }
 
+body.desktop-shell.desktop-native-frame #desktop-window-shell {
+  border-radius: 0 !important;
+  clip-path: none !important;
+  box-shadow: none !important
+}
+
+body.desktop-shell.desktop-native-frame {
+  background: #050608
+}
+
 body.desktop-shell.desktop-window-minimizing #desktop-window-shell {
   opacity: .08;
   transform: translate3d(0, 18px, 0) scale(.965);

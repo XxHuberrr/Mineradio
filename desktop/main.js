@@ -133,6 +133,13 @@ const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
 // user-selectable Chromium cache. app.setName() must run before the first
 // derived path lookup or Electron can recompute userData below the cache root.
 app.setName(APP_NAME);
+if (process.platform === 'darwin') {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    { role: 'windowMenu' },
+  ]));
+}
 const STARTUP_QA_USER_DATA_PATH = (() => {
   const value = String(process.env.MINERADIO_STARTUP_QA_USER_DATA || '').trim();
   if (process.env.MINERADIO_STARTUP_QA_HIDDEN !== '1' || !value || !path.isAbsolute(value)) return '';
@@ -471,8 +478,10 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['use-angle', 'd3d11'],
 ];
+if (process.platform === 'win32') {
+  CHROMIUM_SAFE_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
+}
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
   ['force_high_performance_gpu', null, 'MINERADIO_FORCE_HIGH_PERFORMANCE_GPU'],
@@ -5265,12 +5274,12 @@ async function createWindowOnce() {
     minWidth: initialMinimum.width,
     minHeight: initialMinimum.height,
     show: false,
-    frame: false,
+    ...(process.platform === 'darwin' ? {} : { frame: false }),
     fullscreen: false,
     resizable: true,
-    transparent: true,
+    transparent: process.platform !== 'darwin',
     opacity: process.env.MINERADIO_STARTUP_QA_HIDDEN === '1' ? 0 : 1,
-    backgroundColor: '#00000000',
+    backgroundColor: process.platform === 'darwin' ? '#050608' : '#00000000',
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
