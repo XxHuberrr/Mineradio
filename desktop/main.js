@@ -482,6 +482,11 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
 if (process.platform === 'win32') {
   CHROMIUM_SAFE_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
 }
+// macOS Metal backend optimizations
+if (process.platform === 'darwin') {
+  CHROMIUM_SAFE_PERFORMANCE_SWITCHES.push(['enable-metal']);
+  CHROMIUM_SAFE_PERFORMANCE_SWITCHES.push(['enable-features', 'Metal']);
+}
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
   ['force_high_performance_gpu', null, 'MINERADIO_FORCE_HIGH_PERFORMANCE_GPU'],
@@ -5290,6 +5295,13 @@ async function createWindowOnce() {
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: MAIN_WINDOW_BACKGROUND_THROTTLING,
+      // macOS performance optimizations
+      ...(process.platform === 'darwin' ? {
+        enableWebSQL: false,
+        spellcheck: false,
+        enableBlinkFeatures: '',
+        disableBlinkFeatures: 'IdleDetection',
+      } : {}),
     },
   });
   mainWindow = win;

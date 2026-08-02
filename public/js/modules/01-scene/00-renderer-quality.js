@@ -17,6 +17,24 @@ var RENDER_INTERACTION_FPS = 0;
 var RENDER_INTERACTION_LARGE_FPS = 90;
 var RENDER_INTERACTION_HUGE_FPS = 75;
 var RENDER_INTERACTION_HOLD_MS = 900;
+
+// macOS ProMotion optimization
+(function() {
+  var isMac = navigator.platform.indexOf('Mac') >= 0;
+  if (isMac) {
+    // Cap at 60fps for ProMotion displays to save GPU
+    RENDER_VISIBLE_VSYNC = false;
+    RENDER_ACTIVE_FPS = 60;
+    RENDER_LARGE_FPS = 60;
+    RENDER_HUGE_FPS = 48;
+    RENDER_INTERACTION_FPS = 60;
+    RENDER_INTERACTION_LARGE_FPS = 60;
+    RENDER_INTERACTION_HUGE_FPS = 48;
+    // Lower pixel budget for better performance
+    RENDER_PIXEL_BUDGET = 4000000;
+    RENDER_DPR_CAP = 1.2;
+  }
+})();
 var renderInteractionBoostUntil = 0;
 var renderInteractionReason = '';
 var renderRefreshState = {
