@@ -143,56 +143,22 @@ window.addEventListener('DOMContentLoaded', () => {
   document.body.classList.add('desktop-shell');
   if (process.platform === 'darwin') {
     document.body.classList.add('desktop-native-frame');
-    
-    // macOS fullscreen optimization
-    function handleFullscreenChange() {
-      var titlebar = document.getElementById('desktop-titlebar');
-      var windowBtns = document.querySelectorAll('.desktop-window-btn');
-      
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        document.body.classList.add('desktop-fullscreen');
-        // Hide titlebar and window buttons
-        if (titlebar) {
-          titlebar.style.display = 'none';
-          titlebar.style.visibility = 'hidden';
-          titlebar.style.height = '0';
-          titlebar.style.opacity = '0';
-          titlebar.style.pointerEvents = 'none';
-        }
-        windowBtns.forEach(function(btn) {
-          btn.style.display = 'none';
-          btn.style.visibility = 'hidden';
-        });
-      } else {
-        document.body.classList.remove('desktop-fullscreen');
-        // Restore titlebar and window buttons
-        if (titlebar) {
-          titlebar.style.display = '';
-          titlebar.style.visibility = '';
-          titlebar.style.height = '';
-          titlebar.style.opacity = '';
-          titlebar.style.pointerEvents = '';
-        }
-        windowBtns.forEach(function(btn) {
-          btn.style.display = '';
-          btn.style.visibility = '';
-        });
-      }
+    var nativeFullscreen = false;
+
+    // Native macOS fullscreen and the DOM Fullscreen API are independent.
+    // Keep the shell fullscreen while either source is active.
+    function syncFullscreenClass() {
+      var documentFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      document.body.classList.toggle('desktop-fullscreen', nativeFullscreen || documentFullscreen);
     }
-    
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    
-    // Also listen for window fullscreen events from Electron
+
+    document.addEventListener('fullscreenchange', syncFullscreenClass);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
+
     if (window.desktopWindow && window.desktopWindow.onStateChange) {
       window.desktopWindow.onStateChange(function(state) {
-        if (state && state.isFullScreen) {
-          document.body.classList.add('desktop-fullscreen');
-          handleFullscreenChange();
-        } else {
-          document.body.classList.remove('desktop-fullscreen');
-          handleFullscreenChange();
-        }
+        nativeFullscreen = !!(state && state.isFullScreen);
+        syncFullscreenClass();
       });
     }
   }

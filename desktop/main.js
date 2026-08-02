@@ -3361,6 +3361,13 @@ function exitFullscreenToWindow(win) {
   if (!win || win.isDestroyed()) return;
   windowFullscreenActive = false;
 
+  // macOS kiosk mode prevents the Dock and menu bar from being revealed while
+  // Mineradio is in its immersive fullscreen mode. Explicitly leave it before
+  // restoring the regular native window.
+  if (process.platform === 'darwin' && typeof win.isKiosk === 'function' && win.isKiosk()) {
+    win.setKiosk(false);
+  }
+
   if (!win.isFullScreen()) {
     applyWindowedBounds(win);
     return;
@@ -3375,14 +3382,21 @@ function exitFullscreenToWindow(win) {
 
 function toggleFullscreen(win) {
   if (!win || win.isDestroyed()) return;
-  if (win.isFullScreen() || windowFullscreenActive) {
+  const macKioskActive = process.platform === 'darwin'
+    && typeof win.isKiosk === 'function'
+    && win.isKiosk();
+  if (macKioskActive || win.isFullScreen() || windowFullscreenActive) {
     exitFullscreenToWindow(win);
     return;
   }
   windowFullscreenActive = true;
   ensureMainWindowInsideDisplay(win);
   setMainWindowFullscreenResizeGuard(win, true);
-  win.setFullScreen(true);
+  // BrowserWindow fullscreen allows the Dock to reappear when the pointer
+  // reaches the bottom edge. On macOS, kiosk mode is the immersive variant:
+  // it keeps both the Dock and menu bar hidden for the entire session.
+  if (process.platform === 'darwin') win.setKiosk(true);
+  else win.setFullScreen(true);
   sendWindowState(win);
 }
 
@@ -5507,13 +5521,6 @@ async function createWindowOnce() {
     setMainWindowFullscreenResizeGuard(win, true);
     sendWindowState(win);
     startMainWindowFullscreenVisibilityGuard(win);
-    // macOS: Hide titlebar buttons in fullscreen
-    if (process.platform === 'darwin') {
-      win.webContents.executeJavaScript(`
-        document.body.classList.add('desktop-fullscreen');
-        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
-      `).catch(() => {});
-    }
     // Some Windows builds coalesce the final resize event during native
     // fullscreen. Re-arm the settled debounce from the authoritative event.
     setTimeout(() => scheduleWallpaperEngineHostBoundsRestart(win, 'enter-full-screen'), 40);
@@ -5522,13 +5529,6 @@ async function createWindowOnce() {
     windowFullscreenActive = false;
     setMainWindowFullscreenResizeGuard(win, false);
     clearMainWindowFullscreenVisibilityGuard();
-    // macOS: Restore titlebar buttons when leaving fullscreen
-    if (process.platform === 'darwin') {
-      win.webContents.executeJavaScript(`
-        document.body.classList.remove('desktop-fullscreen');
-        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = ''; });
-      `).catch(() => {});
-    }
     setTimeout(() => {
       applyWindowedBounds(win);
       scheduleWallpaperEngineHostBoundsRestart(win, 'leave-full-screen');

@@ -436,7 +436,7 @@ body.desktop-shell.desktop-native-frame {
   background: #050608
 }
 
-/* macOS fullscreen optimizations */
+/* macOS fullscreen shell */
 body.desktop-shell.desktop-native-frame.desktop-fullscreen #desktop-window-shell {
   border-radius: 0 !important;
   clip-path: none !important;
@@ -462,7 +462,7 @@ body.desktop-shell.desktop-native-frame.desktop-fullscreen .desktop-window-btn {
   visibility: hidden !important;
 }
 
-/* macOS titlebar style hiddenInset adjustments */
+/* Leave room for the native hiddenInset traffic lights. */
 body.desktop-shell.desktop-native-frame #desktop-window-shell {
   padding-top: 0;
 }
@@ -470,7 +470,7 @@ body.desktop-shell.desktop-native-frame #desktop-window-shell {
 body.desktop-shell.desktop-native-frame #desktop-titlebar {
   -webkit-app-region: drag;
   app-region: drag;
-  padding-left: 78px; /* Space for traffic lights */
+  padding-left: 78px;
 }
 
 body.desktop-shell.desktop-native-frame:not(.desktop-fullscreen) .desktop-window-btn {
