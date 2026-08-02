@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, clipboard, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopWindow', {
   isDesktop: true,
+  platform: process.platform,
   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
   restore: () => ipcRenderer.invoke('desktop-window-restore'),
   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
@@ -140,4 +141,25 @@ contextBridge.exposeInMainWorld('desktopWindow', {
 window.addEventListener('DOMContentLoaded', () => {
   document.documentElement.classList.add('desktop-shell-root');
   document.body.classList.add('desktop-shell');
+  if (process.platform === 'darwin') {
+    document.body.classList.add('desktop-native-frame');
+    var nativeFullscreen = false;
+
+    // Native macOS fullscreen and the DOM Fullscreen API are independent.
+    // Keep the shell fullscreen while either source is active.
+    function syncFullscreenClass() {
+      var documentFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      document.body.classList.toggle('desktop-fullscreen', nativeFullscreen || documentFullscreen);
+    }
+
+    document.addEventListener('fullscreenchange', syncFullscreenClass);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
+
+    if (window.desktopWindow && window.desktopWindow.onStateChange) {
+      window.desktopWindow.onStateChange(function(state) {
+        nativeFullscreen = !!(state && state.isFullScreen);
+        syncFullscreenClass();
+      });
+    }
+  }
 });

@@ -2,7 +2,7 @@
 
 ![Mineradio 暗场启动页](./docs/assets/readme/cinema-beat-smoke.png)
 
-Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、歌词舞台、粒子视觉、3D 歌单架和完整桌面模式组合成一个更接近现场感的私人音乐空间。
+Mineradio 是一款桌面沉浸式音乐播放器，把搜索播放、歌词舞台、粒子视觉、3D 歌单架和完整桌面模式组合成一个更接近现场感的私人音乐空间。支持 Windows 和 macOS (Apple Silicon) 平台。
 
 ## 立即下载 Windows 安装包
 
@@ -10,12 +10,24 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 | 下载入口 | 推荐人群 | 链接 |
 | --- | --- | --- |
-| 夸克盘 | 夸克用户 | [下载 Mineradio 2.1.0](https://pan.quark.cn/s/df00d9520835) |
-| 百度云 | 百度网盘用户（提取码 `SJHP`） | [下载 Mineradio 2.1.0](https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP) |
-| 蓝奏云 | 直接下载 | [下载 Mineradio 2.1.0](https://xxhuber.lanzout.com/s/Mineradio) |
-| GitHub Release | GitHub 用户、版本说明与源码 | [下载 Mineradio 2.1.0](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.1.0) |
+| 夸克盘 | 夸克用户 | [下载 Mineradio 2.1.0 (Windows)](https://pan.quark.cn/s/df00d9520835) |
+| 百度云 | 百度网盘用户（提取码 `SJHP`） | [下载 Mineradio 2.1.0 (Windows)](https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP) |
+| 蓝奏云 | 直接下载 | [下载 Mineradio 2.1.0 (Windows)](https://xxhuber.lanzout.com/s/Mineradio) |
+| GitHub Release | GitHub 用户、版本说明与源码 | [下载 Mineradio 2.1.0 (Windows)](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.1.0) |
+| GitHub Release (macOS) | Apple Silicon Mac 用户 | [下载 Mineradio 2.1.0 (macOS)](https://github.com/XxHuberrr/Mineradio/releases/tag/v2.1.0) |
 
 安装时只需要下载并运行 `Mineradio-2.1.0-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
+
+## macOS 版本
+
+Mineradio 提供 Apple Silicon (M 系列芯片) 的 macOS 安装包 `Mineradio-<版本号>-arm64.dmg`，可在 GitHub Release 下载。Intel 芯片的 Mac 暂不支持。
+
+macOS 安装包未进行 Apple 签名与公证，首次打开时 Gatekeeper 会提示"无法验证开发者"：
+
+1. 在「访达 → 应用程序」中找到 Mineradio，右键（或按住 Control 点按）选择「打开」，再点「打开」确认。
+2. 或在终端执行 `xattr -cr /Applications/Mineradio.app` 后正常双击打开。
+
+macOS 版差异说明：桌面歌词的锁定/解锁请使用软件内视觉面板的开关（Windows 上的全局鼠标中键切换暂不支持）；应用内更新入口在 macOS 上会跳转到 Release 页面手动下载。
 
 ## 下载或安装被拦截怎么办
 

@@ -1,0 +1,242 @@
+diff --git a/README.md b/README.md
+index 7478c0d8..a083c717 100644
+--- a/README.md
++++ b/README.md
+@@ -23,6 +23,17 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把天气电台、
+ 2. Windows SmartScreen 弹出蓝色拦截窗口时，点 `更多信息`，再点 `仍要运行`。
+ 3. 如果杀毒软件明确显示木马、高危或已经隔离，不要强行运行；删除该文件后重新从蓝奏云或 GitHub Release 下载，仍然异常请带截图反馈给作者。
+ 
++## macOS 版本
++
++Mineradio 提供 Apple Silicon (M 系列芯片) 的 macOS 安装包 `Mineradio-<版本号>-arm64.dmg`，可在 GitHub Release 下载。Intel 芯片的 Mac 暂不支持。
++
++macOS 安装包未进行 Apple 签名与公证，首次打开时 Gatekeeper 会提示"无法验证开发者"：
++
++1. 在「访达 → 应用程序」中找到 Mineradio，右键（或按住 Control 点按）选择「打开」，再点「打开」确认。
++2. 或在终端执行 `xattr -cr /Applications/Mineradio.app` 后正常双击打开。
++
++macOS 版差异说明：桌面歌词的锁定/解锁请使用软件内视觉面板的开关（Windows 上的全局鼠标中键切换暂不支持）；应用内更新入口在 macOS 上会跳转到 Release 页面手动下载。
++
+ ## 作者支持
+ 
+ 如果 Mineradio 陪你多听了一首歌，也欢迎请作者一杯咖啡。
+diff --git a/build/icon.icns b/build/icon.icns
+new file mode 100644
+index 00000000..1935b0b3
+Binary files /dev/null and b/build/icon.icns differ
+diff --git a/desktop/main.js b/desktop/main.js
+index 15188352..eaab2fd6 100644
+--- a/desktop/main.js
++++ b/desktop/main.js
+@@ -1,4 +1,4 @@
+-const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog } = require('electron');
++const { app, BrowserWindow, ipcMain, shell, screen, session, globalShortcut, dialog, Menu } = require('electron');
+ const net = require('net');
+ const path = require('path');
+ const fs = require('fs');
+@@ -48,8 +48,10 @@ const CHROMIUM_PERFORMANCE_SWITCHES = [
+   ['disable-renderer-backgrounding'],
+   ['disable-backgrounding-occluded-windows'],
+   ['force_high_performance_gpu'],
+-  ['use-angle', 'd3d11'],
+ ];
++if (process.platform === 'win32') {
++  CHROMIUM_PERFORMANCE_SWITCHES.push(['use-angle', 'd3d11']);
++}
+ for (const [name, value] of CHROMIUM_PERFORMANCE_SWITCHES) {
+   if (value == null) app.commandLine.appendSwitch(name);
+   else app.commandLine.appendSwitch(name, value);
+@@ -1049,6 +1051,7 @@ function createWallpaperWindow(payload = {}) {
+   const bounds = screen.getPrimaryDisplay().bounds;
+   wallpaperWindow = new BrowserWindow({
+     ...bounds,
++    ...(process.platform === 'darwin' ? { type: 'desktop' } : {}),
+     frame: false,
+     transparent: false,
+     backgroundColor: '#050608',
+@@ -1068,6 +1071,13 @@ function createWallpaperWindow(payload = {}) {
+     },
+   });
+   wallpaperWindow.setIgnoreMouseEvents(true, { forward: true });
++  if (process.platform === 'darwin') {
++    try {
++      wallpaperWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
++    } catch (e) {
++      console.warn('Wallpaper workspace pin skipped:', e.message);
++    }
++  }
+   wallpaperWindow.once('ready-to-show', () => {
+     if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
+     positionWallpaperWindow();
+@@ -1317,9 +1327,11 @@ ipcMain.handle('mineradio-wallpaper-update', async (_event, payload) => {
+   }
+ });
+ 
+-async function createWindow() {
+-  htmlFullscreenActive = false;
+-  windowFullscreenActive = false;
++async function ensureLocalServer() {
++  if (localServer) {
++    await waitForServer(localServer);
++    return;
++  }
+   const port = await findOpenPort(3000);
+   mainServerPort = port;
+ 
+@@ -1342,6 +1354,13 @@ async function createWindow() {
+ 
+   localServer = require(path.join(__dirname, '..', 'server.js'));
+   await waitForServer(localServer);
++}
++
++async function createWindow() {
++  htmlFullscreenActive = false;
++  windowFullscreenActive = false;
++  await ensureLocalServer();
++  const port = mainServerPort;
+ 
+   const initialBounds = getWindowedBounds();
+ 
+@@ -1350,10 +1369,10 @@ async function createWindow() {
+     minWidth: 960,
+     minHeight: 540,
+     show: false,
+-    frame: false,
++    ...(process.platform === 'darwin' ? {} : { frame: false }),
+     fullscreen: false,
+-    transparent: true,
+-    backgroundColor: '#00000000',
++    transparent: process.platform !== 'darwin',
++    backgroundColor: process.platform === 'darwin' ? '#050608' : '#00000000',
+     hasShadow: true,
+     autoHideMenuBar: true,
+     title: APP_NAME,
+@@ -1428,6 +1447,13 @@ async function createWindow() {
+ 
+ app.setName(APP_NAME);
+ if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
++if (process.platform === 'darwin') {
++  Menu.setApplicationMenu(Menu.buildFromTemplate([
++    { role: 'appMenu' },
++    { role: 'editMenu' },
++    { role: 'windowMenu' },
++  ]));
++}
+ 
+ if (!gotSingleInstanceLock) {
+   app.quit();
+diff --git a/desktop/preload.js b/desktop/preload.js
+index df4d0ef5..fbf7b5d9 100644
+--- a/desktop/preload.js
++++ b/desktop/preload.js
+@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
+ 
+ contextBridge.exposeInMainWorld('desktopWindow', {
+   isDesktop: true,
++  platform: process.platform,
+   minimize: () => ipcRenderer.invoke('desktop-window-minimize'),
+   toggleMaximize: () => ipcRenderer.invoke('desktop-window-toggle-maximize'),
+   toggleFullscreen: () => ipcRenderer.invoke('desktop-window-toggle-fullscreen'),
+@@ -49,4 +50,5 @@ contextBridge.exposeInMainWorld('desktopWindow', {
+ window.addEventListener('DOMContentLoaded', () => {
+   document.documentElement.classList.add('desktop-shell-root');
+   document.body.classList.add('desktop-shell');
++  if (process.platform === 'darwin') document.body.classList.add('desktop-native-frame');
+ });
+diff --git a/package.json b/package.json
+index cc159dee..a18c1d1f 100644
+--- a/package.json
++++ b/package.json
+@@ -9,7 +9,8 @@
+   "scripts": {
+     "start": "electron .",
+     "build:win": "electron-builder --win nsis",
+-    "build:win:dir": "electron-builder --win dir"
++    "build:win:dir": "electron-builder --win dir",
++    "build:mac": "electron-builder --mac dmg"
+   },
+   "build": {
+     "appId": "com.mineradio.desktop",
+@@ -46,6 +47,20 @@
+         }
+       ]
+     },
++    "mac": {
++      "icon": "build/icon.icns",
++      "category": "public.app-category.music",
++      "identity": null,
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "Mineradio-${version}-arm64.dmg"
++    },
+     "nsis": {
+       "oneClick": false,
+       "perMachine": false,
+diff --git a/public/index.html b/public/index.html
+index da5e47b4..ce47bfdf 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -38,6 +38,8 @@
+ body.desktop-shell{background:transparent}
+ body.desktop-shell #desktop-window-shell{display:block;position:fixed;inset:0;overflow:hidden;border-radius:34px;clip-path:inset(0 round 34px);background:transparent;box-shadow:0 24px 80px rgba(0,0,0,.46);transform:translateZ(0)}
+ body.desktop-shell.desktop-maximized #desktop-window-shell,body.desktop-shell.desktop-fullscreen #desktop-window-shell,html:fullscreen body.desktop-shell #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
++body.desktop-shell.desktop-native-frame #desktop-window-shell{border-radius:0!important;clip-path:none!important;box-shadow:none!important}
++body.desktop-shell.desktop-native-frame{background:#050608}
+ body.desktop-shell #desktop-titlebar{position:fixed;z-index:500;top:0;left:0;right:0;height:44px;padding:0 12px 0 18px;display:flex;align-items:center;justify-content:space-between;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;-webkit-app-region:drag;pointer-events:none}
+ body.desktop-shell #desktop-titlebar::after{content:none}
+ .desktop-drag-region{height:100%;flex:1;display:flex;align-items:center;gap:9px;min-width:0;color:rgba(224,250,255,.74);font-size:12px;font-weight:600;letter-spacing:0;text-transform:uppercase;-webkit-app-region:drag;pointer-events:auto}
+@@ -3723,13 +3725,14 @@ <h2 id="track-detail-heading">歌曲详情</h2>
+ var RENDER_PIXEL_BUDGET = 5200000;
+ var RENDER_MIN_DPR = 0.72;
+ // 0 = display vsync. Keep visible playback high-refresh capable instead of capping 120Hz+ screens to 60/72.
+-var RENDER_VISIBLE_VSYNC = true;
+-var RENDER_ACTIVE_FPS = 0;
+-var RENDER_LARGE_FPS = 0;
+-var RENDER_HUGE_FPS = 0;
+-var RENDER_INTERACTION_FPS = 0;
+-var RENDER_INTERACTION_LARGE_FPS = 0;
+-var RENDER_INTERACTION_HUGE_FPS = 0;
++var RENDER_HIGH_HZ_DISPLAY = (window.desktopWindow && window.desktopWindow.platform === 'darwin');
++var RENDER_VISIBLE_VSYNC = !RENDER_HIGH_HZ_DISPLAY;
++var RENDER_ACTIVE_FPS = RENDER_HIGH_HZ_DISPLAY ? 60 : 0;
++var RENDER_LARGE_FPS = RENDER_HIGH_HZ_DISPLAY ? 60 : 0;
++var RENDER_HUGE_FPS = RENDER_HIGH_HZ_DISPLAY ? 48 : 0;
++var RENDER_INTERACTION_FPS = RENDER_HIGH_HZ_DISPLAY ? 60 : 0;
++var RENDER_INTERACTION_LARGE_FPS = RENDER_HIGH_HZ_DISPLAY ? 60 : 0;
++var RENDER_INTERACTION_HUGE_FPS = RENDER_HIGH_HZ_DISPLAY ? 48 : 0;
+ var RENDER_INTERACTION_HOLD_MS = 900;
+ var renderInteractionBoostUntil = 0;
+ var renderInteractionReason = '';
+@@ -23096,6 +23099,16 @@ <h2 id="track-detail-heading">歌曲详情</h2>
+     return;
+   }
+   if (updatePreviewState.configured && updatePreviewState.updateAvailable) {
++    if (window.desktopWindow && window.desktopWindow.platform === 'darwin') {
++      var macLink = updatePreviewState.releaseUrl || updatePreviewState.downloadUrl;
++      if (macLink) {
++        window.open(macLink, '_blank');
++        showToast('已打开更新页面');
++      } else {
++        showToast('这个版本还没有可用下载链接');
++      }
++      return;
++    }
+     if (updatePreviewState.patchAvailable && updatePreviewState.patchUrl && !updatePreviewState.patchFallbackTried) {
+       startRealUpdatePatch();
+     } else if (updatePreviewState.downloadUrl) {
+@@ -26443,6 +26456,9 @@ <h2 id="track-detail-heading">歌曲详情</h2>
+     if (restoreIcon) restoreIcon.style.display = isFullScreen ? '' : 'none';
+   }
+ 
++  if (api.platform === 'darwin') {
++    document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
++  }
+   document.querySelectorAll('[data-window-action]').forEach(function(btn){
+     document.querySelectorAll('[data-window-action]').forEach(function(btn){
+     btn.addEventListener('click', function(e){
