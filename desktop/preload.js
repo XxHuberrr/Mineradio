@@ -160,6 +160,35 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     ipcRenderer.on('mineradio-global-hotkey', listener);
     return () => ipcRenderer.removeListener('mineradio-global-hotkey', listener);
   },
+  toggleMusicWidget: (payload) => ipcRenderer.invoke('mineradio-music-widget-toggle', payload || {}),
+  updateMusicWidget: (payload) => ipcRenderer.invoke('mineradio-music-widget-update', payload || {}),
+  closeMusicWidget: () => ipcRenderer.invoke('mineradio-music-widget-close'),
+  seekMusicWidget: (ratio) => ipcRenderer.send('mineradio-music-widget-seek', Number(ratio) || 0),
+  onMusicWidgetState: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-music-widget-state', listener);
+    return () => ipcRenderer.removeListener('mineradio-music-widget-state', listener);
+  },
+  onMusicWidgetSeek: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-music-widget-seek', listener);
+    return () => ipcRenderer.removeListener('mineradio-music-widget-seek', listener);
+  },
+  onMusicWidgetClosed: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = () => callback();
+    ipcRenderer.on('mineradio-music-widget-closed', listener);
+    return () => ipcRenderer.removeListener('mineradio-music-widget-closed', listener);
+  },
+  controlMusicWidget: (action) => ipcRenderer.send('mineradio-music-widget-control', action),
+  onMusicWidgetControl: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('mineradio-music-widget-control', listener);
+    return () => ipcRenderer.removeListener('mineradio-music-widget-control', listener);
+  },
   setDesktopLyricsEnabled: (enabled, payload) => ipcRenderer.invoke('mineradio-desktop-lyrics-set-enabled', !!enabled, payload || {}),
   updateDesktopLyrics: (payload) => ipcRenderer.invoke('mineradio-desktop-lyrics-update', payload || {}),
   onDesktopLyricsLockState: (callback) => {

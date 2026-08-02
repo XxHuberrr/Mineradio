@@ -628,7 +628,7 @@ function prepareVisualGuideStep(step) {
   else if (playlistPanel && !visualGuideState.plWasPeek) setPeek(playlistPanel, false, 'pl');
   if (step && step.selector === '#fx-panel') setPeek(fxPanel, true, 'fx');
   else if (fxPanel && !visualGuideState.fxWasPeek) setPeek(fxPanel, false, 'fx');
-  if (step && (step.selector === '#bottom-bar' || step.selector === '#mini-queue-btn' || step.selector === '#immersive-btn' || step.selector === '#quality-control')) {
+  if (step && (step.selector === '#bottom-bar' || step.selector === '#immersive-btn' || step.selector === '#quality-control')) {
     if (bottom) bottom.classList.add('visible');
     revealBottomControls(1500);
   }

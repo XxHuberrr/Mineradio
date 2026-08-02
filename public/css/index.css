@@ -5723,8 +5723,10 @@ body.home-controls-locked #bottom-bar {
 }
 
 /* 均衡器面板：播放壁纸/动态背景下也需清晰可读，使用更实的黑色底。
-   用 #eq-control 提升特异性并加 !important，压过 saved-panel-glass 的 .volume-popover !important 覆盖 */
-#eq-control .eq-popover {
+   用 #eq-control 提升特异性并加 !important，压过 saved-panel-glass 的 .volume-popover !important 覆盖。
+   面板挂到 document.body 后需 body 级规则（原 #eq-control 后代选择器不再命中） */
+#eq-control .eq-popover,
+body > .eq-popover {
   background: linear-gradient(160deg, rgba(8, 9, 12, .97), rgba(4, 5, 8, .96)) !important;
   backdrop-filter: blur(20px) saturate(1.05) !important;
   -webkit-backdrop-filter: blur(20px) saturate(1.05) !important;
@@ -7124,7 +7126,7 @@ body.diy-mode #bottom-bar.stage-mode {
 #controls,
 body.simple-mode #controls,
 body.diy-mode #controls {
-  grid-template-columns: minmax(0, 1fr) max-content minmax(min-content, 1fr);
+  grid-template-columns: minmax(340px, 1fr) max-content minmax(min-content, 1fr);
   gap: clamp(8px, 1.7vw, 18px);
 }
 
@@ -7191,7 +7193,7 @@ body.diy-mode #controls {
   #controls,
   body.simple-mode #controls,
   body.diy-mode #controls {
-    grid-template-columns: minmax(0, 1fr) max-content minmax(min-content, 1fr);
+    grid-template-columns: minmax(300px, 1fr) max-content minmax(min-content, 1fr);
   }
 
   .control-meta {
@@ -13961,7 +13963,7 @@ html:fullscreen body.desktop-shell #playlist-panel {
 
 .panel-tab {
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, .1);
   background: rgba(255, 255, 255, .03);
   color: rgba(255, 255, 255, .55);
@@ -14214,6 +14216,17 @@ html:fullscreen body.desktop-shell #playlist-panel {
   justify-content: center;
   white-space: nowrap;
   line-height: 1
+}
+
+/* 用户要求：当前队列入口已在左侧状态栏（pl-pane/queue-pane），移除 transport 里的重复按钮 */
+#mini-queue-btn {
+  display: none;
+}
+
+#queue-pane .queue-toolbar {
+  /* 取消 sticky：工具栏与歌单队列合在一起滚动（用户要求），不再固定在 top:82px 造成空隙/与歌曲重合 */
+  position: relative;
+  top: auto;
 }
 
 .pl-card {

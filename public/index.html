@@ -214,7 +214,10 @@
             <section class="home-insight-card home-listen-card" aria-labelledby="home-listen-heading">
               <div class="home-insight-head">
                 <div id="home-listen-heading" class="home-insight-kicker">LISTENING TODAY · 今日聆听</div>
-                <button class="home-insight-link" type="button" onclick="openHomeInsight()">查看偏好</button>
+                <span class="home-insight-links" style="display:flex;align-items:center;gap:12px">
+                  <button class="home-insight-link" type="button" onclick="openHomeInsight()">查看偏好</button>
+                  <button class="home-insight-link" type="button" onclick="openListenStatsPanel()">收听统计</button>
+                </span>
               </div>
               <div class="home-listen-metrics">
                 <div class="home-listen-metric"><strong id="home-today-time" class="home-listen-value">0 分钟</strong><span
@@ -304,6 +307,24 @@
           <button id="home-platform-recommend-refresh" type="button">刷新当前平台</button>
           <button id="home-platform-recommend-done" type="button">完成</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 收听统计面板 -->
+    <div id="listen-stats-mask" class="modal-mask" role="dialog" aria-modal="true" aria-hidden="true"
+      aria-labelledby="listen-stats-title">
+      <div class="modal listen-stats-modal"
+        style="max-width:740px;width:min(740px,92vw);max-height:calc(100vh - 40px);overflow:auto;text-align:left;padding:22px 26px 26px;background:linear-gradient(180deg, rgba(17,19,25,.97), rgba(7,8,12,.94));border:1px solid color-mix(in srgb, var(--home-accent) 22%, rgba(255,255,255,.09));">
+        <div class="listen-stats-head"
+          style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px">
+          <div>
+            <h2 id="listen-stats-title" style="font-size:20px;font-weight:600;letter-spacing:.4px;margin:0;color:rgba(255,255,255,.96)">收听统计</h2>
+            <div style="font-size:12px;color:rgba(255,255,255,.48);margin-top:5px;line-height:1.5">本地播放记录 · 数据仅保存在你的设备上</div>
+          </div>
+          <button id="listen-stats-close" class="fx-mini-btn ghost" type="button" onclick="closeListenStatsPanel()"
+            style="height:28px;min-width:28px;padding:0 9px;font-size:15px;line-height:1" aria-label="关闭收听统计">×</button>
+        </div>
+        <div id="listen-stats-body"></div>
       </div>
     </div>
 
@@ -1778,7 +1799,7 @@
             <div>
               <div class="update-kicker">MINERADIO</div>
               <div id="update-modal-title" class="update-title">New release</div>
-              <div id="update-modal-version" class="update-version">v2.1.0</div>
+              <div id="update-modal-version" class="update-version">v2.1.1-beta</div>
             </div>
           </div>
           <div class="update-hero">

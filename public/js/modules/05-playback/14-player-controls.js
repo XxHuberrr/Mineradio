@@ -770,10 +770,21 @@ function buildEqualizerDom() {
     + '<path d="M5 5v14"/><path d="M12 5v14"/><path d="M19 5v14"/>'
     + '<circle cx="5" cy="8" r="2"/><circle cx="12" cy="16" r="2"/><circle cx="19" cy="11" r="2"/></svg>';
   var pop = document.createElement('div');
+  pop.id = 'eq-popover';
   pop.className = 'eq-popover volume-popover';
+  // 均衡器位于左侧播放列表面板（我的播客）工具栏：面板挂到 document.body 用 fixed 定位
+  // 在按钮右侧展开（播放面板有 transform/backdrop-filter/contain，fixed 后代会被其破坏定位；
+  // 挂 body 后相对视口正确且不被 overflow 裁剪）。显隐由 JS 内联 display 控制
+  //（挂 body 后 .volume-control.open .volume-popover 的 opacity 规则不再命中）。
+  pop.style.position = 'fixed';
+  pop.style.left = '-9999px';
+  pop.style.top = '-9999px';
+  pop.style.display = 'none';
+  pop.style.transform = 'none';
   pop.style.width = '316px';
   pop.style.maxHeight = 'min(560px, calc(100vh - 150px))';
   pop.style.overflowY = 'auto';
+  pop.style.zIndex = '9000';
   pop.addEventListener('click', function (e) { e.stopPropagation(); });
 
   // 头部：标题 + 预设按钮组（玻璃拟态，与整体 UI 一致）+ 复位按钮
@@ -804,12 +815,20 @@ function buildEqualizerDom() {
   resetBtn.textContent = '复位';
   resetBtn.title = '一键复位（全部归零）';
   resetBtn.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:3px 8px;cursor:pointer;white-space:nowrap';
+  // 频率二级入口：点击展开/收起 10 段滑杆（默认折叠，让面板更紧凑）
+  var freqBtn = document.createElement('button');
+  freqBtn.type = 'button';
+  freqBtn.id = 'eq-freq-toggle';
+  freqBtn.textContent = '频率';
+  freqBtn.title = '展开 / 收起 10 段频率滑杆';
+  freqBtn.style.cssText = 'font-size:11px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:3px 8px;cursor:pointer;white-space:nowrap;transition:background .16s,border-color .16s,color .16s';
   head.appendChild(title);
   head.appendChild(presetGroup);
+  head.appendChild(freqBtn);
   head.appendChild(resetBtn);
   pop.appendChild(head);
 
-  // 10 段滑杆
+  // 10 段滑杆（用户要求：原有的 10 段直接显示，不折叠）
   var bands = document.createElement('div');
   bands.id = 'eq-bands';
   bands.style.cssText = 'display:grid;grid-template-columns:1fr;gap:5px;margin-top:6px';
@@ -863,15 +882,45 @@ function buildEqualizerDom() {
   wrap.appendChild(pop);
   return { wrap: wrap, btn: btn, pop: pop, presetButtons: presetButtons, resetBtn: resetBtn, sliders: sliders, loudCheck: loudCheck };
 }
+// 均衡器面板 fixed 定位：从按钮右侧展开（按钮在左侧播放面板内，absolute 会被 overflow 裁剪）
+function isEqPanelOpen() {
+  var w = document.getElementById('eq-control');
+  return !!(w && w.classList.contains('open'));
+}
+function positionEqPopover(ui) {
+  if (!ui || !ui.btn || !ui.pop) return;
+  var rect = ui.btn.getBoundingClientRect();
+  // 挂 body 后 .volume-control.open .volume-popover 的 opacity 规则不再命中，需 JS 内联控制显隐
+  ui.pop.style.display = 'block';
+  ui.pop.style.opacity = '1';
+  ui.pop.style.pointerEvents = 'auto';
+  ui.pop.style.left = Math.max(8, rect.right + 8) + 'px';
+  ui.pop.style.top = Math.max(8, rect.top) + 'px';
+}
+function closeEqPopover() {
+  var wrap = document.getElementById('eq-control');
+  if (wrap) wrap.classList.remove('open');
+  var pop = document.getElementById('eq-popover');
+  if (pop) {
+    pop.style.display = 'none';
+    pop.style.opacity = '0';
+    pop.style.pointerEvents = 'none';
+  }
+}
 function toggleEqualizerPanel(e) {
   if (e) e.stopPropagation();
   var wrap = document.getElementById('eq-control');
   if (!wrap) return;
   if (!wrap.classList.contains('open')) {
     if (typeof closeVolumePanel === 'function') closeVolumePanel(true);
+    // 点开 EQ 面板时确保左侧播放列表面板保持展开（不回缩）
+    var pl = document.getElementById('playlist-panel');
+    if (pl && !pl.classList.contains('show') && !pl.classList.contains('peek') && !pl.classList.contains('pinned')) {
+      pl.classList.add('show');
+    }
     wrap.classList.add('open');
   } else {
-    wrap.classList.remove('open');
+    closeEqPopover();
   }
 }
 function updateEqUi() {
@@ -894,15 +943,16 @@ function updateEqUi() {
 }
 function initEqualizerUi() {
   if (document.getElementById('eq-control')) return;
-  var modesCluster = document.querySelector('#controls .control-cluster.modes');
-  var volumeControl = document.getElementById('volume-control');
-  if (!modesCluster || !volumeControl) return;
+  // 用户要求：均衡器按钮放在播放列表面板 tab 行（当前队列/我的歌单/我的播客 那一行）
+  var tabsRow = document.querySelector('#playlist-panel .panel-tabs');
+  if (!tabsRow) return;
   var ui = buildEqualizerDom();
-  modesCluster.insertBefore(ui.wrap, volumeControl.nextSibling);
+  tabsRow.appendChild(ui.wrap);
+  // 面板挂到 body（脱离播放面板的 transform/contain 祖先，fixed 定位正确且不被裁剪）
+  document.body.appendChild(ui.pop);
 
-  ui.btn.addEventListener('click', toggleEqualizerPanel);
-  ui.wrap.addEventListener('mouseenter', function () { ui.wrap.classList.add('open'); });
-  ui.wrap.addEventListener('mouseleave', function () { ui.wrap.classList.remove('open'); });
+  // 仅点击打开（用户要求：点了 EQ 按钮才显示面板），不 hover 自动开
+  ui.btn.addEventListener('click', function (e) { positionEqPopover(ui); toggleEqualizerPanel(e); });
 
   ui.sliders.forEach(function (slider) {
     slider.addEventListener('input', function () {
@@ -931,8 +981,29 @@ function initEqualizerUi() {
       showToast(ui.loudCheck.checked ? '响度归一化已开启' : '响度归一化已关闭');
     }
   });
+  // 频率二级面板：点击展开/收起 10 段滑杆
+  var freqToggle = document.getElementById('eq-freq-toggle');
+  if (freqToggle) {
+    freqToggle.addEventListener('click', function () {
+      var bands = document.getElementById('eq-bands');
+      if (!bands) return;
+      var show = bands.style.display === 'none';
+      bands.style.display = show ? 'grid' : 'none';
+      freqToggle.style.background = show ? 'rgba(79,124,255,.30)' : 'rgba(255,255,255,.07)';
+      freqToggle.style.borderColor = show ? 'rgba(79,124,255,.60)' : 'rgba(255,255,255,.12)';
+      freqToggle.style.color = show ? '#fff' : 'rgba(255,255,255,.8)';
+    });
+  }
+  // 滚动/缩放时仅当面板已打开才重定位（未点击时不显示，修复鼠标划过/滚动误触发）
+  var plPanel = document.getElementById('playlist-panel');
+  if (plPanel) plPanel.addEventListener('scroll', function () {
+    if (ui.wrap.classList.contains('open')) positionEqPopover(ui);
+  }, true);
+  window.addEventListener('resize', function () {
+    if (ui.wrap.classList.contains('open')) positionEqPopover(ui);
+  });
   document.addEventListener('click', function (e) {
-    if (!ui.wrap.contains(e.target)) ui.wrap.classList.remove('open');
+    if (!ui.wrap.contains(e.target) && !ui.pop.contains(e.target)) closeEqPopover();
   });
 
   updateEqUi();
@@ -1188,7 +1259,7 @@ function toggleSleepTimerPanel(e) {
   if (!wrap.classList.contains('open')) {
     if (typeof closeVolumePanel === 'function') closeVolumePanel(true);
     var eqWrap = document.getElementById('eq-control');
-    if (eqWrap) eqWrap.classList.remove('open');
+    if (eqWrap) closeEqPopover();
     wrap.classList.add('open');
   } else {
     wrap.classList.remove('open');
@@ -1197,7 +1268,7 @@ function toggleSleepTimerPanel(e) {
 function initSleepTimerUi() {
   if (document.getElementById('sleep-timer-control')) return;
   var modesCluster = document.querySelector('#controls .control-cluster.modes');
-  var anchor = document.getElementById('eq-control') || document.getElementById('volume-control');
+  var anchor = document.getElementById('volume-control');
   if (!modesCluster || !anchor) return;
   var ui = buildSleepTimerDom();
   modesCluster.insertBefore(ui.wrap, anchor.nextSibling);

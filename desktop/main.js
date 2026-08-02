@@ -51,6 +51,9 @@ let desktopLyricsMousePoller = null;
 let desktopLyricsMousePollerBuffer = '';
 let desktopLyricsHotBounds = null;
 let desktopLyricsLastMiddleAt = 0;
+let musicWidgetWindow = null;
+let musicWidgetState = {};
+let musicWidgetUserBounds = null;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let mainWindowStateTimer = null;
@@ -749,6 +752,22 @@ function isTrustedMainDocumentUrl(value) {
     if (!isLocalAppUrl(u.href)) return false;
     const pathname = path.posix.normalize(u.pathname || '/');
     return pathname === '/' || pathname === '/index.html';
+  } catch (_) {
+    return false;
+  }
+}
+
+// 手势控制（摄像头）：仅主窗口文档的 video 媒体放行，音频不授予（最小权限）
+function isTrustedMainWindowMediaPermission(webContents, origin, details) {
+  try {
+    if (!isTrustedMainDocumentUrl(origin)) return false;
+    const mediaType = String(details && details.mediaType || '').toLowerCase();
+    const mediaTypes = details && Array.isArray(details.mediaTypes)
+      ? details.mediaTypes.map((value) => String(value || '').toLowerCase()).filter(Boolean)
+      : [];
+    if (mediaType.includes('audio') || mediaTypes.some((value) => value.includes('audio'))) return false;
+    if (mediaType && !mediaType.includes('video')) return false;
+    return true;
   } catch (_) {
     return false;
   }
@@ -1575,7 +1594,8 @@ function configureLocalAppPermissions() {
   ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     const origin = requestingOrigin || (details && details.requestingUrl) || (webContents && webContents.getURL && webContents.getURL()) || '';
     if (permission === 'display-capture') return isTrustedWallpaperEngineDisplayCapturePermission(webContents, origin, details);
-    if (permission === 'media') return isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details);
+    if (permission === 'media') return isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
+      || isTrustedMainWindowMediaPermission(webContents, origin, details);
     return LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin);
   });
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -1585,7 +1605,8 @@ function configureLocalAppPermissions() {
       return;
     }
     if (permission === 'media') {
-      callback(isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details));
+      callback(isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
+        || isTrustedMainWindowMediaPermission(webContents, origin, details));
       return;
     }
     callback(LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin));
@@ -3793,6 +3814,98 @@ function closeDesktopLyricsWindow() {
   broadcastDesktopLyricsEnabledState(false);
 }
 
+// ---- 桌面音乐小组件：独立置顶小窗（封面 / 歌名 / 歌词行 / 进度条 / 时钟） ----
+function sendMusicWidgetState() {
+  if (!musicWidgetWindow || musicWidgetWindow.isDestroyed()) return;
+  musicWidgetWindow.webContents.send('mineradio-music-widget-state', musicWidgetState);
+}
+function rememberMusicWidgetBounds() {
+  if (!musicWidgetWindow || musicWidgetWindow.isDestroyed()) return;
+  musicWidgetUserBounds = musicWidgetWindow.getBounds();
+}
+function musicWidgetDefaultBounds() {
+  const display = screen.getPrimaryDisplay();
+  const bounds = display.bounds;
+  const width = 340;
+  const height = 210;
+  return {
+    x: Math.round(bounds.x + Math.max(12, bounds.width - width - 24)),
+    y: Math.round(bounds.y + Math.max(48, bounds.height * 0.12)),
+    width,
+    height,
+  };
+}
+function createMusicWidgetWindow(payload = {}) {
+  musicWidgetState = { ...musicWidgetState, ...(payload || {}), enabled: true };
+  if (musicWidgetWindow && !musicWidgetWindow.isDestroyed()) {
+    sendMusicWidgetState();
+    return musicWidgetWindow;
+  }
+  const bounds = musicWidgetUserBounds || musicWidgetDefaultBounds();
+  musicWidgetWindow = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    movable: true,
+    focusable: false,
+    skipTaskbar: true,
+    show: false,
+    title: 'Mineradio 桌面小组件',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  try {
+    musicWidgetWindow.setAlwaysOnTop(true, 'screen-saver');
+    musicWidgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } catch (e) {
+    console.warn('Music widget topmost setup skipped:', e.message);
+  }
+  musicWidgetWindow.once('ready-to-show', () => {
+    if (!musicWidgetWindow || musicWidgetWindow.isDestroyed()) return;
+    musicWidgetWindow.showInactive();
+    sendMusicWidgetState();
+  });
+  musicWidgetWindow.webContents.once('did-finish-load', sendMusicWidgetState);
+  musicWidgetWindow.on('closed', () => {
+    musicWidgetWindow = null;
+  });
+  musicWidgetWindow.on('moved', rememberMusicWidgetBounds);
+  musicWidgetWindow.loadURL(overlayUrl('music-widget.html')).catch((e) => console.warn('Music widget load failed:', e.message));
+  return musicWidgetWindow;
+}
+function closeMusicWidgetWindow() {
+  if (musicWidgetWindow && !musicWidgetWindow.isDestroyed()) {
+    musicWidgetWindow.close();
+  }
+  musicWidgetWindow = null;
+  // 通知主窗口渲染端停止小组件状态推送（避免 800ms 定时器空转与状态漂移）
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('mineradio-music-widget-closed'); } catch (e) { }
+  }
+}
+function updateMusicWidgetWindow(payload = {}) {
+  const nextState = { ...musicWidgetState, ...payload };
+  if (!musicWidgetWindow || musicWidgetWindow.isDestroyed()) {
+    // 窗口不存在时仅记录状态，绝不自动创建（窗口只能由 toggle 显式创建，
+    // 否则渲染端定时 push 的 enabled:true 会导致关闭后自动复活）
+    musicWidgetState = nextState;
+    return;
+  }
+  musicWidgetState = nextState;
+  sendMusicWidgetState();
+}
+
 function nativeWindowHandleDecimal(win) {
   const handle = win.getNativeWindowHandle();
   if (process.arch === 'x64') return handle.readBigUInt64LE(0).toString();
@@ -3867,6 +3980,7 @@ async function closeWallpaperWindow(reason = 'disabled') {
 
 function closeOverlayWindows(reason = 'overlay-close') {
   closeDesktopLyricsWindow();
+  closeMusicWidgetWindow();
   return closeWallpaperWindow(reason).catch((error) => {
     console.warn('[FullDesktopMode] close failed:', error && error.message || error);
   });
@@ -4741,6 +4855,48 @@ ipcMain.handle('mineradio-hotkeys-configure-global', (_event, bindings) => {
 
 ipcMain.handle('mineradio-media-keys-configure', (_event, enabled) => {
   return configureMineradioMediaKeys(enabled !== false);
+});
+
+// 桌面音乐小组件：渲染端切换 / 更新 / 关闭，以及小组件窗口内进度条 seek 转发到主窗口
+ipcMain.handle('mineradio-music-widget-toggle', async (_event, payload) => {
+  try {
+    if (musicWidgetWindow && !musicWidgetWindow.isDestroyed()) {
+      closeMusicWidgetWindow();
+    } else {
+      createMusicWidgetWindow(payload || {});
+    }
+    return { ok: true, enabled: !!(musicWidgetWindow && !musicWidgetWindow.isDestroyed()) };
+  } catch (e) {
+    return { ok: false, enabled: false, error: e.message || 'MUSIC_WIDGET_TOGGLE_FAILED' };
+  }
+});
+
+ipcMain.handle('mineradio-music-widget-close', async () => {
+  closeMusicWidgetWindow();
+  return { ok: true, enabled: false };
+});
+
+ipcMain.handle('mineradio-music-widget-update', async (_event, payload) => {
+  try {
+    updateMusicWidgetWindow(payload || {});
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'MUSIC_WIDGET_UPDATE_FAILED' };
+  }
+});
+
+ipcMain.on('mineradio-music-widget-seek', (_event, ratio) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('mineradio-music-widget-seek', { ratio: clampNumber(ratio, 0, 1, 0) });
+  }
+});
+// 悬浮窗播放控制（上一曲/暂停/下一曲）→ 转发渲染端执行
+ipcMain.on('mineradio-music-widget-control', (_event, action) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (action === 'prev' || action === 'toggle' || action === 'next') {
+      mainWindow.webContents.send('mineradio-music-widget-control', { action });
+    }
+  }
 });
 
 // 渲染端播放状态变化时通知主进程，更新任务栏缩略图播放/暂停按钮图标
@@ -5888,6 +6044,7 @@ if (!gotSingleInstanceLock) {
     unregisterFullDesktopEscapeShortcut();
     unregisterMineradioGlobalHotkeys();
     closeDesktopLyricsWindow();
+    closeMusicWidgetWindow();
     if (localServer && localServer.close) localServer.close();
     if (tray) {
       try { tray.destroy(); } catch (e) {}

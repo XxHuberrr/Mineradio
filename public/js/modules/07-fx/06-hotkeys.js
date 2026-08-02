@@ -1,6 +1,35 @@
+// ---- 全局热键扩展动作（渲染端新增：红心收藏 / 队列显隐，沿用 hotkeySettings 存储） ----
+var MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS = [
+  { key: 'toggleLike', label: '红心收藏 / 取消收藏', category: '播放', local: '', global: 'Ctrl+Alt+KeyH' },
+  { key: 'toggleQueue', label: '显示 / 隐藏队列', category: '播放', local: '', global: 'Ctrl+Alt+KeyQ' }
+];
+function allHotkeyActions() {
+  var base = (typeof HOTKEY_ACTIONS !== 'undefined' && HOTKEY_ACTIONS) ? HOTKEY_ACTIONS : [];
+  // MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS 可能在 07-ui-playback-runtime 顶层调用
+  // readHotkeySettings 时尚未赋值（var 提升后为 undefined）——concat(undefined) 会把
+  // undefined 加入数组导致 forEach 时 action.key 崩溃，必须判空
+  var extra = (typeof MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS !== 'undefined' && MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS) ? MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS : [];
+  return base.concat(extra);
+}
+// 新增动作首次运行补入 hotkeySettings，避免旧存档缺失默认绑定
+function ensureMusicWidgetHotkeyDefaults() {
+  if (typeof hotkeySettings === 'undefined' || !hotkeySettings) return;
+  var changed = false;
+  MUSIC_WIDGET_EXTRA_HOTKEY_ACTIONS.forEach(function (action) {
+    if (!hotkeySettings.global) hotkeySettings.global = {};
+    if (!hotkeySettings.local) hotkeySettings.local = {};
+    if (hotkeySettings.global[action.key] == null) { hotkeySettings.global[action.key] = action.global || ''; changed = true; }
+    if (hotkeySettings.local[action.key] == null) { hotkeySettings.local[action.key] = action.local || ''; changed = true; }
+  });
+  if (changed) saveHotkeySettings();
+}
+try {
+  ensureMusicWidgetHotkeyDefaults();
+} catch (e) { }
 function getHotkeyDefaults() {
   var defaults = { local: {}, global: {}, mediaKeysEnabled: true };
-  HOTKEY_ACTIONS.forEach(function (action) {
+  allHotkeyActions().forEach(function (action) {
+    if (!action || !action.key) return;
     defaults.local[action.key] = action.local || '';
     defaults.global[action.key] = action.global || '';
   });
@@ -23,8 +52,9 @@ function saveHotkeySettings() {
   try { localStorage.setItem(HOTKEY_SETTINGS_STORE_KEY, JSON.stringify(hotkeySettings || getHotkeyDefaults())); } catch (e) { }
 }
 function hotkeyActionMeta(actionKey) {
-  for (var i = 0; i < HOTKEY_ACTIONS.length; i++) {
-    if (HOTKEY_ACTIONS[i].key === actionKey) return HOTKEY_ACTIONS[i];
+  var actions = allHotkeyActions();
+  for (var i = 0; i < actions.length; i++) {
+    if (actions[i].key === actionKey) return actions[i];
   }
   return null;
 }
@@ -95,8 +125,10 @@ function executeHotkeyAction(actionKey, source) {
   if (actionKey === 'togglePlay') return togglePlay();
   if (actionKey === 'prevTrack') return prevTrack(true);
   if (actionKey === 'nextTrack') return nextTrack(true);
-  if (actionKey === 'volumeUp') return adjustVolumeByKeyboard(0.05);
-  if (actionKey === 'volumeDown') return adjustVolumeByKeyboard(-0.05);
+  if (actionKey === 'volumeUp' || actionKey === 'volume-up') return adjustVolumeByKeyboard(0.05);
+  if (actionKey === 'volumeDown' || actionKey === 'volume-down') return adjustVolumeByKeyboard(-0.05);
+  if (actionKey === 'toggleLike' || actionKey === 'toggle-like') return toggleLikeCurrent();
+  if (actionKey === 'toggleQueue' || actionKey === 'toggle-queue') return toggleMiniQueue();
   if (actionKey === 'toggleFullscreen') return toggleFullscreen();
   if (actionKey === 'toggleDesktopInteraction') {
     var api = getDesktopWindowApi && getDesktopWindowApi();
@@ -131,8 +163,9 @@ function handleConfiguredLocalHotkey(e) {
   var combo = normalizeHotkeyEvent(e);
   if (!combo) return false;
   var duplicate = hotkeyDuplicateMap('local');
-  for (var i = 0; i < HOTKEY_ACTIONS.length; i++) {
-    var action = HOTKEY_ACTIONS[i];
+  var actions = allHotkeyActions();
+  for (var i = 0; i < actions.length; i++) {
+    var action = actions[i];
     if (hotkeySettings.local[action.key] !== combo) continue;
     e.preventDefault();
     e.stopPropagation();
@@ -147,8 +180,9 @@ function shouldSuppressDefaultConfiguredHotkey(e) {
   if (!hotkeySettings || !hotkeySettings.local) return false;
   var combo = normalizeHotkeyEvent(e);
   if (!combo) return false;
-  for (var i = 0; i < HOTKEY_ACTIONS.length; i++) {
-    var action = HOTKEY_ACTIONS[i];
+  var actions = allHotkeyActions();
+  for (var i = 0; i < actions.length; i++) {
+    var action = actions[i];
     if (action.local === combo && hotkeySettings.local[action.key] !== combo) return true;
   }
   return false;
@@ -246,7 +280,7 @@ function renderHotkeyScope(scope) {
   var duplicate = hotkeyDuplicateMap(scope);
   var html = '';
   var groups = {};
-  HOTKEY_ACTIONS.forEach(function (action) {
+  allHotkeyActions().forEach(function (action) {
     (groups[action.category] = groups[action.category] || []).push(action);
   });
   Object.keys(groups).forEach(function (category) {
@@ -335,7 +369,7 @@ function registerGlobalHotkeys() {
   }
   var duplicate = hotkeyDuplicateMap('global');
   var bindings = [];
-  HOTKEY_ACTIONS.forEach(function (action) {
+  allHotkeyActions().forEach(function (action) {
     var key = hotkeySettings.global && hotkeySettings.global[action.key];
     if (!key || duplicate[key] > 1) return;
     var accelerator = hotkeyToAccelerator(key);
@@ -407,6 +441,132 @@ function bindHotkeySettings() {
   registerGlobalHotkeys();
   registerMediaKeys();
   startThumbarPlayingWatcher();
+  mountMusicWidgetEntryButton();
+  bindMusicWidgetSeek();
+}
+// ---- 桌面音乐小组件：渲染端控制器 ----
+var musicWidgetPushTimer = 0;
+var musicWidgetPushActive = false;
+var musicWidgetSeekBound = false;
+function musicWidgetDesktopApi() {
+  return getDesktopWindowApi && getDesktopWindowApi();
+}
+function buildMusicWidgetStatePayload() {
+  var meta = (typeof currentDesktopSongMeta === 'function') ? currentDesktopSongMeta() : {};
+  var lyric = (typeof currentDesktopLyricSnapshot === 'function') ? currentDesktopLyricSnapshot() : { text: '', progress: 0 };
+  var t = (typeof audio !== 'undefined' && audio && isFinite(audio.currentTime)) ? Number(audio.currentTime) : 0;
+  var d = (typeof audio !== 'undefined' && audio && isFinite(audio.duration)) ? Number(audio.duration) : 0;
+  return {
+    enabled: musicWidgetPushActive,
+    title: meta.title || '',
+    artist: meta.artist || '',
+    cover: meta.cover || '',
+    lyric: lyric.text || '',
+    lyricProgress: lyric.progress || 0,
+    playing: typeof playing === 'boolean' ? playing : false,
+    currentTime: t,
+    duration: d
+  };
+}
+function pushMusicWidgetState() {
+  var api = musicWidgetDesktopApi();
+  if (!api || typeof api.updateMusicWidget !== 'function') return;
+  try {
+    var result = api.updateMusicWidget(buildMusicWidgetStatePayload());
+    if (result && typeof result.catch === 'function') result.catch(function (e) { console.warn('music widget update failed:', e); });
+  } catch (e) { }
+}
+function startMusicWidgetPush() {
+  if (musicWidgetPushTimer) return;
+  musicWidgetPushActive = true;
+  musicWidgetPushTimer = setInterval(pushMusicWidgetState, 800);
+  pushMusicWidgetState();
+}
+function stopMusicWidgetPush() {
+  musicWidgetPushActive = false;
+  if (musicWidgetPushTimer) {
+    clearInterval(musicWidgetPushTimer);
+    musicWidgetPushTimer = 0;
+  }
+}
+function toggleMusicWidgetDesktop() {
+  var api = musicWidgetDesktopApi();
+  if (!api || typeof api.toggleMusicWidget !== 'function') {
+    showToast('桌面小组件仅桌面版可用');
+    return Promise.resolve({ ok: false, enabled: false, error: 'MUSIC_WIDGET_DESKTOP_API_UNAVAILABLE' });
+  }
+  return api.toggleMusicWidget({}).then(function (res) {
+    if (res && res.ok === true) {
+      showToast(res.enabled ? '桌面小组件已开启' : '桌面小组件已关闭');
+      if (res.enabled) startMusicWidgetPush();
+      else stopMusicWidgetPush();
+    }
+    return res;
+  }).catch(function (e) {
+    console.warn('music widget toggle failed:', e);
+    return { ok: false, enabled: false, error: 'MUSIC_WIDGET_TOGGLE_FAILED' };
+  });
+}
+function mountMusicWidgetEntryButton() {
+  // 用户要求：悬浮窗（桌面小组件）选项放到播放列表面板 tab 行、均衡器按钮后面。
+  // 需等 DOMContentLoaded 后再挂载（EQ 按钮在 DOMContentLoaded 创建，同步执行时 #eq-control 还不存在）
+  function doMount() {
+    var tabsRow = document.querySelector('#playlist-panel .panel-tabs');
+    if (!tabsRow || document.getElementById('music-widget-btn')) return;
+    var eqWrap = document.getElementById('eq-control');
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-left:4px';
+    var btn = document.createElement('button');
+    btn.id = 'music-widget-btn';
+    btn.type = 'button';
+    // 与均衡器按钮同尺寸（ctrl-btn 图标按钮），自定义悬浮窗图标（窗口 + 时钟）
+    btn.className = 'ctrl-btn';
+    btn.title = '桌面悬浮窗（时钟 + 封面 + 歌词 + 进度）';
+    btn.setAttribute('aria-label', '桌面悬浮窗');
+    btn.innerHTML = '<svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<rect x="3.5" y="4.5" width="17" height="13" rx="2.2"/>'
+      + '<circle cx="12" cy="12.5" r="3.4"/>'
+      + '<path d="M12 10.6v1.9l1.2.9"/></svg>';
+    btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggleMusicWidgetDesktop(); });
+    row.appendChild(btn);
+    if (eqWrap && eqWrap.parentNode) eqWrap.parentNode.insertBefore(row, eqWrap.nextSibling);
+    else tabsRow.appendChild(row);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', doMount);
+  else doMount();
+}
+function bindMusicWidgetSeek() {
+  if (musicWidgetSeekBound) return;
+  var api = musicWidgetDesktopApi();
+  if (!api || typeof api.onMusicWidgetSeek !== 'function') return;
+  musicWidgetSeekBound = true;
+  api.onMusicWidgetSeek(function (payload) {
+    if (!payload || !isFinite(Number(payload.ratio))) return;
+    var d = (typeof audio !== 'undefined' && audio && isFinite(audio.duration)) ? Number(audio.duration) : 0;
+    if (d <= 0) return;
+    var target = Math.max(0, Math.min(d, Number(payload.ratio) * d));
+    // 走正式 seek 链路（含快照保存/cuefield 重置/暂停恢复），保持当前播放状态
+    if (typeof commitProgressSeek === 'function') {
+      commitProgressSeek(target, !!(audio && !audio.paused));
+    } else if (audio) {
+      audio.currentTime = target;
+    }
+    // 立即回推最新进度（不等 800ms 轮询），悬浮窗进度条即时到位
+    if (typeof pushMusicWidgetState === 'function') pushMusicWidgetState();
+  });
+  // 悬浮窗播放控制：上一曲 / 播放暂停 / 下一曲
+  if (typeof api.onMusicWidgetControl === 'function') {
+    api.onMusicWidgetControl(function (payload) {
+      var action = payload && payload.action;
+      if (action === 'prev' && typeof prevTrack === 'function') prevTrack();
+      else if (action === 'next' && typeof nextTrack === 'function') nextTrack();
+      else if (action === 'toggle' && typeof togglePlay === 'function') togglePlay();
+      if (typeof pushMusicWidgetState === 'function') pushMusicWidgetState();
+    });
+  }
+  if (typeof api.onMusicWidgetClosed === 'function') {
+    api.onMusicWidgetClosed(function () { stopMusicWidgetPush(); });
+  }
 }
 document.addEventListener('keydown', function (e) {
   var hotkeyModal = document.getElementById('hotkey-modal');
