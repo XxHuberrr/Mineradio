@@ -145,14 +145,55 @@ window.addEventListener('DOMContentLoaded', () => {
     document.body.classList.add('desktop-native-frame');
     
     // macOS fullscreen optimization
-    document.addEventListener('fullscreenchange', () => {
-      if (document.fullscreenElement) {
+    function handleFullscreenChange() {
+      var titlebar = document.getElementById('desktop-titlebar');
+      var windowBtns = document.querySelectorAll('.desktop-window-btn');
+      
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
         document.body.classList.add('desktop-fullscreen');
-        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = 'none'; });
+        // Hide titlebar and window buttons
+        if (titlebar) {
+          titlebar.style.display = 'none';
+          titlebar.style.visibility = 'hidden';
+          titlebar.style.height = '0';
+          titlebar.style.opacity = '0';
+          titlebar.style.pointerEvents = 'none';
+        }
+        windowBtns.forEach(function(btn) {
+          btn.style.display = 'none';
+          btn.style.visibility = 'hidden';
+        });
       } else {
         document.body.classList.remove('desktop-fullscreen');
-        document.querySelectorAll('.desktop-window-btn').forEach(function(btn){ btn.style.display = ''; });
+        // Restore titlebar and window buttons
+        if (titlebar) {
+          titlebar.style.display = '';
+          titlebar.style.visibility = '';
+          titlebar.style.height = '';
+          titlebar.style.opacity = '';
+          titlebar.style.pointerEvents = '';
+        }
+        windowBtns.forEach(function(btn) {
+          btn.style.display = '';
+          btn.style.visibility = '';
+        });
       }
-    });
+    }
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    
+    // Also listen for window fullscreen events from Electron
+    if (window.desktopWindow && window.desktopWindow.onStateChange) {
+      window.desktopWindow.onStateChange(function(state) {
+        if (state && state.isFullScreen) {
+          document.body.classList.add('desktop-fullscreen');
+          handleFullscreenChange();
+        } else {
+          document.body.classList.remove('desktop-fullscreen');
+          handleFullscreenChange();
+        }
+      });
+    }
   }
 });

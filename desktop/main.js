@@ -5279,7 +5279,11 @@ async function createWindowOnce() {
     minWidth: initialMinimum.width,
     minHeight: initialMinimum.height,
     show: false,
-    ...(process.platform === 'darwin' ? {} : { frame: false }),
+    ...(process.platform === 'darwin' ? { 
+      titleBarStyle: 'hiddenInset',
+      titleBarOverlay: false,
+      trafficLightPosition: { x: 12, y: 12 },
+    } : { frame: false }),
     fullscreen: false,
     resizable: true,
     transparent: process.platform !== 'darwin',
