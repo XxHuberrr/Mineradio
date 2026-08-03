@@ -884,21 +884,25 @@ body.wallpaper-engine-dwm-active.wallpaper-engine-glass-sampler-ready #wallpaper
   object-fit: cover;
   object-position: center;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 800ms ease;
   pointer-events: none;
   background: #000
 }
 
 #wallpaper-engine-image,
 #wallpaper-engine-video {
-  z-index: 1
+  z-index: 1;
+  /* 艺术化淡入：模糊转清晰 + 微缩放归位 + 长时柔和缓动 */
+  filter: blur(7px);
+  transform: scale(1.035);
+  transition: opacity 1200ms cubic-bezier(.4, 0, .2, 1), filter 1200ms cubic-bezier(.4, 0, .2, 1), transform 1200ms cubic-bezier(.4, 0, .2, 1);
 }
 
 #wallpaper-engine-freeze {
   z-index: 2;
   object-fit: fill;
   visibility: hidden;
-  transition: opacity 160ms cubic-bezier(.2, .8, .2, 1), visibility 0s linear 160ms
+  transition: opacity 600ms cubic-bezier(.4, 0, .2, 1), visibility 0s linear 600ms
 }
 
 #wallpaper-engine-layer.freeze-ready #wallpaper-engine-freeze {
@@ -909,7 +913,9 @@ body.wallpaper-engine-dwm-active.wallpaper-engine-glass-sampler-ready #wallpaper
 
 #wallpaper-engine-layer.image-ready #wallpaper-engine-image,
 #wallpaper-engine-layer.video-ready #wallpaper-engine-video {
-  opacity: 1
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
 }
 
 #wallpaper-engine-layer.engine-ready #wallpaper-engine-video {
