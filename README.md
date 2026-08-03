@@ -3,6 +3,12 @@
 Mineradio 是一款 Windows 桌面沉浸式音乐播放器：歌词舞台、粒子视觉、3D 歌单架、完整桌面模式与 Wallpaper Engine 壁纸支持，把搜索播放与视觉体验组合成更接近现场感的私人音乐空间。
 
 本仓库为 **2.1.3 二改版**，由原作者 XxHuberrr 的 v2.1.0 二次开发而来，原版全部功能完整保留，并在此基础上新增多项实用功能与交互优化。
+## 安装教程（Windows）
+
+1. **下载**：
+   - **百度网盘**[点击下载](https://pan.baidu.com/s/15zoLiywVjwI1u5yCVDXUag?pwd=w91f)　提取码：`w91f`（文件：mineradioeg）
+   - **本仓库 Release**：下载 `Mineradio-2.1.3-Setup.exe`（若已发布）
+2. **运行安装**：双击 Setup.exe，按提示安装（默认安装到 `%LOCALAPPDATA%\Programs\Mineradio`，自动创建桌面快捷方式）
 
 ## 基于原版（重要声明）
 
