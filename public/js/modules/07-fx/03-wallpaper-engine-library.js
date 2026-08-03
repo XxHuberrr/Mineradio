@@ -1,6 +1,8 @@
 var WALLPAPER_ENGINE_SELECTION_STORE_KEY = 'mineradio-wallpaper-engine-selection-v1';
 var WALLPAPER_ENGINE_HIDDEN_STORE_KEY = 'mineradio-wallpaper-engine-hidden-v1';
 var WALLPAPER_ENGINE_FAVORITE_STORE_KEY = 'mineradio-wallpaper-engine-favorites-v1';
+var WALLPAPER_ENGINE_ROTATION_SET_STORE_KEY = 'mineradio-we-rotation-set-v1';
+var WALLPAPER_ENGINE_ROTATION_CONFIG_STORE_KEY = 'mineradio-we-rotation-config-v1';
 var wallpaperEngineProjects = [];
 var wallpaperEngineLibrarySnapshot = null;
 var wallpaperEngineMediaToken = '';
@@ -138,6 +140,39 @@ var favoriteWallpaperEngineIds = readWallpaperEngineIdSet(WALLPAPER_ENGINE_FAVOR
 
 function saveWallpaperEngineIdSet(key, values) {
   try { localStorage.setItem(key, JSON.stringify(Array.from(values))); } catch (e) { }
+}
+
+// ============================================================
+// 壁纸轮换集合（多选集合内随机轮换）
+// 集合：mineradio-we-rotation-set-v1（勾选的壁纸 id 数组）
+// 配置：mineradio-we-rotation-config-v1（{ enabled, intervalMinutes }）
+// ============================================================
+var wallpaperEngineRotationSet = readWallpaperEngineIdSet(WALLPAPER_ENGINE_ROTATION_SET_STORE_KEY);
+
+function readWallpaperEngineRotationConfig() {
+  try {
+    var raw = JSON.parse(localStorage.getItem(WALLPAPER_ENGINE_ROTATION_CONFIG_STORE_KEY) || '{}');
+    return {
+      enabled: raw && raw.enabled === true,
+      intervalMinutes: Math.max(1, Math.min(240, Math.round(Number(raw && raw.intervalMinutes) || 15)))
+    };
+  } catch (e) {
+    return { enabled: false, intervalMinutes: 15 };
+  }
+}
+
+var wallpaperEngineRotationConfig = readWallpaperEngineRotationConfig();
+var wallpaperEngineRotationLastTrackKey = '';
+var wallpaperEngineRotationWatcherTimer = 0;
+var wallpaperEngineRotationIntervalTimer = 0;
+
+function saveWallpaperEngineRotationConfig() {
+  try {
+    localStorage.setItem(WALLPAPER_ENGINE_ROTATION_CONFIG_STORE_KEY, JSON.stringify({
+      enabled: wallpaperEngineRotationConfig.enabled === true,
+      intervalMinutes: wallpaperEngineRotationConfig.intervalMinutes
+    }));
+  } catch (e) { }
 }
 
 function normalizeWallpaperEngineSelection(value) {
@@ -1392,7 +1427,7 @@ function handleWallpaperEngineVideoPlayFailure(error, video, item, kind, token, 
   }, 160);
 }
 
-function clearWallpaperEngineLayerMedia(delay) {
+function clearWallpaperEngineLayerMedia(delay, preserveFreeze) {
   cancelWallpaperEngineVideoRetry();
   cancelWallpaperEngineFirstFrameWait();
   var token = wallpaperEngineLayerToken;
@@ -1401,14 +1436,20 @@ function clearWallpaperEngineLayerMedia(delay) {
   var video = document.getElementById('wallpaper-engine-video');
   function release() {
     if (token !== wallpaperEngineLayerToken) return;
-    if (layer) layer.classList.remove('ready', 'image-ready', 'video-ready', 'engine-ready', 'freeze-ready');
-    clearWallpaperEngineFreezeFrame(true);
+    if (layer) layer.classList.remove('ready', 'image-ready', 'video-ready', 'engine-ready');
+    if (!preserveFreeze) {
+      // 常规清除：同时移除 freeze 保帧；preserveFreeze（交叉淡化）时保留 freeze 帧供新层 ready 后淡出
+      if (layer) layer.classList.remove('freeze-ready');
+      clearWallpaperEngineFreezeFrame(true);
+    }
     if (image) {
+      image.style.opacity = '';
       image.onload = null;
       image.onerror = null;
       image.removeAttribute('src');
     }
     if (video) {
+      video.style.opacity = '';
       video.onloadeddata = null;
       video.onerror = null;
       try { video.pause(); } catch (e) { }
@@ -1443,12 +1484,230 @@ function suspendOriginalBackgroundForWallpaperEngine() {
   }
 }
 
+function clearInlineWallpaperEngineOpacity() {
+  var image = document.getElementById('wallpaper-engine-image');
+  var video = document.getElementById('wallpaper-engine-video');
+  if (image) image.style.opacity = '';
+  if (video) video.style.opacity = '';
+}
+
+// ============================================================
+// 燃烧过渡（burn reveal）：旧壁纸保留在前景 canvas，多个不规则孔洞从随机位置
+// 慢慢扩大（带烧焦毛边与余烬粒子），燃烧殆尽后露出下层新壁纸
+// ============================================================
+var weBurnCanvas = null;
+var weBurnCtx = null;
+var weBurnHoles = [];
+var weBurnEmbers = [];
+var weBurnRaf = 0;
+var weBurnStart = 0;
+var weBurnPending = false;
+var WE_BURN_DURATION = 2200; // 燃烧总时长 ms（用户要求放慢）
+
+// 捕获旧画面到 burn canvas 并置于前景（不立即开烧，等新壁纸 ready 后 beginWallpaperEngineBurnAnimation）
+function startWallpaperEngineBurnTransition() {
+  // 若上一次燃烧动画仍在进行（快速连续切换），先取消
+  if (weBurnRaf) {
+    cancelAnimationFrame(weBurnRaf);
+    weBurnRaf = 0;
+  }
+  var layer = document.getElementById('wallpaper-engine-layer');
+  if (!layer) return false;
+  var image = document.getElementById('wallpaper-engine-image');
+  var video = document.getElementById('wallpaper-engine-video');
+  var source = null;
+  if (video && video.readyState >= 2 && video.videoWidth) source = video;
+  else if (image && image.getAttribute('src') && image.complete && image.naturalWidth) source = image;
+  if (!source) return false;
+  var canvas = weBurnCanvas || (weBurnCanvas = document.createElement('canvas'));
+  canvas.id = 'we-burn-canvas';
+  if (!canvas.parentNode) layer.appendChild(canvas);
+  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;display:none;background:transparent';
+  var w = canvas.width = Math.max(1, window.innerWidth);
+  var h = canvas.height = Math.max(1, window.innerHeight);
+  var ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  weBurnCtx = ctx;
+  try {
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(source, 0, 0, w, h);
+  } catch (e) {
+    return false;
+  }
+  // 不规则孔洞种子：随机位置，初始小洞，增速/最大半径各异（整体呈不规则侵蚀）
+  weBurnHoles = [];
+  var count = 13 + Math.floor(Math.random() * 7);
+  for (var i = 0; i < count; i++) {
+    weBurnHoles.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      r: 8 + Math.random() * 22,
+      growth: 1.1 + Math.random() * 1.6,
+      maxR: Math.hypot(w, h) * (0.45 + Math.random() * 0.4)
+    });
+  }
+  weBurnEmbers = [];
+  weBurnPending = true;
+  canvas.style.display = 'block';
+  return true;
+}
+
+function beginWallpaperEngineBurnAnimation() {
+  if (!weBurnCtx || weBurnRaf) return;
+  weBurnStart = performance.now();
+  weBurnRaf = requestAnimationFrame(burnWallpaperEngineTick);
+}
+
+function burnWallpaperEngineTick(now) {
+  if (!weBurnCtx || !weBurnCanvas) return;
+  var ctx = weBurnCtx;
+  var elapsed = now - weBurnStart;
+  var progress = Math.min(1, elapsed / WE_BURN_DURATION);
+  var done = true;
+  // 擦除层：destination-out 抠出孔洞（扩大 + 不规则毛边 + 渐晕烧焦）
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalAlpha = 1;
+  for (var i = 0; i < weBurnHoles.length; i++) {
+    var hole = weBurnHoles[i];
+    if (hole.r < hole.maxR) {
+      // 放慢：增速基数与后期加速幅度都降低，燃烧更从容
+      hole.r += hole.growth * (1.15 + progress * 1.35);
+      if (hole.r > hole.maxR) hole.r = hole.maxR;
+      done = false;
+    }
+    var t = now * 0.001;
+    // 真实烧纸毛边：噪声扰动的不规则轮廓（多频正弦叠加 → 焦边锯齿，随时间蠕动）
+    ctx.beginPath();
+    var steps = 30;
+    for (var s = 0; s <= steps; s++) {
+      var ang = (s / steps) * Math.PI * 2;
+      var wob = 0.22 * Math.sin(ang * 5 + t * 1.6 + hole.x * 0.01)
+        + 0.15 * Math.sin(ang * 9 - t * 2.3 + hole.y * 0.013)
+        + 0.10 * Math.sin(ang * 14 + t * 0.8 + hole.r);
+      var rad = hole.r * (1 + wob);
+      var px = hole.x + Math.cos(ang) * rad;
+      var py = hole.y + Math.sin(ang) * rad;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // 焦边碎屑：轮廓附近随机小片（烧焦纸屑边缘，配合毛边更真实）
+    var crumbN = 12;
+    for (var c = 0; c < crumbN; c++) {
+      var ca = Math.random() * Math.PI * 2;
+      var crad = hole.r * (0.75 + Math.random() * 0.9);
+      var cr = 3 + Math.random() * 14;
+      ctx.beginPath();
+      ctx.arc(hole.x + Math.cos(ca) * crad, hole.y + Math.sin(ca) * crad, cr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 渐晕边缘（半透明擦除 → 烧焦过渡感）
+    for (var f = 1; f <= 4; f++) {
+      ctx.globalAlpha = 0.12 / f;
+      ctx.beginPath();
+      ctx.arc(hole.x, hole.y, hole.r * (1 + f * 0.09), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // 余烬粒子：孔洞边缘随机冒出火星（上限 140 防性能问题）
+    if (weBurnEmbers.length < 140 && Math.random() < 0.55) {
+      weBurnEmbers.push({
+        x: hole.x + (Math.random() - 0.5) * hole.r * 2,
+        y: hole.y + (Math.random() - 0.5) * hole.r * 2,
+        vx: (Math.random() - 0.5) * 1.4,
+        vy: -(0.4 + Math.random() * 1.8),
+        life: 0
+      });
+    }
+  }
+  // 余烬更新：暖色亮点上浮 + 漂移 + 淡出
+  ctx.globalCompositeOperation = 'lighter';
+  for (var e2 = weBurnEmbers.length - 1; e2 >= 0; e2--) {
+    var em = weBurnEmbers[e2];
+    em.x += em.vx;
+    em.y += em.vy;
+    em.vy -= 0.02;
+    em.life += 0.016;
+    if (em.life >= 1.4) {
+      weBurnEmbers.splice(e2, 1);
+      continue;
+    }
+    ctx.globalAlpha = (1 - em.life / 1.4) * 0.9;
+    ctx.fillStyle = Math.random() < 0.3 ? '#ffd27a' : '#ff7a3d';
+    ctx.beginPath();
+    ctx.arc(em.x, em.y, 1 + Math.random() * 1.9, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (done || progress >= 1) {
+    endWallpaperEngineBurnTransition();
+    return;
+  }
+  weBurnRaf = requestAnimationFrame(burnWallpaperEngineTick);
+}
+
+function endWallpaperEngineBurnTransition() {
+  if (weBurnRaf) {
+    cancelAnimationFrame(weBurnRaf);
+    weBurnRaf = 0;
+  }
+  weBurnHoles = [];
+  weBurnEmbers = [];
+  weBurnPending = false;
+  if (weBurnCanvas) {
+    weBurnCanvas.style.display = 'none';
+    try { weBurnCtx && weBurnCtx.clearRect(0, 0, weBurnCanvas.width, weBurnCanvas.height); } catch (e) { }
+  }
+}
+
+// 交叉淡化：切换时旧壁纸淡出（opacity 过渡 WALLPAPER_ENGINE_SWITCH_FADE_MS，与清除延迟一致）
+function fadeOutWallpaperEngineLayer() {
+  var image = document.getElementById('wallpaper-engine-image');
+  var video = document.getElementById('wallpaper-engine-video');
+  if (image) image.style.opacity = '0';
+  if (video) video.style.opacity = '0';
+}
+
+// 无黑屏交叉淡化：image 壁纸切换时把旧画面保留在临时覆盖层（同 src 已缓存立即显示），
+// 新壁纸 ready 后该层淡出，与新层淡入重叠 → 不出现黑屏窗口
+function createWallpaperEngineCrossfadeTemp(imageSrc) {
+  var layer = document.getElementById('wallpaper-engine-layer');
+  var old = document.getElementById('we-crossfade-temp');
+  if (old) old.remove();
+  if (!layer || !imageSrc) return;
+  var img = document.createElement('img');
+  img.id = 'we-crossfade-temp';
+  img.src = imageSrc;
+  img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;' +
+    'z-index:3;background:#000;pointer-events:none;transition:opacity 600ms cubic-bezier(.4, 0, .2, 1)';
+  layer.appendChild(img);
+}
+function removeWallpaperEngineCrossfadeTemp() {
+  var img = document.getElementById('we-crossfade-temp');
+  if (img) {
+    img.style.opacity = '0';
+    setTimeout(function () { if (img && img.parentNode) img.parentNode.removeChild(img); }, 520);
+  }
+}
+
 function wallpaperEngineLayerReady(kind, token) {
   if (token !== wallpaperEngineLayerToken || !wallpaperEngineSelection.active) return;
   cancelWallpaperEngineHostRecovery(true);
   var layer = document.getElementById('wallpaper-engine-layer');
   if (!layer) return;
   layer.classList.remove('ready', 'image-ready', 'video-ready', 'engine-ready', 'freeze-ready');
+  // 清除切换时淡出留下的内联 opacity，让 ready 类接管（0→1 过渡完成淡入）
+  clearInlineWallpaperEngineOpacity();
+  // 新壁纸就绪：若处于燃烧过渡等待态则开烧（旧画面燃烧殆尽露出新壁纸）；
+  // 否则清除旧画面覆盖层（freeze/temp）做交叉淡化
+  if (weBurnPending) {
+    weBurnPending = false;
+    beginWallpaperEngineBurnAnimation();
+  } else {
+    clearWallpaperEngineFreezeFrame(false);
+    removeWallpaperEngineCrossfadeTemp();
+  }
   document.body.classList.toggle('wallpaper-engine-dwm-active', kind === 'dwm');
   if (kind !== 'dwm') {
     stopWallpaperEngineGlassCaptureStream(false);
@@ -1471,6 +1730,8 @@ function wallpaperEngineLayerReady(kind, token) {
 
 function wallpaperEngineLayerFailed(item, attemptedKind, token) {
   if (token !== wallpaperEngineLayerToken) return;
+  // 加载失败：终止燃烧过渡（避免 burn 前景层残留导致新画面被遮挡）
+  endWallpaperEngineBurnTransition();
   var nativeStopPromise = Promise.resolve({ ok: true });
   if (attemptedKind === 'engine') {
     cancelWallpaperEngineFirstFrameWait();
@@ -1575,11 +1836,21 @@ function applyWallpaperEngineBackground(item, quiet) {
   }
 
   if (preserveOutgoingFrame) {
-    clearWallpaperEngineLayerMedia(WALLPAPER_ENGINE_SWITCH_FADE_MS);
-    wallpaperEngineSwitchTimer = setTimeout(function () {
-      wallpaperEngineSwitchTimer = 0;
+    // 燃烧过渡：旧画面捕获到 burn 前景层（多个孔洞慢慢扩大烧尽 → 露出下层新壁纸，无黑屏）。
+    // 捕获成功则立即清旧媒体并加载新壁纸；新壁纸 ready 后开烧。
+    if (startWallpaperEngineBurnTransition()) {
+      clearWallpaperEngineLayerMedia(0, true);
       beginWallpaperEngineMediaLoad();
-    }, WALLPAPER_ENGINE_SWITCH_FADE_MS + 20);
+    } else {
+      // 无可用旧帧：退化为原淡出路径，避免闪断
+      fadeOutWallpaperEngineLayer();
+      clearWallpaperEngineLayerMedia(WALLPAPER_ENGINE_SWITCH_FADE_MS);
+      wallpaperEngineSwitchTimer = setTimeout(function () {
+        wallpaperEngineSwitchTimer = 0;
+        beginWallpaperEngineMediaLoad();
+      }, WALLPAPER_ENGINE_SWITCH_FADE_MS + 20);
+      return;
+    }
   } else {
     clearWallpaperEngineLayerMedia(0);
     beginWallpaperEngineMediaLoad();
@@ -1812,10 +2083,12 @@ function renderWallpaperEngineLibrary(preserveRenderLimit) {
   grid.innerHTML = visibleItems.map(function (item) {
     var favorite = favoriteWallpaperEngineIds.has(item.id);
     var active = wallpaperEngineSelection.active && wallpaperEngineSelection.id === item.id;
+    var inRotation = wallpaperEngineRotationSet.has(item.id);
     var preview = item.hasPreview ? wallpaperEngineMediaUrl(item, 'preview') : '';
     return '<article class="wallpaper-engine-card' + (favorite ? ' favorite' : '') + (active ? ' active' : '') + '" tabindex="0" role="button" data-wallpaper-id="' + item.id + '">' +
       (preview ? '<img class="wallpaper-engine-card-preview" data-src="' + escHtml(preview) + '" data-animated="' + (item.previewAnimated ? '1' : '0') + '" alt="" loading="lazy" decoding="async">' : '<div class="wallpaper-engine-card-placeholder"></div>') +
       '<button class="wallpaper-engine-card-star' + (favorite ? ' active' : '') + '" type="button" data-wallpaper-action="favorite" data-wallpaper-id="' + item.id + '" title="' + (favorite ? '取消星标' : '星标并置顶') + '">' + (favorite ? '★' : '☆') + '</button>' +
+      '<button class="wallpaper-engine-card-rotation' + (inRotation ? ' active' : '') + '" type="button" data-wallpaper-action="rotation" data-wallpaper-id="' + item.id + '" title="' + (inRotation ? '从轮换集合移除' : '加入轮换集合') + '">' + (inRotation ? '✓' : '＋') + '</button>' +
       '<button class="wallpaper-engine-card-settings" type="button" data-wallpaper-action="details" data-wallpaper-id="' + item.id + '" title="读取项目设置">⚙</button>' +
       '<button class="wallpaper-engine-card-hide" type="button" data-wallpaper-action="hide" data-wallpaper-id="' + item.id + '" title="从列表隐藏">×</button>' +
       '<div class="wallpaper-engine-card-meta">' + escHtml(item.title) + '<small>' + escHtml(wallpaperEngineProjectLabel(item)) + '</small></div>' +
@@ -2165,6 +2438,209 @@ function toggleFavoriteWallpaperEngineItem(id) {
   renderWallpaperEngineLibrary();
 }
 
+function toggleWallpaperEngineRotationItem(id) {
+  id = String(id || '');
+  if (!/^[a-f0-9]{24}$/i.test(String(id))) return;
+  if (wallpaperEngineRotationSet.has(id)) wallpaperEngineRotationSet.delete(id);
+  else wallpaperEngineRotationSet.add(id);
+  saveWallpaperEngineIdSet(WALLPAPER_ENGINE_ROTATION_SET_STORE_KEY, wallpaperEngineRotationSet);
+  renderWallpaperEngineLibrary();
+  updateWallpaperEngineRotationUi();
+}
+
+// 集合内可用壁纸（含隐藏过滤后的可用项）
+function wallpaperEngineRotationCandidates() {
+  var list = [];
+  wallpaperEngineRotationSet.forEach(function (id) {
+    var item = wallpaperEngineProjectById(id);
+    if (item && (item.playable || item.enginePlayable || item.hasPreview)) list.push(item);
+  });
+  return list;
+}
+
+// 随机选一个集合内且不与当前相同的壁纸；集合为空或仅 1 个时返回 null（不轮换）
+function wallpaperEngineRotationTargetItem() {
+  var candidates = wallpaperEngineRotationCandidates();
+  if (candidates.length < 2) return null;
+  var currentId = wallpaperEngineSelection.id;
+  var pool = candidates.filter(function (item) { return item.id !== currentId; });
+  if (!pool.length) pool = candidates;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// 安静切换到指定壁纸（不关闭库面板、不弹 toast；轮换专用）
+function applyWallpaperEngineRotationItem(item) {
+  if (!item) return false;
+  wallpaperEngineSelection = normalizeWallpaperEngineSelection({
+    active: true,
+    id: item.id,
+    title: item.title,
+    kind: item.enginePlayable ? 'engine' : (item.playable ? 'media' : 'preview'),
+    mediaType: item.enginePlayable ? 'video' : (item.playable ? item.mediaType : 'image'),
+    mediaAnimated: item.mediaAnimated,
+    projectType: item.projectType,
+    hasPreview: item.hasPreview,
+    previewAnimated: item.previewAnimated,
+    updatedAt: item.updatedAt
+  });
+  wallpaperEngineDesktopPreviewActive = false;
+  wallpaperEngineDesktopPreviewUsesAsset = false;
+  cancelWallpaperEngineHostRecovery(true);
+  saveWallpaperEngineSelection();
+  wallpaperEngineRuntimeError = '';
+  applyWallpaperEngineBackground(item, true);
+  renderWallpaperEngineLibrary();
+  updateWallpaperEngineEntryUi('集合轮换 · ' + (item.title || '壁纸'));
+  return true;
+}
+
+// 轮换主入口：reason 仅用于区分触发来源（track-change / timer）
+function maybeRotateWallpaperEngineCollection(reason) {
+  if (!wallpaperEngineRotationConfig.enabled) return false;
+  if (!wallpaperEngineSelection.active) return false;
+  // 最小化/失焦/隐藏时主进程已挂起 WE 运行时（HOST_SUSPENDED），
+  // 此时切歌轮换会被拒绝并触发渲染端清层导致黑屏——直接跳过轮换
+  //（复用同文件桌面生命周期判断：桌面 host 读 desktopRuntimeState.visible/minimized，
+  //  非桌面 fallback 读 document.hidden；此处再叠加 document.hidden 双保险，
+  //  消除桌面状态事件到达前的最小化瞬间毫秒级竞态。
+  //  注：透明 host 下 document.hidden 存在已知误报（见本文件 1213-1216 行注释），
+  //  误报期间本轮轮换被跳过且 LastTrackKey 已更新——该歌的轮换会顺延到下一首切换，
+  //  属安全行为（渲染本已挂起），非功能失效）
+  if (typeof document !== 'undefined' && document.hidden) return false;
+  if (typeof wallpaperEngineDesktopHostIsVisible === 'function' && !wallpaperEngineDesktopHostIsVisible()) return false;
+  var target = wallpaperEngineRotationTargetItem();
+  if (!target) return false;
+  return applyWallpaperEngineRotationItem(target);
+}
+
+// 当前曲目标识：切歌时变化（复用全局 playQueue/currentIdx/queueItemKey）
+function wallpaperEngineRotationCurrentTrackKey() {
+  try {
+    var song = (typeof playQueue === 'object' && playQueue && currentIdx >= 0 && currentIdx < playQueue.length)
+      ? playQueue[currentIdx] : null;
+    if (!song) return '';
+    return typeof queueItemKey === 'function'
+      ? queueItemKey(song)
+      : String(song.id || song.localKey || (song.name + '|' + song.artist));
+  } catch (e) {
+    return '';
+  }
+}
+
+function restartWallpaperEngineRotationTimer() {
+  if (wallpaperEngineRotationIntervalTimer) clearInterval(wallpaperEngineRotationIntervalTimer);
+  wallpaperEngineRotationIntervalTimer = 0;
+  if (!wallpaperEngineRotationConfig.enabled) return;
+  var minutes = Math.max(1, Math.min(240, Number(wallpaperEngineRotationConfig.intervalMinutes) || 15));
+  wallpaperEngineRotationIntervalTimer = setInterval(function () {
+    maybeRotateWallpaperEngineCollection('timer');
+  }, minutes * 60 * 1000);
+}
+
+// 启动切歌监听与定时轮换（由初始化函数调用一次）
+function startWallpaperEngineRotationWatchers() {
+  if (wallpaperEngineRotationWatcherTimer) clearInterval(wallpaperEngineRotationWatcherTimer);
+  wallpaperEngineRotationWatcherTimer = setInterval(function () {
+    if (!wallpaperEngineRotationConfig.enabled) return;
+    var key = wallpaperEngineRotationCurrentTrackKey();
+    if (!key) return;
+    if (!wallpaperEngineRotationLastTrackKey) {
+      // 首次进入播放：只记录基准，避免启动恢复时立刻轮换掉用户手动选的壁纸
+      wallpaperEngineRotationLastTrackKey = key;
+      return;
+    }
+    if (key !== wallpaperEngineRotationLastTrackKey) {
+      wallpaperEngineRotationLastTrackKey = key;
+      // 用户要求：切歌不自动轮换壁纸（每点一次下一首就换壁纸太频繁/生硬），
+      // 轮换仅由定时器（intervalMinutes）触发——此处只更新基准，不再调用 maybeRotate
+    }
+  }, 1000);
+  restartWallpaperEngineRotationTimer();
+}
+
+// ============================================================
+// 轮换集合 UI：设置条 + 卡片勾选样式（动态注入，不改 index.css）
+// ============================================================
+function injectWallpaperEngineRotationStyles() {
+  if (document.getElementById('wallpaper-engine-rotation-style')) return;
+  var style = document.createElement('style');
+  style.id = 'wallpaper-engine-rotation-style';
+  style.textContent =
+    '.wallpaper-engine-card-rotation{position:absolute;top:7px;left:41px;z-index:3;width:27px;height:27px;' +
+    'border:1px solid rgba(255,255,255,.16);border-radius:50%;background:rgba(4,6,9,.72);color:rgba(255,255,255,.72);' +
+    'cursor:pointer;backdrop-filter:blur(8px);font-size:13px;line-height:25px;text-align:center;font-weight:700}' +
+    '.wallpaper-engine-card-rotation:hover{color:#fff;background:rgba(40,131,194,.72)}' +
+    '.wallpaper-engine-card-rotation.active{color:#6fe3a0;border-color:rgba(111,227,160,.5)}' +
+    '.wallpaper-engine-rotation-settings{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:11px 1px 8px;padding:9px 12px;' +
+    'border:1px solid rgba(111,227,160,.22);border-radius:12px;background:rgba(111,227,160,.05);' +
+    'color:rgba(255,255,255,.78);font-size:11px}' +
+    '.wallpaper-engine-rotation-settings label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}' +
+    '.wallpaper-engine-rotation-settings input[type=checkbox]{accent-color:#6fe3a0;cursor:pointer}' +
+    '.wallpaper-engine-rotation-settings input[type=number]{width:56px;height:25px;padding:0 6px;border-radius:8px;' +
+    'border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.05);color:rgba(255,255,255,.88);font-size:11px}' +
+    '.wallpaper-engine-rotation-count{color:rgba(111,227,160,.92);font-weight:600;white-space:nowrap}';
+  (document.head || document.documentElement).appendChild(style);
+}
+
+function updateWallpaperEngineRotationUi() {
+  var enabled = document.getElementById('wallpaper-engine-rotation-enabled');
+  var interval = document.getElementById('wallpaper-engine-rotation-interval');
+  var count = document.getElementById('wallpaper-engine-rotation-count');
+  if (enabled) enabled.checked = wallpaperEngineRotationConfig.enabled === true;
+  if (interval) interval.value = String(wallpaperEngineRotationConfig.intervalMinutes);
+  if (count) count.textContent = '集合 ' + wallpaperEngineRotationSet.size + ' 张';
+}
+
+function toggleWallpaperEngineRotationSettingsBar() {
+  var bar = document.getElementById('wallpaper-engine-rotation-settings');
+  if (!bar) return;
+  bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+}
+
+function injectWallpaperEngineRotationSettingsBar() {
+  injectWallpaperEngineRotationStyles();
+  if (document.getElementById('wallpaper-engine-rotation-settings')) return;
+  var status = document.getElementById('wallpaper-engine-library-status');
+  if (!status || !status.parentNode) return;
+  var bar = document.createElement('div');
+  bar.className = 'wallpaper-engine-rotation-settings';
+  bar.id = 'wallpaper-engine-rotation-settings';
+  bar.style.display = 'none';
+  bar.innerHTML =
+    '<label title="在集合内随机轮换"><input type="checkbox" id="wallpaper-engine-rotation-enabled"> 启用集合轮换</label>' +
+    '<label title="定时轮换间隔（分钟）">每 <input type="number" id="wallpaper-engine-rotation-interval" min="1" max="240" step="1"> 分钟</label>' +
+    '<span class="wallpaper-engine-rotation-count" id="wallpaper-engine-rotation-count"></span>' +
+    '<button type="button" class="fx-mini-btn ghost" id="wallpaper-engine-rotation-clear" title="清空已勾选的集合">清空集合</button>';
+  status.parentNode.insertBefore(bar, status);
+
+  var enabled = document.getElementById('wallpaper-engine-rotation-enabled');
+  var interval = document.getElementById('wallpaper-engine-rotation-interval');
+  var clearBtn = document.getElementById('wallpaper-engine-rotation-clear');
+  if (enabled) enabled.addEventListener('change', function () {
+    wallpaperEngineRotationConfig.enabled = enabled.checked === true;
+    saveWallpaperEngineRotationConfig();
+    restartWallpaperEngineRotationTimer();
+    updateWallpaperEngineRotationUi();
+    showToast(wallpaperEngineRotationConfig.enabled ? '壁纸集合轮换已开启' : '壁纸集合轮换已关闭');
+  });
+  if (interval) interval.addEventListener('change', function () {
+    var value = Math.max(1, Math.min(240, Math.round(Number(interval.value) || 15)));
+    wallpaperEngineRotationConfig.intervalMinutes = value;
+    saveWallpaperEngineRotationConfig();
+    restartWallpaperEngineRotationTimer();
+    updateWallpaperEngineRotationUi();
+    showToast('壁纸轮换间隔已设为 ' + value + ' 分钟');
+  });
+  if (clearBtn) clearBtn.addEventListener('click', function () {
+    wallpaperEngineRotationSet.clear();
+    saveWallpaperEngineIdSet(WALLPAPER_ENGINE_ROTATION_SET_STORE_KEY, wallpaperEngineRotationSet);
+    renderWallpaperEngineLibrary();
+    updateWallpaperEngineRotationUi();
+    showToast('已清空轮换集合');
+  });
+  updateWallpaperEngineRotationUi();
+}
+
 function hideWallpaperEngineItem(id) {
   id = String(id || '');
   hiddenWallpaperEngineIds.add(id);
@@ -2202,6 +2678,7 @@ function bindWallpaperEngineLibraryEvents() {
         var actionName = action.getAttribute('data-wallpaper-action');
         var id = action.getAttribute('data-wallpaper-id');
         if (actionName === 'favorite') toggleFavoriteWallpaperEngineItem(id);
+        else if (actionName === 'rotation') toggleWallpaperEngineRotationItem(id);
         else if (actionName === 'hide') hideWallpaperEngineItem(id);
         else if (actionName === 'details') showWallpaperEngineProjectDetails(id);
         else if (actionName === 'load-more') {
@@ -2302,6 +2779,11 @@ function bindWallpaperEngineLibraryEvents() {
 
 function initializeWallpaperEngineLibrary() {
   bindWallpaperEngineLibraryEvents();
+  // C3 新增步骤单独 try/catch：任何异常不得中断 index-loader 拼接的后续模块加载
+  //（否则 05-fx-panel/07-bindings/09-console/11-main-loop 全部不加载，
+  //  导致视觉预设/用户存档区块缺失、主循环死→歌词不渲染）
+  try { injectWallpaperEngineRotationToolbarButton(); } catch (e) { console.warn('[WE-Rotation] toolbar inject skipped:', e && e.message); }
+  try { startWallpaperEngineRotationWatchers(); } catch (e) { console.warn('[WE-Rotation] watchers start skipped:', e && e.message); }
   updateWallpaperEngineEntryUi();
   if (!wallpaperEngineSelection.active) return;
   setTimeout(function () {
@@ -2312,8 +2794,33 @@ function initializeWallpaperEngineLibrary() {
         wallpaperEngineRuntimeError = '项目离线';
         updateWallpaperEngineEntryUi('项目离线 · 已显示原背景');
       }
+    }).catch(function (err) {
+      console.warn('[WE] library restore failed:', err && err.message);
+      wallpaperEngineRuntimeError = '加载失败';
+      updateWallpaperEngineEntryUi('加载失败 · 已显示原背景');
     });
   }, 120);
 }
 
-initializeWallpaperEngineLibrary();
+// 在壁纸库 modal 工具栏注入“轮换”按钮，用于展开/收起轮换设置条
+function injectWallpaperEngineRotationToolbarButton() {
+  var toolbar = document.querySelector('#wallpaper-engine-modal .wallpaper-engine-toolbar');
+  if (!toolbar || toolbar.querySelector('#wallpaper-engine-rotation-toggle-btn')) return;
+  var button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'fx-mini-btn ghost';
+  button.id = 'wallpaper-engine-rotation-toggle-btn';
+  button.title = '多选壁纸加入轮换集合，切歌或定时在集合内随机轮换';
+  button.textContent = '轮换';
+  button.addEventListener('click', toggleWallpaperEngineRotationSettingsBar);
+  toolbar.appendChild(button);
+  injectWallpaperEngineRotationSettingsBar();
+  updateWallpaperEngineRotationUi();
+}
+
+// 顶层初始化：整体防御，绝不允许异常中断后续模块链（原版已有此调用，新增步骤必须隔离）
+try {
+  initializeWallpaperEngineLibrary();
+} catch (e) {
+  console.warn('[WE] library init skipped:', e && e.message);
+}

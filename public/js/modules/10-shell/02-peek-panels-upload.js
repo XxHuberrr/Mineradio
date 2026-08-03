@@ -344,6 +344,8 @@ function isPlaylistPanelBridgeHit(panel, ppRect, ex, ey, H) {
 }
 function shouldClosePlaylistPanelFromPointer(ppOn, ex, ppRect, ey, H) {
   if (!ppOn) return false;
+  // EQ 面板打开时左侧播放面板保持展开（用户在 EQ 上调试滑杆，鼠标位于面板右侧）
+  if (typeof isEqPanelOpen === 'function' && isEqPanelOpen()) return false;
   var panel = document.getElementById('playlist-panel');
   var targetRect = playlistPanelTargetRect(panel, ppRect);
   if (isPlaylistPanelBottomControlsConflict(ex, ey, H)) return true;
@@ -365,10 +367,12 @@ function shouldHidePlaylistPanelOnWindowLeave(e) {
   return e.clientX <= 12 || e.clientX >= window.innerWidth - 2 || e.clientY <= 2 || e.clientY >= window.innerHeight - 2;
 }
 document.addEventListener('mouseleave', function (e) {
+  if (typeof isEqPanelOpen === 'function' && isEqPanelOpen()) return;
   if (shouldHidePlaylistPanelOnWindowLeave(e)) closePlaylistPanelSoft('window-leave');
 }, true);
 window.addEventListener('blur', function () {
   if (playlistPanelPinned) return;
+  if (typeof isEqPanelOpen === 'function' && isEqPanelOpen()) return;
   setTimeout(function () { closePlaylistPanelSoft('window-blur'); }, 60);
 });
 window.addEventListener('mousemove', function (e) {

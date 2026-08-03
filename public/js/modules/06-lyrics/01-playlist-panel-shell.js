@@ -444,10 +444,178 @@ bindSmoothQueueScrolling();
 bindPlaylistPanelLazyRender();
 bindLongPressPanelReorder();
 bindModalBackdropClose();
+function buildQueueSortToolbar() {
+  if (document.getElementById('queue-sort-row')) return;
+  var pane = document.getElementById('queue-pane');
+  var list = document.getElementById('queue-list');
+  if (!pane || !list) return;
+  var row = document.createElement('div');
+  row.className = 'queue-toolbar';
+  row.id = 'queue-sort-row';
+  row.style.position = 'relative';
+  row.style.zIndex = '6';
+  row.style.marginTop = '0';
+  row.innerHTML =
+    '<span class="queue-chip" style="flex-shrink:0" title="排序仅作用于本地队列，不写回平台歌单">排序</span>' +
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="title" onclick="sortQueueBy(\'title\')" style="height:26px;padding:0 9px;font-size:11px" title="按标题排序队列">标题</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="artist" onclick="sortQueueBy(\'artist\')" style="height:26px;padding:0 9px;font-size:11px" title="按歌手排序队列">歌手</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="duration" onclick="sortQueueBy(\'duration\')" style="height:26px;padding:0 9px;font-size:11px" title="按时长排序队列">时长</button>' +
+    '<button type="button" class="fx-mini-btn ghost" data-queue-sort="random" onclick="sortQueueBy(\'random\')" style="height:26px;padding:0 9px;font-size:11px" title="随机打乱队列">随机</button>' +
+    '<button type="button" class="fx-mini-btn ghost" onclick="moveCurrentQueueSongToTop()" style="height:26px;padding:0 9px;font-size:11px" title="当前播放曲移到队列首位">当前置顶</button>' +
+    '<button type="button" class="fx-mini-btn ghost" onclick="moveCurrentQueueSongToBottom()" style="height:26px;padding:0 9px;font-size:11px" title="当前播放曲移到队列末尾">置底</button>' +
+    '</div>';
+  pane.insertBefore(row, list);
+  updateQueueSortToolbarActive();
+}
+function updateQueueSortToolbarActive() {
+  var row = document.getElementById('queue-sort-row');
+  if (!row) return;
+  Array.prototype.forEach.call(row.querySelectorAll('[data-queue-sort]'), function (btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-queue-sort') === queueSortMode);
+  });
+}
+buildQueueSortToolbar();
+
+// ============================================================
+//  队列信息条：总时长 / 下一首 / 预计结束时间
+var queueSummaryTimerMs = 10000;
+function queueSongDurationMs(song) {
+  if (!song) return 0;
+  var ms = Number(song.durationMs != null ? song.durationMs : song.dt);
+  if (isFinite(ms) && ms > 0) return ms;
+  var sec = Number(song.duration);
+  if (isFinite(sec) && sec > 0) return sec * 1000;
+  return 0;
+}
+function queueSummaryStats() {
+  var totalMs = 0, known = 0;
+  for (var i = 0; i < playQueue.length; i++) {
+    var ms = queueSongDurationMs(playQueue[i]);
+    if (ms > 0) { totalMs += ms; known += 1; }
+  }
+  return { totalMs: totalMs, known: known, count: playQueue.length };
+}
+function queueFormatDuration(ms) {
+  var s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  var h = Math.floor(s / 3600);
+  var m = Math.floor((s % 3600) / 60);
+  return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+function queueFormatClock(ms) {
+  var d = new Date(Date.now() + Math.max(0, Math.round(Number(ms) || 0)));
+  var hh = d.getHours();
+  var mm = d.getMinutes();
+  return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+}
+function queueNextSongSummary() {
+  if (currentIdx < 0 || currentIdx + 1 >= playQueue.length) return null;
+  var song = playQueue[currentIdx + 1];
+  if (!song) return null;
+  return { name: song.name || '', artist: song.artist || '' };
+}
+function queueEstimateRemainingMs() {
+  if (currentIdx < 0 || currentIdx >= playQueue.length) return -1;
+  if (!audio || !isFinite(audio.currentTime) || audio.currentTime < 0) return -1;
+  var curMs = queueSongDurationMs(playQueue[currentIdx]);
+  var currentRemainingMs = -1;
+  if (curMs > 0) {
+    currentRemainingMs = curMs - audio.currentTime * 1000;
+  } else if (isFinite(audio.duration) && audio.duration > 0) {
+    currentRemainingMs = audio.duration * 1000 - audio.currentTime * 1000;
+  }
+  if (currentRemainingMs < 0) return -1;
+  var afterMs = 0;
+  for (var i = currentIdx + 1; i < playQueue.length; i++) {
+    afterMs += queueSongDurationMs(playQueue[i]);
+  }
+  return currentRemainingMs + afterMs;
+}
+function isQueuePaneVisible() {
+  var panel = document.getElementById('playlist-panel');
+  var pane = document.getElementById('queue-pane');
+  if (!panel || !pane) return false;
+  if (pane.style.display === 'none') return false;
+  return panel.classList.contains('show') || panel.classList.contains('peek') || panel.classList.contains('pinned');
+}
+function buildQueueSummaryBar() {
+  if (document.getElementById('queue-summary-bar')) return;
+  var pane = document.getElementById('queue-pane');
+  var list = document.getElementById('queue-list');
+  if (!pane || !list) return;
+  var bar = document.createElement('div');
+  bar.className = 'queue-toolbar';
+  bar.id = 'queue-summary-bar';
+  bar.style.position = 'relative';
+  bar.style.zIndex = '5';
+  bar.style.marginTop = '0';
+  bar.style.display = 'flex';
+  bar.style.alignItems = 'center';
+  bar.style.gap = '6px';
+  bar.style.justifyContent = 'flex-start';
+  bar.style.flexWrap = 'nowrap';
+  bar.style.overflow = 'hidden';
+  bar.innerHTML =
+    '<span id="queue-summary-meta" class="queue-chip" style="flex-shrink:0"></span>' +
+    '<span id="queue-summary-next" class="queue-chip" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>' +
+    '<span id="queue-summary-eta" class="queue-chip" style="flex-shrink:0"></span>';
+  pane.insertBefore(bar, list);
+  refreshQueueSummaryBar();
+}
+function refreshQueueSummaryBar() {
+  var bar = document.getElementById('queue-summary-bar');
+  if (!bar) return;
+  if (!playQueue || !playQueue.length) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  var stats = queueSummaryStats();
+  var meta = document.getElementById('queue-summary-meta');
+  if (meta) {
+    meta.textContent = '共 ' + stats.count + ' 首 · 总时长 ' + queueFormatDuration(stats.totalMs);
+    meta.title = stats.known < stats.count ? '已计入 ' + stats.known + ' 首的已知时长，其余按 0 计' : '队列歌曲总时长';
+  }
+  var nextSong = queueNextSongSummary();
+  var next = document.getElementById('queue-summary-next');
+  if (next) {
+    if (nextSong) {
+      var nextLabel = '下一首：' + nextSong.name + (nextSong.artist ? ' - ' + nextSong.artist : '');
+      next.textContent = nextLabel;
+      next.title = nextLabel;
+      next.style.display = '';
+    } else {
+      next.style.display = 'none';
+    }
+  }
+  var eta = document.getElementById('queue-summary-eta');
+  if (eta) {
+    var remainingMs = queueEstimateRemainingMs();
+    if (remainingMs >= 0) {
+      eta.textContent = '预计 ' + queueFormatClock(remainingMs) + ' 播完';
+      eta.title = '按当前曲剩余与后续歌曲时长估算';
+      eta.style.display = '';
+    } else {
+      eta.style.display = 'none';
+    }
+  }
+}
+function bindQueueSummaryTimer() {
+  if (window.__queueSummaryTimerBound) return;
+  window.__queueSummaryTimerBound = true;
+  setInterval(function () {
+    if (!isQueuePaneVisible()) return;
+    refreshQueueSummaryBar();
+  }, queueSummaryTimerMs);
+}
+buildQueueSummaryBar();
+bindQueueSummaryTimer();
+
 function renderQueuePanel(opts) {
   opts = opts || {};
   var $ql = document.getElementById('queue-list');
   var seq = ++queueRenderSeq;
+  refreshQueueSummaryBar();
   if (!playQueue.length) {
     $ql.innerHTML = '<div style="text-align:center;padding:24px 0;color:rgba(255,255,255,.32);font-size:11.5px">队列为空，搜索后点 + 设为下一首</div>';
     renderMiniQueuePanel();

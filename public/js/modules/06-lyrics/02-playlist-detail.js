@@ -165,6 +165,10 @@ function playlistPanelDetailRowsHtml(options) {
     return '<div class="pl-detail-row pl-detail-loading-row"><span class="queue-hydration-spinner spinning"></span><div style="flex:1;min-width:0"><div class="pl-detail-row-title">正在载入首批歌曲</div><div class="pl-detail-row-artist">首批完成后即可浏览和播放</div></div></div>';
   }
   if (!tracks.length) return playlistPanelNoticeHtml(st.message || st.error || '', !!st.error);
+  var detailKeyParts = String(st.key || '').split(':');
+  var detailProvider = normalizePlaylistProvider(detailKeyParts[0]);
+  // 平台能力: 网易云/酷狗支持从歌单移除歌曲, 其余平台隐藏入口
+  var canRemoveSong = detailProvider === 'netease' || detailProvider === 'kugou';
   var viewport = Math.max(280, Number(options.viewport) || Math.min(620, Math.round((window.innerHeight || 800) * 0.72)));
   var localScrollTop = Math.max(0, Number(options.scrollTop) || 0);
   var start = Math.max(0, Math.floor(localScrollTop / PLAYLIST_DETAIL_ROW_STEP) - PLAYLIST_DETAIL_VIRTUAL_OVERSCAN);
@@ -177,10 +181,14 @@ function playlistPanelDetailRowsHtml(options) {
     var i = start + localIndex;
     var thumb = songCoverSrc(song, 60);
     var imgTag = thumb ? '<img src="' + escHtml(thumb) + '" alt="" loading="lazy" decoding="async" onerror="this.style.opacity=0.2">' : '<div style="width:34px;height:34px;border-radius:7px;background:rgba(255,255,255,.06);flex:0 0 auto"></div>';
+    var removeBtn = canRemoveSong
+      ? '<button type="button" class="pl-detail-row-remove" data-pl-detail-remove="' + i + '" title="从歌单移除" aria-label="从歌单移除" style="flex:0 0 auto;width:22px;height:22px;border:0;border-radius:50%;background:rgba(255,255,255,.07);color:rgba(255,170,150,.85);font:600 13px/1 var(--font-sans);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">×</button>'
+      : '';
     return '<div class="pl-detail-row" data-pl-detail-row="' + i + '">' +
       imgTag +
       '<div style="flex:1;min-width:0"><div class="pl-detail-row-title">' + escHtml(song.name || '') + '</div>' +
       '<button type="button" class="pl-detail-row-artist" data-pl-detail-artist="' + i + '">' + escHtml(song.artist || '未知歌手') + '</button></div>' +
+      removeBtn +
       '</div>';
   }).join('');
   rows += '<div class="pl-detail-virtual-spacer" aria-hidden="true" style="height:' + (Math.max(0, tracks.length - end) * PLAYLIST_DETAIL_ROW_STEP) + 'px"></div>';
@@ -281,10 +289,16 @@ function playlistPanelDetailHtml(pl, provider, detailWindow) {
   var collectionButton = canUncollect
     ? '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-collection="0">取消收藏</button>'
     : '';
+  // 平台能力: 仅网易云自己的普通歌单支持重命名/删除 (红心/收藏/虚拟歌单隐藏)
+  var canManageOwn = provider === 'netease' && !!pl && !pl.virtual && !pl.subscribed && !pl.specialType;
+  var manageButtons = canManageOwn
+    ? '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-rename="1">重命名</button>' +
+      '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-delete="1" style="color:rgba(255,150,130,.92);border-color:rgba(255,120,100,.32)">删除歌单</button>'
+    : '';
   return '<div class="pl-inline-detail" data-pl-detail="' + escHtml(key) + '" style="height:' + playlistPanelDetailShellHeight() + 'px">' +
     '<div class="pl-detail-sticky">' +
     '<div class="pl-detail-head">' + img + '<div style="flex:1;min-width:0"><div class="pl-detail-title">' + escHtml(pl.name || '歌单详情') + '</div><div class="pl-detail-sub">' + escHtml((expectedTotal || tracks.length || 0) + ' 首 · ' + (pl.creator || playlistProviderName(provider))) + '</div></div><div class="pl-detail-count">' + (loading && !tracks.length ? '载入中' : (tracks.length + (expectedTotal > tracks.length ? '/' + expectedTotal : ''))) + '</div></div>' +
-    '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button>' + collectionButton + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
+    '<div class="pl-detail-actions"><button class="pl-detail-play" type="button" data-pl-detail-play="' + escHtml(key) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>播放歌单</button>' + collectionButton + manageButtons + '<button class="fx-mini-btn ghost pl-detail-top-btn" type="button" data-pl-detail-top="1">回到顶部</button></div>' +
     '</div>' +
     '<div class="pl-detail-list" data-pl-detail-scroll="' + escHtml(key) + '">' + rows + '</div>' +
     '</div>';
@@ -737,6 +751,28 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
     togglePlaylistPanelCollection(collection.getAttribute('data-pl-detail-collection') === '1');
     return;
   }
+  // 歌单管理三件套: 重命名 / 删除歌单 (先于 row, 因为移除按钮嵌在歌曲行内)
+  var renameManage = e.target && e.target.closest ? e.target.closest('[data-pl-detail-rename]') : null;
+  if (renameManage) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptPlaylistPanelRename();
+    return;
+  }
+  var deleteManage = e.target && e.target.closest ? e.target.closest('[data-pl-detail-delete]') : null;
+  if (deleteManage) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptPlaylistPanelDelete();
+    return;
+  }
+  var removeManage = e.target && e.target.closest ? e.target.closest('[data-pl-detail-remove]') : null;
+  if (removeManage) {
+    e.preventDefault();
+    e.stopPropagation();
+    promptPlaylistPanelRemoveSong(Number(removeManage.getAttribute('data-pl-detail-remove')));
+    return;
+  }
   var artist = e.target && e.target.closest ? e.target.closest('[data-pl-detail-artist]') : null;
   if (artist) {
     e.preventDefault();
@@ -757,3 +793,232 @@ document.getElementById('pl-list').addEventListener('click', function (e) {
   var pid = card.getAttribute('data-playlist-id') || '';
   openPlaylistPanelDetail(provider, pid, card.getAttribute('data-playlist-title') || '');
 });
+
+// ============================================================
+//  歌单管理三件套: 重命名 / 删除 / 移除歌曲
+//  写操作走账号真实 API, 会真实影响官方歌单, 均带确认弹层
+// ============================================================
+var playlistManageConfirmMask = null;
+var playlistDeleteConfirmState = { stage: 0, provider: '', pid: '', name: '' };
+function openPlaylistManageConfirm(html) {
+  closePlaylistManageConfirm();
+  var mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.style.zIndex = '220';
+  mask.setAttribute('role', 'dialog');
+  mask.setAttribute('aria-modal', 'true');
+  mask.innerHTML = '<div class="modal" style="max-width:min(420px,90vw)">' + html + '</div>';
+  document.body.appendChild(mask);
+  playlistManageConfirmMask = mask;
+  if (typeof openGsapModal === 'function') openGsapModal(mask);
+  else mask.classList.add('show');
+  mask.addEventListener('click', function (e) {
+    if (e.target === mask) closePlaylistManageConfirm();
+  });
+  return mask;
+}
+function closePlaylistManageConfirm() {
+  var mask = playlistManageConfirmMask;
+  playlistManageConfirmMask = null;
+  if (!mask) return;
+  if (typeof closeGsapModal === 'function') {
+    closeGsapModal(mask, function () { try { mask.parentNode && mask.parentNode.removeChild(mask); } catch (e) {} });
+  } else {
+    try { mask.parentNode && mask.parentNode.removeChild(mask); } catch (e) {}
+  }
+}
+
+// ---------- 重命名歌单 ----------
+function promptPlaylistPanelRename() {
+  var st = playlistPanelDetailState;
+  if (!st || !st.key || !st.playlist) return;
+  var parts = st.key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  if (provider !== 'netease') {
+    showToast(playlistProviderName(provider) + '暂不支持重命名歌单');
+    return;
+  }
+  var oldName = st.playlist.name || '';
+  openPlaylistManageConfirm(
+    '<h2>重命名歌单</h2>' +
+    '<div class="desc">输入新的歌单名称（将同步到网易云官方歌单）</div>' +
+    '<input id="playlist-rename-input" type="text" maxlength="40" value="' + escHtml(oldName) + '" autocomplete="off" ' +
+    'style="width:100%;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#fff;padding:0 10px;font:inherit;font-size:12.5px;outline:none;box-sizing:border-box;margin-bottom:16px">' +
+    '<div class="btn-row">' +
+    '<button class="modal-btn" type="button" onclick="closePlaylistManageConfirm()">取消</button>' +
+    '<button class="modal-btn primary" type="button" onclick="submitPlaylistPanelRename()">保存</button>' +
+    '</div>'
+  );
+  var input = document.getElementById('playlist-rename-input');
+  if (input) { input.focus(); input.select(); }
+}
+async function submitPlaylistPanelRename() {
+  var st = playlistPanelDetailState;
+  if (!st || !st.key) return;
+  var parts = st.key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  var pid = parts.slice(1).join(':');
+  var input = document.getElementById('playlist-rename-input');
+  var name = input ? input.value.trim() : '';
+  if (!name) { showToast('请输入歌单名称'); return; }
+  closePlaylistManageConfirm();
+  try {
+    var r = await apiJson('/api/playlist/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: provider, playlistId: pid, name: name })
+    });
+    if (!r || r.ok !== true || r.error) throw new Error(r && (r.message || r.error) || 'PLAYLIST_RENAME_FAILED');
+    // 本地同步名称
+    if (Array.isArray(userPlaylists)) {
+      userPlaylists.forEach(function (pl) {
+        if (pl && String(pl.id) === String(pid) && normalizePlaylistProvider(pl.provider) === provider) pl.name = name;
+      });
+    }
+    if (st.playlist) st.playlist.name = name;
+    showToast('歌单已重命名');
+    await refreshUserPlaylists(true);
+    renderPlaylistPanelDetailState();
+  } catch (err) {
+    showToast('重命名失败: ' + (err && err.message || ''));
+  }
+}
+
+// ---------- 删除歌单 (强警告 + 二次确认) ----------
+function promptPlaylistPanelDelete() {
+  var st = playlistPanelDetailState;
+  if (!st || !st.key || !st.playlist) return;
+  var parts = st.key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  if (provider !== 'netease') {
+    showToast(playlistProviderName(provider) + '暂不支持删除歌单');
+    return;
+  }
+  playlistDeleteConfirmState = { stage: 1, provider: provider, pid: parts.slice(1).join(':'), name: st.playlist.name || '' };
+  renderPlaylistDeleteConfirm();
+}
+function renderPlaylistDeleteConfirm() {
+  var st = playlistDeleteConfirmState;
+  openPlaylistManageConfirm(
+    '<h2>删除歌单</h2>' +
+    (st.stage === 1
+      ? '<div class="desc">即将删除歌单「<b>' + escHtml(st.name) + '</b>」<br>' +
+        '<span style="color:rgba(255,150,130,1);font-weight:700">删除后不可恢复，官方歌单将被永久删除。</span><br>' +
+        '该操作会真实影响你的网易云账号，请谨慎操作。</div>' +
+        '<div class="btn-row">' +
+        '<button class="modal-btn" type="button" onclick="closePlaylistManageConfirm()">取消</button>' +
+        '<button class="modal-btn primary" type="button" onclick="advancePlaylistDeleteConfirm()">我已了解，继续</button>' +
+        '</div>'
+      : '<div class="desc">再次确认：请输入歌单名称「<b>' + escHtml(st.name) + '</b>」以永久删除。</div>' +
+        '<input id="playlist-delete-confirm-input" type="text" maxlength="40" placeholder="输入歌单名称" autocomplete="off" ' +
+        'style="width:100%;height:36px;border-radius:9px;border:1px solid rgba(255,120,100,.35);background:rgba(255,90,60,.06);color:#fff;padding:0 10px;font:inherit;font-size:12.5px;outline:none;box-sizing:border-box;margin-bottom:16px">' +
+        '<div class="btn-row">' +
+        '<button class="modal-btn" type="button" onclick="closePlaylistManageConfirm()">取消</button>' +
+        '<button class="modal-btn primary" type="button" onclick="executePlaylistPanelDelete()">确认永久删除</button>' +
+        '</div>')
+  );
+  if (st.stage === 2) {
+    var input = document.getElementById('playlist-delete-confirm-input');
+    if (input) input.focus();
+  }
+}
+function advancePlaylistDeleteConfirm() {
+  playlistDeleteConfirmState.stage = 2;
+  renderPlaylistDeleteConfirm();
+}
+async function executePlaylistPanelDelete() {
+  var st = playlistDeleteConfirmState;
+  if (!st || !st.pid || st.stage !== 2) return;
+  var input = document.getElementById('playlist-delete-confirm-input');
+  var typed = input ? input.value.trim() : '';
+  if (String(typed) !== String(st.name)) {
+    showToast('输入的歌单名称不匹配，已取消');
+    closePlaylistManageConfirm();
+    return;
+  }
+  closePlaylistManageConfirm();
+  try {
+    var r = await apiJson('/api/playlist/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: st.provider, playlistId: st.pid })
+    });
+    if (!r || r.ok !== true || r.error) throw new Error(r && (r.message || r.error) || 'PLAYLIST_DELETE_FAILED');
+    // 本地移除该歌单并保存排序
+    if (Array.isArray(userPlaylists)) {
+      userPlaylists = userPlaylists.filter(function (pl) {
+        return !(pl && String(pl.id) === String(st.pid) && normalizePlaylistProvider(pl.provider) === st.provider);
+      });
+    }
+    if (typeof savePlaylistReorderKeys === 'function') savePlaylistReorderKeys();
+    // 关闭当前详情
+    cancelPlaylistPanelDetailRequest();
+    playlistPanelDetailState.key = '';
+    playlistPanelDetailState.tracks = [];
+    playlistPanelDetailState.playlist = null;
+    showToast('歌单已删除');
+    await refreshUserPlaylists(true);
+    renderPlaylistPanelDetailState();
+  } catch (err) {
+    showToast('删除歌单失败: ' + (err && err.message || ''));
+  }
+}
+
+// ---------- 从歌单移除歌曲 ----------
+function promptPlaylistPanelRemoveSong(index) {
+  var st = playlistPanelDetailState;
+  var song = st && st.tracks && st.tracks[index];
+  if (!st || !st.key || !song) return;
+  openPlaylistManageConfirm(
+    '<h2>从歌单移除</h2>' +
+    '<div class="desc">将从歌单移除《<b>' + escHtml(song.name || '未知歌曲') + '</b>》<br>该操作会同步到官方歌单。</div>' +
+    '<div class="btn-row">' +
+    '<button class="modal-btn" type="button" onclick="closePlaylistManageConfirm()">取消</button>' +
+    '<button class="modal-btn primary" type="button" onclick="executePlaylistPanelRemoveSong(' + index + ')">移除</button>' +
+    '</div>'
+  );
+}
+async function executePlaylistPanelRemoveSong(index) {
+  var st = playlistPanelDetailState;
+  var song = st && st.tracks && st.tracks[index];
+  if (!st || !st.key || !song) return;
+  var parts = st.key.split(':');
+  var provider = normalizePlaylistProvider(parts[0]);
+  var pid = parts.slice(1).join(':');
+  closePlaylistManageConfirm();
+  var payload = { provider: provider, playlistId: pid };
+  if (provider === 'netease') {
+    payload.trackIds = [String(song.id || song.mid || song.providerSongId || '')];
+    if (!payload.trackIds[0]) { showToast('缺少歌曲标识，无法移除'); return; }
+  } else if (provider === 'kugou') {
+    payload.song = song;
+    if (!song.hash && !song.fileHash && !song.id) { showToast('缺少歌曲标识，无法移除'); return; }
+  } else {
+    showToast(playlistProviderName(provider) + '暂不支持移除歌曲');
+    return;
+  }
+  try {
+    var r = await apiJson('/api/playlist/remove-song', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r || r.ok !== true || r.error) throw new Error(r && (r.message || r.error) || 'PLAYLIST_REMOVE_SONG_FAILED');
+    // 本地移除该行并刷新计数
+    st.tracks.splice(index, 1);
+    st.total = Math.max(0, Number(st.total || 0) - 1);
+    if (st.playlist && typeof st.playlist.trackCount === 'number') st.playlist.trackCount = Math.max(0, st.playlist.trackCount - 1);
+    if (Array.isArray(userPlaylists)) {
+      userPlaylists.forEach(function (pl) {
+        if (pl && String(pl.id) === String(pid) && normalizePlaylistProvider(pl.provider) === provider) {
+          pl.trackCount = Math.max(0, Number(pl.trackCount || 0) - 1);
+        }
+      });
+    }
+    showToast('已从歌单移除');
+    renderPlaylistPanelDetailRows();
+    renderUserPlaylistsList({ animate: false, preserveScroll: true });
+  } catch (err) {
+    showToast('移除失败: ' + (err && err.message || ''));
+  }
+}

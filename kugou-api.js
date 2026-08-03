@@ -2196,6 +2196,7 @@ module.exports = {
   handleKugouLikeCheck,
   handleKugouLikeToggle,
   handleKugouPlaylistAddSong,
+  handleKugouRemoveSongFromList,
   getKugouLoginInfo,
   normalizeKugouCookieInput,
   clearKugouSessionCaches,

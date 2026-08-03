@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mineradio 桌面小组件</title>
+  <style>
+    :root{
+      --mw-text:#f2f8ff;
+      --mw-sub:rgba(226,244,255,.60);
+      --mw-accent:#00f5d4;
+      --mw-accent-soft:#9cffdf;
+      --mw-border:rgba(156,255,223,.22);
+      --mw-glow:rgba(0,245,212,.30);
+      --mw-font:Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+    }
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;-webkit-user-select:none;user-select:none}
+    body{opacity:0;transition:opacity .22s ease}
+    body.show{opacity:1}
+    #widget{
+      position:absolute;inset:5px;
+      display:flex;flex-direction:column;
+      padding:12px 14px 10px;
+      border-radius:16px;
+      background:linear-gradient(160deg,rgba(16,22,32,.93),rgba(7,10,17,.89));
+      border:1px solid var(--mw-border);
+      box-shadow:0 0 0 1px rgba(0,0,0,.30),0 8px 30px rgba(0,0,0,.46),0 0 24px var(--mw-glow);
+      color:var(--mw-text);
+      font-family:var(--mw-font);
+      -webkit-app-region:drag;
+      contain:layout style;
+    }
+    .mw-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
+    #clock{
+      font-size:33px;font-weight:900;line-height:1;
+      letter-spacing:1px;font-variant-numeric:tabular-nums;
+      text-shadow:0 0 14px var(--mw-glow);
+    }
+    #date{font-size:10.5px;font-weight:600;color:var(--mw-sub);margin-top:4px;letter-spacing:.4px}
+    .mw-close{
+      -webkit-app-region:no-drag;
+      display:flex;align-items:center;justify-content:center;
+      width:24px;height:24px;flex:0 0 auto;
+      margin:-2px -2px 0 0;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:9px;
+      background:rgba(255,255,255,.045);
+      color:rgba(255,255,255,.72);
+      font:700 15px/1 var(--mw-font);
+      cursor:pointer;
+      transition:background .16s ease,color .16s ease,border-color .16s ease;
+    }
+    .mw-close:hover{background:rgba(255,255,255,.10);color:#fff;border-color:rgba(255,255,255,.20)}
+    .mw-body{display:flex;gap:12px;align-items:center;min-height:0}
+    #cover{
+      width:62px;height:62px;flex:0 0 auto;
+      border-radius:12px;object-fit:cover;
+      background:rgba(255,255,255,.06);
+      box-shadow:0 0 14px rgba(0,0,0,.38);
+    }
+    .mw-info{flex:1;min-width:0}
+    #title{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #artist{font-size:11px;font-weight:560;color:var(--mw-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+    #lyric{
+      margin-top:8px;
+      font-size:12.5px;font-weight:600;
+      color:var(--mw-accent);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      text-shadow:0 0 10px rgba(0,245,212,.22);
+    }
+    .mw-progress{ -webkit-app-region:no-drag; margin-top:auto; padding-top:11px }
+    .mw-track{
+      position:relative;height:5px;border-radius:999px;
+      background:rgba(255,255,255,.12);
+      cursor:pointer;
+    }
+    .mw-fill{
+      position:absolute;left:0;top:0;bottom:0;width:0%;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--mw-accent),var(--mw-accent-soft));
+      box-shadow:0 0 10px var(--mw-glow);
+    }
+    .mw-times{display:flex;justify-content:space-between;margin-top:5px;font-size:9.5px;font-weight:600;color:var(--mw-sub);font-variant-numeric:tabular-nums}
+    .mw-controls{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:9px;-webkit-app-region:no-drag}
+    .mw-ctl{
+      width:30px;height:30px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.12);
+      color:rgba(255,255,255,.78);
+      cursor:pointer;
+      transition:background .16s ease,color .16s ease,border-color .16s ease;
+      -webkit-app-region:no-drag;
+    }
+    .mw-ctl:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.22)}
+    .mw-ctl svg{display:block}
+  </style>
+</head>
+<body>
+  <div id="widget">
+    <div class="mw-head">
+      <div>
+        <div id="clock">--:--:--</div>
+        <div id="date"></div>
+      </div>
+      <button id="closeBtn" class="mw-close" type="button" title="关闭桌面小组件" aria-label="关闭桌面小组件">×</button>
+    </div>
+    <div class="mw-body">
+      <img id="cover" src="" alt="">
+      <div class="mw-info">
+        <div id="title">Mineradio</div>
+        <div id="artist">未在播放</div>
+        <div id="lyric">暂无歌词</div>
+      </div>
+    </div>
+    <div class="mw-progress">
+      <div id="track" class="mw-track"><div id="fill" class="mw-fill"></div></div>
+      <div class="mw-times"><span id="curTime">0:00</span><span id="durTime">0:00</span></div>
+    </div>
+    <div class="mw-controls">
+      <button id="prevBtn" class="mw-ctl" type="button" title="上一曲" aria-label="上一曲">
+        <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5l-11 7 11 7z"/></svg>
+      </button>
+      <button id="toggleBtn" class="mw-ctl" type="button" title="播放 / 暂停" aria-label="播放 / 暂停">
+        <svg id="toggleIcon" width="15" height="15" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l12 7-12 7z"/></svg>
+      </button>
+      <button id="nextBtn" class="mw-ctl" type="button" title="下一曲" aria-label="下一曲">
+        <svg width="15" height="15" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5l11 7-11 7z"/></svg>
+      </button>
+    </div>
+  </div>
+  <script>
+    'use strict';
+    var clockEl = document.getElementById('clock');
+    var dateEl = document.getElementById('date');
+    var coverEl = document.getElementById('cover');
+    var titleEl = document.getElementById('title');
+    var artistEl = document.getElementById('artist');
+    var lyricEl = document.getElementById('lyric');
+    var fillEl = document.getElementById('fill');
+    var trackEl = document.getElementById('track');
+    var curTimeEl = document.getElementById('curTime');
+    var durTimeEl = document.getElementById('durTime');
+    var closeBtn = document.getElementById('closeBtn');
+    var WEAKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    var state = { title: 'Mineradio', artist: '', cover: '', lyric: '', playing: false, currentTime: 0, duration: 0 };
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    function fmtTime(sec) {
+      sec = Number(sec) || 0;
+      if (!isFinite(sec) || sec < 0) sec = 0;
+      var m = Math.floor(sec / 60);
+      var s = Math.floor(sec % 60);
+      return m + ':' + pad(s);
+    }
+    function tickClock() {
+      var d = new Date();
+      clockEl.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+      dateEl.textContent = (d.getFullYear()) + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEAKDAYS[d.getDay()];
+    }
+    function renderProgress(overrideRatio) {
+      var duration = state.duration || 0;
+      var current = Math.max(0, Math.min(duration, Number(state.currentTime) || 0));
+      var ratio = (typeof overrideRatio === 'number' && isFinite(overrideRatio))
+        ? Math.max(0, Math.min(1, overrideRatio))
+        : (duration > 0 ? current / duration : 0);
+      fillEl.style.width = Math.round(ratio * 1000) / 10 + '%';
+      curTimeEl.textContent = fmtTime(ratio * duration);
+      durTimeEl.textContent = duration > 0 ? fmtTime(duration) : '0:00';
+    }
+    function applyState(payload) {
+      payload = payload || {};
+      state.title = payload.title || 'Mineradio';
+      state.artist = payload.artist || '';
+      state.cover = payload.cover || '';
+      state.lyric = payload.lyric || '';
+      state.playing = payload.playing === true;
+      state.currentTime = Number(payload.currentTime) || 0;
+      state.duration = Number(payload.duration) || 0;
+      titleEl.textContent = state.title;
+      artistEl.textContent = state.artist || '未在播放';
+      lyricEl.textContent = state.lyric || '暂无歌词';
+      if (state.cover) {
+        coverEl.src = state.cover;
+        coverEl.style.opacity = '1';
+      } else {
+        coverEl.removeAttribute('src');
+        coverEl.style.opacity = '0.25';
+      }
+      renderToggleIcon(state.playing);
+      renderProgress();
+    }
+    trackEl.addEventListener('click', function (e) {
+      var rect = trackEl.getBoundingClientRect();
+      if (!rect.width) return;
+      var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (window.desktopWindow && typeof window.desktopWindow.seekMusicWidget === 'function') {
+        window.desktopWindow.seekMusicWidget(ratio);
+      }
+    });
+    // 进度条拖动：拖到哪就动到哪（本地即时预览），松手才 seek
+    var seekDragState = null;
+    function updateSeekDrag(clientX) {
+      var rect = trackEl.getBoundingClientRect();
+      if (!rect.width) return;
+      var ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      renderProgress(ratio);
+      if (seekDragState) seekDragState.ratio = ratio;
+    }
+    function commitSeekDrag() {
+      if (seekDragState && typeof seekDragState.ratio === 'number'
+        && window.desktopWindow && typeof window.desktopWindow.seekMusicWidget === 'function') {
+        window.desktopWindow.seekMusicWidget(seekDragState.ratio);
+      }
+      seekDragState = null;
+    }
+    trackEl.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      seekDragState = { ratio: 0 };
+      try { trackEl.setPointerCapture(e.pointerId); } catch (err) { }
+      updateSeekDrag(e.clientX);
+    });
+    trackEl.addEventListener('pointermove', function (e) {
+      if (!seekDragState) return;
+      updateSeekDrag(e.clientX);
+    });
+    trackEl.addEventListener('pointerup', function (e) {
+      if (!seekDragState) return;
+      updateSeekDrag(e.clientX);
+      commitSeekDrag();
+    });
+    trackEl.addEventListener('pointercancel', function () { seekDragState = null; });
+    // 播放控制：上一曲 / 播放暂停 / 下一曲
+    function widgetControl(action) {
+      if (window.desktopWindow && typeof window.desktopWindow.controlMusicWidget === 'function') {
+        window.desktopWindow.controlMusicWidget(action);
+      }
+    }
+    document.getElementById('prevBtn').addEventListener('click', function (e) { e.preventDefault(); widgetControl('prev'); });
+    document.getElementById('nextBtn').addEventListener('click', function (e) { e.preventDefault(); widgetControl('next'); });
+    document.getElementById('toggleBtn').addEventListener('click', function (e) { e.preventDefault(); widgetControl('toggle'); });
+    var toggleIcon = document.getElementById('toggleIcon');
+    function renderToggleIcon(playing) {
+      toggleIcon.innerHTML = playing
+        ? '<path d="M7 5h3v14H7zM14 5h3v14h-3z"/>'
+        : '<path d="M7 5l12 7-12 7z"/>';
+    }
+    if (window.desktopWindow && typeof window.desktopWindow.onMusicWidgetControl === 'function') {
+      window.desktopWindow.onMusicWidgetControl(function (payload) {
+        if (payload && payload.action === 'toggle' && typeof window.desktopWindow.refreshMusicWidget !== 'function') {
+          // 渲染端执行后会推送新状态（含 playing），此处无需额外处理
+        }
+      });
+    }
+    closeBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.desktopWindow && typeof window.desktopWindow.closeMusicWidget === 'function') {
+        window.desktopWindow.closeMusicWidget();
+      }
+    });
+    tickClock();
+    setInterval(tickClock, 250);
+    renderProgress();
+    if (window.desktopWindow && typeof window.desktopWindow.onMusicWidgetState === 'function') {
+      window.desktopWindow.onMusicWidgetState(applyState);
+    }
+    document.body.classList.add('show');
+  </script>
+</body>
+</html>

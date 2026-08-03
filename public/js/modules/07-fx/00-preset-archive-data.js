@@ -531,11 +531,14 @@ function readUserFxArchives() {
   return raw.map(function (slot, index) {
     slot = slot && typeof slot === 'object' ? slot : {};
     var snapshot = normalizeFxArchiveSnapshot(slot.snapshot);
+    var ext = (slot && typeof slot === 'object' && slot.ext && typeof slot.ext === 'object') ? slot.ext : undefined;
     return {
       name: normalizeUserFxArchiveName(slot.name, index),
       createdAt: Number(slot.createdAt) || (snapshot ? (Number(slot.savedAt) || Date.now()) : 0),
       savedAt: snapshot ? (Number(slot.savedAt) || Date.now()) : 0,
-      snapshot: snapshot
+      snapshot: snapshot,
+      // 二改版扩展设置（均衡器/壁纸轮换/睡眠定时），随存档保存与恢复
+      ext: ext
     };
   }).filter(function (slot) {
     return !!(slot.snapshot || slot.savedAt || slot.createdAt);
@@ -1209,6 +1212,8 @@ function saveUserFxArchive(index) {
   var slot = userFxArchiveAt(index);
   if (!slot) return;
   slot.snapshot = captureFxArchiveSnapshot();
+  // 二改版扩展设置随存档保存（均衡器 / 壁纸轮换 / 睡眠定时）
+  slot.ext = captureMineradioExtraSettings();
   slot.savedAt = Date.now();
   slot.createdAt = slot.createdAt || slot.savedAt;
   slot.name = normalizeUserFxArchiveName(slot.name, index);
@@ -1216,13 +1221,78 @@ function saveUserFxArchive(index) {
   renderUserFxArchives();
   showToast('已保存到 ' + slot.name);
 }
+
+// 采集二改版新增功能的设置（防御式读取各模块全局）
+function captureMineradioExtraSettings() {
+  var ext = {};
+  try {
+    if (typeof eqGains !== 'undefined' && Array.isArray(eqGains)) {
+      ext.eq = {
+        gains: eqGains.slice(),
+        preset: (typeof eqPreset !== 'undefined' ? eqPreset : 'flat'),
+        loudness: !!(typeof eqLoudnessEnabled !== 'undefined' && eqLoudnessEnabled)
+      };
+    }
+    if (typeof wallpaperEngineRotationConfig === 'object' && wallpaperEngineRotationConfig) {
+      ext.rotation = {
+        enabled: !!wallpaperEngineRotationConfig.enabled,
+        intervalMinutes: Math.max(1, Math.min(240, Number(wallpaperEngineRotationConfig.intervalMinutes) || 15)),
+        ids: Array.isArray(wallpaperEngineRotationConfig.ids) ? wallpaperEngineRotationConfig.ids.slice() : []
+      };
+    }
+    if (typeof sleepTimerState === 'object' && sleepTimerState) {
+      ext.sleep = {
+        enabled: !!sleepTimerState.enabled,
+        minutes: Math.max(1, Math.min(240, Math.round(Number(sleepTimerState.totalMs) / 60000) || 30))
+      };
+    }
+  } catch (e) { }
+  return ext;
+}
+
+// 恢复扩展设置（防御式，仅应用可安全恢复的项）
+function applyMineradioExtraSettings(ext) {
+  if (!ext || typeof ext !== 'object') return;
+  try {
+    // 均衡器：写回全局状态并同步到活动链与 UI
+    if (ext.eq && typeof ext.eq.gains === 'object' && typeof eqGains !== 'undefined') {
+      eqGains = ext.eq.gains.slice();
+      if (typeof eqPreset !== 'undefined') eqPreset = ext.eq.preset || 'flat';
+      if (typeof eqLoudnessEnabled !== 'undefined') eqLoudnessEnabled = !!ext.eq.loudness;
+      if (typeof saveEqPreference === 'function') saveEqPreference();
+      if (typeof applyEqGainsToLiveChain === 'function') applyEqGainsToLiveChain();
+      if (typeof updateEqUi === 'function') updateEqUi();
+    }
+    // 壁纸轮换：写回配置并重启定时器/刷新 UI
+    if (ext.rotation && typeof wallpaperEngineRotationConfig === 'object' && wallpaperEngineRotationConfig) {
+      wallpaperEngineRotationConfig.enabled = !!ext.rotation.enabled;
+      wallpaperEngineRotationConfig.intervalMinutes = Math.max(1, Math.min(240, Number(ext.rotation.intervalMinutes) || 15));
+      if (Array.isArray(ext.rotation.ids)) wallpaperEngineRotationConfig.ids = ext.rotation.ids.slice();
+      if (typeof restartWallpaperEngineRotationTimer === 'function') restartWallpaperEngineRotationTimer();
+      if (typeof updateWallpaperEngineRotationUi === 'function') updateWallpaperEngineRotationUi();
+    }
+    // 睡眠定时：恢复启用状态（按预设分钟重新计时）
+    if (ext.sleep && typeof sleepTimerState === 'object' && sleepTimerState) {
+      if (ext.sleep.enabled) {
+        if (typeof sleepTimerStart === 'function') sleepTimerStart(Math.max(1, Math.min(240, Number(ext.sleep.minutes) || 30)));
+      } else if (sleepTimerState.enabled && typeof sleepTimerCancel === 'function') {
+        sleepTimerCancel();
+      }
+    }
+  } catch (e) { }
+}
+
 function applyUserFxArchive(index) {
   var slot = userFxArchiveAt(index);
   if (!slot || !slot.snapshot) {
     showToast('这个用户存档还是空白');
     return;
   }
-  if (applyFxArchiveSnapshot(slot.snapshot)) showToast('已应用 ' + slot.name);
+  if (applyFxArchiveSnapshot(slot.snapshot)) {
+    // 应用二改版扩展设置
+    applyMineradioExtraSettings(slot.ext);
+    showToast('已应用 ' + slot.name + (slot.ext ? '（含扩展设置）' : ''));
+  }
 }
 function renameUserFxArchive(index) {
   if (!userFxArchiveAt(index)) return;

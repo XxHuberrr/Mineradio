@@ -69,6 +69,43 @@ var AUDIO_FADE_IN_MS = audioFadePreference.fadeInMs;
 var AUDIO_FADE_OUT_MS = audioFadePreference.fadeOutMs;
 var AUDIO_SILENCE_GAIN = 0.0001;
 var audioFadeEnvelope = 1;
+// 均衡器 + 响度归一化（EQ 链插入 analyser 与 gainNode 之间，analyser/beatAnalyser 保持原始信号）
+var EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+var EQ_BAND_COUNT = EQ_FREQUENCIES.length;
+var EQ_GAIN_RANGE_DB = 12;
+var EQ_STORE_KEY = 'mineradio-eq-settings-v1';
+var EQ_AGC_TARGET_DB = -18;
+var EQ_AGC_MAX_COMPENSATION_DB = 6;
+var EQ_AGC_ATTACK_SECONDS = 2.0;
+var EQ_AGC_RELEASE_SECONDS = 3.5;
+// 均衡器偏好读取：自包含实现（本模块最先加载，不能依赖后加载模块的工具函数如 clampRange）
+function readEqPreference() {
+  function clampDb(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  var settings = { gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], preset: 'flat', loudness: false };
+  try {
+    var raw = localStorage.getItem(EQ_STORE_KEY);
+    if (raw) {
+      var parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.gains) && parsed.gains.length === EQ_BAND_COUNT) {
+        settings.gains = parsed.gains.map(function (g) {
+          return clampDb(Number(g) || 0, -EQ_GAIN_RANGE_DB, EQ_GAIN_RANGE_DB);
+        });
+      }
+      if (parsed && typeof parsed.preset === 'string') settings.preset = parsed.preset;
+      if (parsed && typeof parsed.loudness === 'boolean') settings.loudness = parsed.loudness;
+    }
+  } catch (e) { }
+  return settings;
+}
+var eqPreference = readEqPreference();
+var eqGains = eqPreference.gains;
+var eqPreset = eqPreference.preset;
+var eqLoudnessEnabled = eqPreference.loudness;
+var eqFilters = [];        // 当前主图 EQ 链（BiquadFilter 数组）
+var eqAgcGainNode = null;  // 当前主图 AGC 增益节点（始终在链中，未启用时增益=1）
+var eqAgcGain = 1;         // AGC 当前线性增益
+var eqAgcFrame = 0;        // AGC 动画帧句柄
+var eqAgcLastAt = 0;       // AGC 上次采样时间戳
 var userPlaylists = [], neteasePlaylists = [], qqPlaylists = [], kugouPlaylists = [], qishuiPlaylists = [], spotifyPlaylists = [], myPodcastCollections = [], myPodcastItems = {}, playlistCoverCache = {};
 var queueHydrationState = {
   token: 0,
@@ -152,6 +189,8 @@ var LAST_PLAYBACK_STORE_KEY = 'mineradio-last-playback-v1';
 var STARTUP_AUTOPLAY_STORE_KEY = 'mineradio-startup-autoplay-v1';
 var STARTUP_FAST_SKIP_STORE_KEY = 'mineradio-startup-fast-skip-v1';
 var STARTUP_RESUME_MODE_STORE_KEY = 'mineradio-startup-resume-mode-v1';
+var PLAYLIST_ORDER_STORE_KEY = 'mineradio-playlist-order-v1'; // 歌单队列排序持久化 {playlistKey: sortedTrackIds[]}
+var queueSortMode = '';                                        // 当前生效的队列排序方式: 'title'|'artist'|'duration'|'random'|''
 var LOCAL_BEATMAP_STORE_KEY = 'mineradio-local-beatmaps-v1';
 var LOCAL_BEAT_PREF_STORE_KEY = 'mineradio-local-beatmap-prefs-v1';
 var LOCAL_BEAT_COMBOS = ['', 'downbeat', 'push', 'drop', 'rebound', 'accent'];

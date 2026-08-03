@@ -1,3 +1,11 @@
+// 播放历史钩子：播放成功启动时通知 07-playback-history.js 记录。
+// typeof 守卫 + try/catch，确保历史模块缺失或异常时不影响播放链。
+function safeRecordPlaybackHistory(song) {
+  try {
+    if (typeof recordPlaybackHistory === 'function') recordPlaybackHistory(song);
+  } catch (e) { }
+}
+
 function albumGaplessSongKey(song) {
   if (!song) return '';
   if (song.__albumGaplessKey) return String(song.__albumGaplessKey);
@@ -1083,8 +1091,11 @@ async function playQueueAt(idx, opts) {
     if (song.type === 'local' || song.source === 'local' || song.localUrl) {
       markPlayPhase('local-audio');
       var localStarted = await playLocalQueueSong(song, idx, token, firstVisualPlay, opts, restoreResumeAt);
-      if (localStarted === true && typeof completeSourceFallbackRecovery === 'function') {
-        completeSourceFallbackRecovery(sourceFallbackRecoveryFromOptions(opts));
+      if (localStarted === true) {
+        safeRecordPlaybackHistory(song);
+        if (typeof completeSourceFallbackRecovery === 'function') {
+          completeSourceFallbackRecovery(sourceFallbackRecoveryFromOptions(opts));
+        }
       }
       return localStarted === true;
     }
@@ -1424,6 +1435,7 @@ async function playQueueAt(idx, opts) {
       }
       markPlayPhase('session-begin');
       safePlaybackStep('listen-session-begin', function () { beginListenSession(song, playbackContext); });
+      safeRecordPlaybackHistory(song);
       markPlayPhase('lyrics-fetch');
       if (song.type === 'podcast') {
         if (typeof cancelPendingTrackFallbackLyrics === 'function') cancelPendingTrackFallbackLyrics();

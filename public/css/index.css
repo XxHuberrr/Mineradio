@@ -884,21 +884,25 @@ body.wallpaper-engine-dwm-active.wallpaper-engine-glass-sampler-ready #wallpaper
   object-fit: cover;
   object-position: center;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 800ms ease;
   pointer-events: none;
   background: #000
 }
 
 #wallpaper-engine-image,
 #wallpaper-engine-video {
-  z-index: 1
+  z-index: 1;
+  /* 艺术化淡入：模糊转清晰 + 微缩放归位 + 长时柔和缓动 */
+  filter: blur(7px);
+  transform: scale(1.035);
+  transition: opacity 1200ms cubic-bezier(.4, 0, .2, 1), filter 1200ms cubic-bezier(.4, 0, .2, 1), transform 1200ms cubic-bezier(.4, 0, .2, 1);
 }
 
 #wallpaper-engine-freeze {
   z-index: 2;
   object-fit: fill;
   visibility: hidden;
-  transition: opacity 160ms cubic-bezier(.2, .8, .2, 1), visibility 0s linear 160ms
+  transition: opacity 600ms cubic-bezier(.4, 0, .2, 1), visibility 0s linear 600ms
 }
 
 #wallpaper-engine-layer.freeze-ready #wallpaper-engine-freeze {
@@ -909,7 +913,9 @@ body.wallpaper-engine-dwm-active.wallpaper-engine-glass-sampler-ready #wallpaper
 
 #wallpaper-engine-layer.image-ready #wallpaper-engine-image,
 #wallpaper-engine-layer.video-ready #wallpaper-engine-video {
-  opacity: 1
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
 }
 
 #wallpaper-engine-layer.engine-ready #wallpaper-engine-video {
@@ -2196,11 +2202,11 @@ body.simple-mode .fullscreen-toggle-btn {
 }
 
 body.simple-mode .control-cluster.modes {
-  gap: 12px
+  gap: 14px
 }
 
 body.simple-mode #bottom-bar {
-  width: min(1060px, calc(100vw - 56px))
+  width: min(1160px, calc(100vw - 48px))
 }
 
 body.simple-mode #controls {
@@ -3504,7 +3510,7 @@ body.desktop-shell.desktop-fullscreen #upload-actions {
   position: absolute;
   right: 0;
   top: 56px;
-  width: 232px;
+  width: 254px;
   padding: 9px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, .10);
@@ -5022,7 +5028,7 @@ body.immersive-mode #bottom-handle {
   pointer-events: none;
   filter: none;
   transition: opacity .34s cubic-bezier(.16, 1, .3, 1), bottom .34s cubic-bezier(.16, 1, .3, 1), width .34s, transform .46s cubic-bezier(.16, 1, .3, 1), filter .38s cubic-bezier(.16, 1, .3, 1);
-  width: min(1080px, calc(100vw - 56px));
+  width: min(1200px, calc(100vw - 48px));
   padding: 9px 22px 14px;
   border-radius: 50px;
   background: transparent;
@@ -5219,7 +5225,7 @@ body.home-controls-locked #bottom-bar {
   z-index: 1;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(340px, 1.08fr) minmax(380px, auto) minmax(400px, 1.08fr);
+  grid-template-columns: minmax(260px, 1.05fr) minmax(300px, auto) minmax(400px, 1.05fr);
   align-items: center;
   gap: 18px
 }
@@ -5227,7 +5233,7 @@ body.home-controls-locked #bottom-bar {
 .control-cluster {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 14px;
   min-width: 0;
   height: 62px
 }
@@ -5245,7 +5251,8 @@ body.home-controls-locked #bottom-bar {
 
 .control-cluster.modes {
   grid-column: 3;
-  justify-content: flex-end
+  justify-content: flex-end;
+  gap: 14px
 }
 
 .control-divider {
@@ -5719,6 +5726,16 @@ body.home-controls-locked #bottom-bar {
   pointer-events: none;
   transition: opacity .2s, transform .2s;
   z-index: 1
+}
+
+/* 均衡器面板：播放壁纸/动态背景下也需清晰可读，使用更实的黑色底。
+   用 #eq-control 提升特异性并加 !important，压过 saved-panel-glass 的 .volume-popover !important 覆盖。
+   面板挂到 document.body 后需 body 级规则（原 #eq-control 后代选择器不再命中） */
+#eq-control .eq-popover,
+body > .eq-popover {
+  background: linear-gradient(160deg, rgba(8, 9, 12, .97), rgba(4, 5, 8, .96)) !important;
+  backdrop-filter: blur(20px) saturate(1.05) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.05) !important;
 }
 
 .volume-control .ctrl-btn,
@@ -6970,13 +6987,8 @@ body.diy-mode #bottom-bar.stage-mode {
     left: calc(50% - 34px)
   }
 
-  body.diy-mode #controls {
-    grid-template-columns: minmax(240px, 1fr) minmax(214px, auto) minmax(260px, auto);
-    gap: 8px
-  }
-
   .control-cluster {
-    gap: 8px
+    gap: 14px
   }
 
   .control-cover {
@@ -7017,13 +7029,8 @@ body.diy-mode #bottom-bar.stage-mode {
     padding: 9px 14px 12px
   }
 
-  #controls {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 8px
-  }
-
   .control-cluster {
-    gap: 8px;
+    gap: 14px;
     height: 56px
   }
 
@@ -7112,7 +7119,7 @@ body.diy-mode #bottom-bar.stage-mode {
 #bottom-bar.stage-mode,
 body.simple-mode #bottom-bar {
   box-sizing: border-box;
-  width: min(1120px, calc(100vw - clamp(20px, 5vw, 72px)));
+  width: min(1200px, calc(100vw - clamp(20px, 5vw, 72px)));
   padding: clamp(8px, 1.2vw, 11px) clamp(12px, 2.2vw, 24px) clamp(10px, 1.35vw, 14px);
 }
 
@@ -7125,7 +7132,7 @@ body.diy-mode #bottom-bar.stage-mode {
 #controls,
 body.simple-mode #controls,
 body.diy-mode #controls {
-  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  grid-template-columns: minmax(340px, 1fr) max-content minmax(min-content, 1fr);
   gap: clamp(8px, 1.7vw, 18px);
 }
 
@@ -7142,12 +7149,13 @@ body.diy-mode #controls {
   justify-self: center;
   justify-content: center;
   width: max-content;
-  gap: clamp(8px, 1.1vw, 13px);
+  gap: 14px;
 }
 
 .control-cluster.modes {
   justify-content: flex-end;
   overflow: visible;
+  gap: 14px;
 }
 
 .control-track {
@@ -7170,6 +7178,12 @@ body.diy-mode #controls {
   .control-meta {
     max-width: min(220px, 100%)
   }
+
+  /* 窄屏（≤1180px）隐藏 Cuefield AutoMix 实验按钮（默认关闭）：
+     10 个控制按钮在窄窗超出列宽预算，隐藏实验按钮为 modes 右侧按钮腾出空间，避免与当前队列重叠 */
+  #cuefield-automix-btn {
+    display: none;
+  }
 }
 
 @media (max-width:920px) {
@@ -7185,7 +7199,7 @@ body.diy-mode #controls {
   #controls,
   body.simple-mode #controls,
   body.diy-mode #controls {
-    grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+    grid-template-columns: minmax(300px, 1fr) max-content minmax(min-content, 1fr);
   }
 
   .control-meta {
@@ -7202,16 +7216,15 @@ body.diy-mode #controls {
     max-width: min(132px, 100%)
   }
 
-  .control-cluster.modes {
-    gap: 6px
+  /* 超窄屏（≤720px）状态栏改为单列竖排，彻底避免三列按钮重叠 */
+  #controls,
+  body.simple-mode #controls,
+  body.diy-mode #controls {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width:1180px) {
-  body.diy-mode .control-cluster.modes {
-    gap: 7px
-  }
-
   body.diy-mode #controls {
     gap: 10px
   }
@@ -13956,7 +13969,7 @@ html:fullscreen body.desktop-shell #playlist-panel {
 
 .panel-tab {
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, .1);
   background: rgba(255, 255, 255, .03);
   color: rgba(255, 255, 255, .55);
@@ -14209,6 +14222,17 @@ html:fullscreen body.desktop-shell #playlist-panel {
   justify-content: center;
   white-space: nowrap;
   line-height: 1
+}
+
+/* 用户要求：当前队列入口已在左侧状态栏（pl-pane/queue-pane），移除 transport 里的重复按钮 */
+#mini-queue-btn {
+  display: none;
+}
+
+#queue-pane .queue-toolbar {
+  /* 取消 sticky：工具栏与歌单队列合在一起滚动（用户要求），不再固定在 top:82px 造成空隙/与歌曲重合 */
+  position: relative;
+  top: auto;
 }
 
 .pl-card {

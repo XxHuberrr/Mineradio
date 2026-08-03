@@ -149,6 +149,9 @@ async function hydratePlaylistQueueNextPage(reason) {
     var pageTracks = rawTracks.map(cloneSong);
     if (state.liked) markSongsLiked(pageTracks, true);
     if (playMode === 'shuffle' && pageTracks.length > 1) shuffleArrayInPlace(pageTracks);
+    if (playMode !== 'shuffle') {
+      pageTracks = applyPlaylistOrderToTracks(pageTracks, state.provider, state.sourceId);
+    }
     if (pageTracks.length) Array.prototype.push.apply(playQueue, pageTracks);
     state.loaded = playQueue.length;
     state.total = Math.max(state.total || 0, Number(r && (r.total || (r.playlist && r.playlist.trackCount))) || 0, state.loaded);
@@ -244,6 +247,11 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
       showToast(r && (r.message || r.error) || '歌单为空');
       return false;
     }
+    var desiredSong = null;
+    if (Number(opts.startIndex) >= 0 && seedTracks[Number(opts.startIndex)]) desiredSong = seedTracks[Number(opts.startIndex)];
+    if (playMode !== 'shuffle') {
+      seedTracks = applyPlaylistOrderToTracks(seedTracks, source.provider, source.id);
+    }
     playQueue = seedTracks;
     var catalogPlaylist = userPlaylists.find(function (pl) {
       return normalizePlaylistProvider(pl && pl.provider) === source.provider && String(pl && pl.id || '') === String(source.id || '');
@@ -276,6 +284,10 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
       pausedForBuffer: false
     };
     currentIdx = Math.max(0, Math.min(playQueue.length - 1, Number(opts.startIndex) || 0));
+    if (desiredSong) {
+      var restoredIdx = playQueue.indexOf(desiredSong);
+      if (restoredIdx >= 0) currentIdx = restoredIdx;
+    }
     safeRenderQueuePanel('playlist-load-first-page', { animate: true, scrollCurrent: true, deferWhenHidden: false });
     safeSwitchPlaylistTab('queue', 'playlist-load-first-page');
     safeShelfRebuild('playlist-load-first-page', true);

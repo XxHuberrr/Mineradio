@@ -55,7 +55,10 @@ function saveLastPlaybackSnapshot(force, reason) {
     duration: Math.max(0, Number(durationSec) || playbackDurationFromSong(song) || 0),
     playing: !!(audio && !audio.paused && !audio.ended),
     current: playbackRestoreSongSnapshot(song),
-    queue: queue
+    queue: queue,
+    playlistId: (queueHydrationState && queueHydrationState.playlistId) || '',
+    playlistProvider: (queueHydrationState && queueHydrationState.provider) || '',
+    playlistTitle: (queueHydrationState && queueHydrationState.title) || ''
   };
   try {
     localStorage.setItem(LAST_PLAYBACK_STORE_KEY, JSON.stringify(payload));
@@ -99,6 +102,18 @@ function restoreLastPlaybackSnapshot() {
     playQueue = queue;
     currentIdx = idx;
     currentLocalSong = null;
+    if (queueHydrationState) {
+      queueHydrationState.active = false;
+      queueHydrationState.loading = false;
+      queueHydrationState.provider = String(snapshot.playlistProvider || '');
+      queueHydrationState.playlistId = String(snapshot.playlistId || '');
+      queueHydrationState.sourceId = String(snapshot.playlistId || '');
+      queueHydrationState.title = String(snapshot.playlistTitle || '');
+      queueHydrationState.error = '';
+      queueHydrationState.hasMore = false;
+      queueHydrationState.pausedForBuffer = false;
+      queueHydrationState.queueRef = playQueue;
+    }
   }
   var shownSong = currentCoverSong() || current;
   if (shownSong) {

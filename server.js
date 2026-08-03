@@ -38,6 +38,8 @@ const {
   playlist_tracks,
   playlist_track_add,
   playlist_create,
+  playlist_delete,
+  playlist_update,
   playlist_detail,
   playlist_track_all,
   personalized,
@@ -82,6 +84,7 @@ const {
   handleKugouLikeCheck,
   handleKugouLikeToggle,
   handleKugouPlaylistAddSong,
+  handleKugouRemoveSongFromList,
   getKugouLoginInfo,
   normalizeKugouCookieInput,
   clearKugouSessionCaches,
@@ -159,7 +162,7 @@ const CUEFIELD_FEEDBACK_FILE = process.env.CUEFIELD_FEEDBACK_FILE || path.join(_
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.1.0';
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.1.3';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const qishuiAudioDecryptor = new TrackDecryptor();
 const qishuiAudioDecryptCache = new Map();
@@ -1036,6 +1039,22 @@ function normalizeApiCode(payload) {
 function normalizeApiMessage(payload) {
   const body = payload && (payload.body || payload);
   return (body && (body.message || body.msg || body.error)) || (body && body.body && (body.body.message || body.body.msg || body.body.error)) || '';
+}
+function playlistManageUnsupportedMessage(provider, action) {
+  const names = { netease: '网易云音乐', qq: 'QQ 音乐', kugou: '酷狗音乐', qishui: '汽水音乐', spotify: 'Spotify' };
+  const labels = { delete: '删除歌单', rename: '重命名歌单', removeSong: '从歌单移除歌曲' };
+  const name = names[provider] || provider || '该平台';
+  const label = labels[action] || action;
+  return name + '暂不支持' + label + '（平台渐进，后续版本逐步开放）';
+}
+function kugouRemoveSongMessage(result) {
+  if (!result || !result.error) return '';
+  const map = {
+    KUGOU_AUTH_REQUIRED: '酷狗登录未完成，请重新网页登录',
+    KUGOU_FAVORITE_LIST_NOT_FOUND: '未能定位到酷狗歌单',
+    KUGOU_SONG_NOT_IN_LIST: '歌曲不在该歌单中',
+  };
+  return map[result.error] || '';
 }
 function parseCookieString(cookieText) {
   const out = {};
@@ -6385,6 +6404,122 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[PlaylistAddSong]', err);
       sendJSON(res, { error: err.message }, 500);
+    }
+    return;
+  }
+
+  // ---------- 删除歌单 ----------
+  if (pn === '/api/playlist/delete') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const provider = String(body.provider || url.searchParams.get('provider') || 'netease').toLowerCase().trim();
+      const playlistId = String(body.playlistId || body.pid || url.searchParams.get('playlistId') || url.searchParams.get('pid') || '').trim();
+      if (!playlistId) { sendJSON(res, { ok: false, error: 'Missing playlist id' }, 400); return; }
+      // 平台渐进: 删除歌单仅网易云支持, 其余如实报告能力
+      if (provider !== 'netease') {
+        sendJSON(res, { ok: false, provider, error: 'unsupported', message: playlistManageUnsupportedMessage(provider, 'delete') });
+        return;
+      }
+      const info = await requireLogin(res);
+      if (!info) return;
+      const r = await playlist_delete({ id: playlistId, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(r);
+      if (code !== 200) {
+        sendJSON(res, { ok: false, provider, error: normalizeApiMessage(r) || 'PLAYLIST_DELETE_FAILED', code, body: r.body || r }, code === 401 ? 401 : 409);
+        return;
+      }
+      invalidateNeteasePlaylistTrackIndex(playlistId);
+      sendJSON(res, { ok: true, provider, playlistId, code, body: r.body || r });
+    } catch (err) {
+      console.error('[PlaylistDelete]', err);
+      sendJSON(res, { ok: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  // ---------- 重命名歌单 ----------
+  if (pn === '/api/playlist/rename') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const provider = String(body.provider || url.searchParams.get('provider') || 'netease').toLowerCase().trim();
+      const playlistId = String(body.playlistId || body.pid || url.searchParams.get('playlistId') || url.searchParams.get('pid') || '').trim();
+      const name = String(body.name || url.searchParams.get('name') || '').trim();
+      if (!playlistId) { sendJSON(res, { ok: false, error: 'Missing playlist id' }, 400); return; }
+      if (!name) { sendJSON(res, { ok: false, error: 'Missing playlist name' }, 400); return; }
+      // 平台渐进: 重命名仅网易云支持
+      if (provider !== 'netease') {
+        sendJSON(res, { ok: false, provider, error: 'unsupported', message: playlistManageUnsupportedMessage(provider, 'rename') });
+        return;
+      }
+      const info = await requireLogin(res);
+      if (!info) return;
+      const r = await playlist_update({ id: playlistId, name, cookie: userCookie, timestamp: Date.now() });
+      const code = normalizeApiCode(r);
+      if (code !== 200) {
+        sendJSON(res, { ok: false, provider, error: normalizeApiMessage(r) || 'PLAYLIST_RENAME_FAILED', code, body: r.body || r }, code === 401 ? 401 : 409);
+        return;
+      }
+      sendJSON(res, { ok: true, provider, playlistId, name, code, body: r.body || r });
+    } catch (err) {
+      console.error('[PlaylistRename]', err);
+      sendJSON(res, { ok: false, error: err.message }, 500);
+    }
+    return;
+  }
+
+  // ---------- 从歌单移除歌曲 ----------
+  if (pn === '/api/playlist/remove-song') {
+    try {
+      const body = req.method === 'POST' ? await readRequestBody(req) : {};
+      const provider = String(body.provider || url.searchParams.get('provider') || 'netease').toLowerCase().trim();
+      const playlistId = String(body.playlistId || body.pid || url.searchParams.get('playlistId') || url.searchParams.get('pid') || '').trim();
+      if (!playlistId) { sendJSON(res, { ok: false, error: 'Missing playlist id' }, 400); return; }
+
+      // 网易云: 走 playlist_tracks op=del
+      if (provider === 'netease') {
+        const info = await requireLogin(res);
+        if (!info) return;
+        let trackIds = [];
+        if (Array.isArray(body.trackIds)) trackIds = body.trackIds.map(String).filter(s => /^\d+$/.test(s));
+        else trackIds = String(body.trackIds || url.searchParams.get('trackIds') || '').split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s));
+        if (!trackIds.length) { sendJSON(res, { ok: false, error: 'Missing track ids' }, 400); return; }
+        const r = await playlist_tracks({ op: 'del', pid: playlistId, tracks: trackIds.join(','), cookie: userCookie, timestamp: Date.now() });
+        const code = normalizeApiCode(r);
+        if (code !== 200) {
+          sendJSON(res, { ok: false, provider, error: normalizeApiMessage(r) || 'PLAYLIST_REMOVE_SONG_FAILED', code, body: r.body || r }, code === 401 ? 401 : 409);
+          return;
+        }
+        invalidateNeteasePlaylistTrackIndex(playlistId);
+        sendJSON(res, { ok: true, provider, playlistId, trackIds, code, body: r.body || r });
+        return;
+      }
+
+      // 酷狗: 走已有的 handleKugouRemoveSongFromList
+      if (provider === 'kugou') {
+        if (!kugouCookieHasPlayback(kugouCookie)) {
+          sendJSON(res, { ok: false, provider, error: 'KUGOU_AUTH_REQUIRED', message: '酷狗登录未完成，请重新网页登录' }, 401);
+          return;
+        }
+        const song = (body.song && typeof body.song === 'object') ? body.song
+          : (body.trackIds ? { id: String(Array.isArray(body.trackIds) ? body.trackIds[0] : String(body.trackIds).split(',')[0]) } : {});
+        if (!song || !(song.hash || song.fileHash || song.id)) {
+          sendJSON(res, { ok: false, provider, error: 'Missing track info' }, 400);
+          return;
+        }
+        const result = await handleKugouRemoveSongFromList(playlistId, song, kugouCookie);
+        if (!result || result.success === false) {
+          sendJSON(res, { ok: false, provider, error: (result && result.error) || 'KUGOU_REMOVE_SONG_FAILED', message: kugouRemoveSongMessage(result) });
+          return;
+        }
+        sendJSON(res, { ok: true, provider, playlistId, body: result.body || result });
+        return;
+      }
+
+      // 平台渐进: QQ/汽水/Spotify 暂不支持
+      sendJSON(res, { ok: false, provider, error: 'unsupported', message: playlistManageUnsupportedMessage(provider, 'removeSong') });
+    } catch (err) {
+      console.error('[PlaylistRemoveSong]', err);
+      sendJSON(res, { ok: false, error: err.message }, 500);
     }
     return;
   }
