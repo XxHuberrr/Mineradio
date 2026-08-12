@@ -1,0 +1,24 @@
+{
+  "latestVersion": "2.1.1",
+  "release": {
+    "name": "Mineradio 2.1.1 test manifest",
+    "htmlUrl": "https://github.com/XxHuberrr/Mineradio/releases/tag/v2.1.1",
+    "downloadPages": [
+      {
+        "label": "夸克盘",
+        "url": "https://pan.quark.cn/s/f40289e1c5d3"
+      },
+      {
+        "label": "百度云",
+        "url": "https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp"
+      },
+      {
+        "label": "蓝奏云",
+        "url": "https://xxhuber.lanzout.com/mineradio2"
+      }
+    ],
+    "notes": [
+      "三线路外部更新测试"
+    ]
+  }
+}
