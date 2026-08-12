@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mineradio MVP</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <div class="brand-title">Mineradio</div>
+          <div class="brand-subtitle">本地音乐播放器</div>
+        </div>
+      </div>
+
+      <button id="btnOpen" class="primary-btn">打开音乐库</button>
+
+      <nav class="nav-panel">
+        <div class="nav-title">库</div>
+        <button class="nav-item active" type="button">全部音乐</button>
+        <button class="nav-item" type="button">最近播放</button>
+        <button class="nav-item" type="button">收藏</button>
+      </nav>
+
+      <div class="meta-panel">
+        <div class="meta-label">当前状态</div>
+        <div id="statusText" class="meta-value">待加载音乐</div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div class="search-wrap">
+          <input id="search" type="text" placeholder="搜索歌曲名称、歌手或文件名" />
+        </div>
+        <div class="count-pill"><span id="trackCount">0</span> 首</div>
+      </header>
+
+      <section class="hero-card">
+        <canvas id="visualizer" width="720" height="180" style="border-radius:12px; display:block"></canvas>
+        <div class="hero-info">
+          <div class="eyebrow">正在播放</div>
+          <h1 id="now">未播放</h1>
+          <div id="nowMeta" class="now-meta">请选择本地音乐文件夹</div>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <button id="btnFav" class="ghost-btn" type="button">☆ 收藏</button>
+            <button id="btnLoadLrc" class="ghost-btn" type="button">加载歌词(.lrc)</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="player-bar">
+        <div class="time-info">
+          <span id="currentTime">00:00</span>
+          <span class="divider">/</span>
+          <span id="totalTime">00:00</span>
+        </div>
+        <input id="progress" type="range" min="0" max="100" value="0" />
+        <div class="control-row">
+          <button id="prev" class="ghost-btn" type="button">上一首</button>
+          <button id="play" class="primary-btn large" type="button">播放</button>
+          <button id="next" class="ghost-btn" type="button">下一首</button>
+        </div>
+
+        <div id="lyrics" style="margin-top:12px; max-height:120px; overflow:auto; color:var(--muted); font-size:0.95rem; background:rgba(255,255,255,0.02); padding:10px; border-radius:8px">歌词未加载</div>
+      </section>
+
+      <section class="playlist-panel">
+        <div class="playlist-header">
+          <h2>播放列表</h2>
+        </div>
+        <ul id="list" class="playlist"></ul>
+      </section>
+    </main>
+  </div>
+
+  <audio id="audio" crossorigin="anonymous"></audio>
+  <script src="renderer.js"></script>
+</body>
+</html>

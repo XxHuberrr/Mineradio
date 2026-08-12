@@ -1,0 +1,14 @@
+{
+  "name": "desktop-music-player",
+  "version": "0.1.0",
+  "description": "简洁稳定的桌面音乐播放器（示例）",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.4.0"
+  }
+}
