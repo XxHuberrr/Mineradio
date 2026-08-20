@@ -2,9 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-set ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/
-
-echo [1/2] Installing dependencies (node-hid is optional; build failure is non-fatal)...
+echo [1/2] Installing dependencies (node-hid is required for the speaker HID driver)...
 call npm install
 if errorlevel 1 (
   echo npm install failed. Check network and node version.
