@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+.electron-cache/
+.electron-builder-cache/
 
 # Build output
 dist/

@@ -4,7 +4,29 @@
 //  - 扫码登录 (login_qr_*) + cookie 持久化 (./.cookie)
 //  - 试听检测 (freeTrialInfo) + 全 quality 探测
 //  - 所有受保护 API 都会带上已登录用户的 cookie
+//  - 网易云 API 统一注入国内 realIP：
+//      开启加速器(全局/TUN 模式)后出口 IP 变为海外，网易云会按地区
+//      版权返回受限结果(无播放地址 / code 404)，导致"已跳过受限歌曲"；
+//      realIP 让网易云按国内 IP 处理请求，加速器开启时仍可正常取音源。
+//      默认 116.25.146.177，可用环境变量 MINERADIO_NETEASE_REAL_IP
+//      覆盖为其它国内 IP，置空字符串可关闭注入。
 // ====================================================================
+const NeteaseCloudMusicApi = require('NeteaseCloudMusicApi');
+const NETEASE_REAL_IP = String(
+  process.env.MINERADIO_NETEASE_REAL_IP != null ? process.env.MINERADIO_NETEASE_REAL_IP : '116.25.146.177'
+).trim();
+function wrapNeteaseApiWithRealIP(api) {
+  const wrapped = {};
+  for (const key of Object.keys(api || {})) {
+    if (typeof api[key] !== 'function') continue; // 跳过 server getter 等非函数导出
+    wrapped[key] = function (data) {
+      const opts = Object.assign({}, data || {});
+      if (NETEASE_REAL_IP && !opts.realIP) opts.realIP = NETEASE_REAL_IP;
+      return api[key](opts);
+    };
+  }
+  return wrapped;
+}
 const {
   search,
   cloudsearch,
@@ -53,7 +75,99 @@ const {
   sati_resource_sub_list,
   lyric,
   lyric_new,
-} = require('NeteaseCloudMusicApi');
+} = wrapNeteaseApiWithRealIP(NeteaseCloudMusicApi);
+
+// ====================================================================
+//  网易云域名强制国内 DNS 解析（DoH）
+//  - 部分加速器会劫持 UDP 53 的 DNS 查询（转发到海外递归 DNS），
+//    网易云 GSLB 据此把 music.163.com / *.music.126.net 解析到海外
+//    (香港)节点 overseasv4.music.ntes53.netease.com，海外节点对播放
+//    地址执行地区版权限制，表现为"已跳过受限歌曲"、realIP 也无效。
+//  - 这里对网易云域名改用 HTTPS DoH（国内递归出口，免疫 UDP 53 劫持）
+//    解析出国内节点 IP，并注入 axios（NeteaseCloudMusicApi 全部请求）
+//    与 undici（音频代理 / 音源探针 / 封面代理），让请求直连国内节点。
+//  - 非网易云域名保持系统解析；DoH 失败时自动降级系统 DNS，不影响可用性。
+//    可用环境变量 MINERADIO_NETEASE_DOH=0 关闭本机制。
+// ====================================================================
+const httpsForDns = require('https');
+const dnsForDns = require('dns');
+const NETEASE_DOMAIN_RE = /(^|\.)(163\.com|126\.net|netease\.com|163jiasu\.com)$/i;
+const NETEASE_DOH_ENABLED = String(process.env.MINERADIO_NETEASE_DOH || '1').trim() !== '0';
+const DOH_ENDPOINTS = [
+  { host: '223.5.5.5', path: '/resolve?name={name}&type=A', headers: { accept: 'application/dns-json' } },
+  { host: 'doh.pub', path: '/dns-query?name={name}&type=A&ct=application/dns-json', headers: { accept: 'application/dns-json' } },
+];
+const dohCache = new Map();
+const DOH_REQUEST_TIMEOUT_MS = 5000;
+function dohHttpsJson(endpoint, name, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const req = httpsForDns.request({
+      host: endpoint.host,
+      path: endpoint.path.replace('{name}', encodeURIComponent(name)),
+      method: 'GET',
+      headers: endpoint.headers,
+      timeout: timeoutMs || DOH_REQUEST_TIMEOUT_MS,
+    }, (res) => {
+      let raw = '';
+      res.on('data', (chunk) => { raw += chunk; });
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(raw) }); }
+        catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('DOH_TIMEOUT')));
+    req.end();
+  });
+}
+async function resolveNeteaseViaDoH(hostname) {
+  const now = Date.now();
+  const cached = dohCache.get(hostname);
+  if (cached && cached.expiresAt > now) return cached.ips.slice();
+  if (!NETEASE_DOH_ENABLED) return [];
+  let lastError = null;
+  for (const endpoint of DOH_ENDPOINTS) {
+    try {
+      const result = await dohHttpsJson(endpoint, hostname);
+      if (result.status !== 200 || !result.body || !Array.isArray(result.body.Answer)) continue;
+      const ips = result.body.Answer
+        .filter(a => a.type === 1 && /^\d+\.\d+\.\d+\.\d+$/.test(a.data))
+        .map(a => a.data);
+      const ttl = Math.max(30, Math.min(300, Number(result.body.Answer[0] && result.body.Answer[0].TTL) || 60));
+      // NODATA 域（如 music.126.net 根域）也做短暂负缓存，避免反复查询
+      dohCache.set(hostname, { ips, expiresAt: now + (ips.length ? ttl : 60) * 1000 });
+      return ips;
+    } catch (e) { lastError = e; }
+  }
+  if (lastError) console.warn('[DomesticDNS] DoH failed for', hostname, lastError.code || lastError.message);
+  return [];
+}
+function domesticLookup(hostname, options, callback) {
+  if (typeof options === 'function') { callback = options; options = {}; }
+  const fallback = () => dnsForDns.lookup(hostname, options, callback);
+  if (!NETEASE_DOMAIN_RE.test(String(hostname || ''))) { fallback(); return; }
+  resolveNeteaseViaDoH(hostname).then((ips) => {
+    if (!ips.length) { fallback(); return; }
+    const all = !!(options && options.all);
+    if (all) callback(null, ips.map(ip => ({ address: ip, family: 4 })));
+    else callback(null, ips[0], 4);
+  }).catch(fallback);
+}
+try {
+  const axiosApi = require('axios');
+  if (axiosApi && axiosApi.defaults) axiosApi.defaults.lookup = domesticLookup;
+} catch (e) {
+  console.warn('[DomesticDNS] axios injection skipped:', e.message);
+}
+try {
+  const undici = require('undici');
+  if (undici && typeof undici.Agent === 'function' && typeof undici.setGlobalDispatcher === 'function') {
+    undici.setGlobalDispatcher(new undici.Agent({ connect: { lookup: domesticLookup } }));
+  }
+} catch (e) {
+  console.warn('[DomesticDNS] undici injection skipped:', e.message);
+}
+
 const http = require('http');
 const https = require('https');
 const fs   = require('fs');
@@ -6697,9 +6811,11 @@ server.listen(PORT, HOST, () => {
   console.log('======================================================');
   console.log(' 粒子音乐可视化 v2  →  http://localhost:' + PORT);
   console.log(' 登录态: ' + (userCookie ? '已登录(cookie已加载)' : '未登录'));
+  console.log(' 网易云国内DNS: ' + (NETEASE_DOH_ENABLED ? '已启用(DoH国内解析+realIP注入)' : '已关闭(仅realIP注入)'));
   console.log('======================================================');
 });
 
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
+server.__neteaseDomesticDns = { domesticLookup, resolveNeteaseViaDoH, NETEASE_DOMAIN_RE, dohCache };
 
 module.exports = server;
