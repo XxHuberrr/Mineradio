@@ -101,7 +101,8 @@
     "mpg123-decoder": "^1.0.3",
     "music-metadata": "11.14.0",
     "NeteaseCloudMusicApi": "^4.32.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "undici": "7.28.0"
   },
   "overrides": {
     "axios": "1.18.1",
