@@ -77,14 +77,14 @@ function onUserBtnClick() {
   }
   showLoginModal({ provider: hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider, source: 'top-account' });
 }
-var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666'];
 var ACCOUNT_PROVIDER_ORDER_STORE_KEY = 'mineradio-account-provider-order-v1';
 var ACCOUNT_PROVIDER_VISIBLE_STORE_KEY = 'mineradio-account-provider-visible-v1';
 var topAccountPillDrag = null;
 var topAccountPillClickSuppressed = false;
 
 function normalizeAccountProviderKey(provider) {
-  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  return provider === 'ai6666' ? 'ai6666' : (provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease'))));
 }
 function normalizeAccountProviderList(list) {
   var seen = {};
@@ -218,6 +218,7 @@ function syncAccountProviderOrderUi() {
   }
 }
 function platformMeta(provider) {
+  if (provider === 'ai6666') return { key: 'ai6666', short: 'AI', label: 'AI6666', app: 'AI6666', dot: 'ai6666' };
   if (provider === 'qq') return { key: 'qq', short: 'QQ', label: 'QQ 音乐', app: 'QQ 音乐 App', dot: 'qq' };
   if (provider === 'kugou') return { key: 'kugou', short: 'KG', label: '酷狗音乐', app: '酷狗音乐 App', dot: 'kugou' };
   if (provider === 'qishui') return { key: 'qishui', short: 'QS', label: '汽水音乐', app: '汽水音乐 App', dot: 'qishui' };
@@ -225,6 +226,7 @@ function platformMeta(provider) {
   return { key: 'netease', short: 'NE', label: '网易云音乐', app: '网易云音乐 App', dot: 'netease' };
 }
 function platformStatus(provider) {
+  if (provider === 'ai6666') return ai6666LoginStatus;
   if (provider === 'spotify') return spotifyLoginStatus;
   if (provider === 'qishui') return qishuiLoginStatus;
   if (provider === 'kugou') return kugouLoginStatus;
@@ -280,7 +282,7 @@ function hasPlatformLogin(provider) {
   return !!(st && st.loggedIn);
 }
 function hasAnyPlatformLogin() {
-  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || hasPlatformLogin('qishui') || hasPlatformLogin('spotify');
+  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || hasPlatformLogin('qishui') || hasPlatformLogin('spotify') || hasPlatformLogin('ai6666');
 }
 function firstLoggedProvider() {
   if (hasPlatformLogin(activeAccountProvider)) return activeAccountProvider;
@@ -292,10 +294,11 @@ function firstLoggedProvider() {
 }
 function providerAvatarSrc(provider, status) {
   status = status || platformStatus(provider) || {};
+  if (provider === 'ai6666') return 'https://ai6666.com/static/share-icon.png';
   if (status.avatar) return avatarSrc(status.avatar);
   var meta = platformMeta(provider);
-  var fill = provider === 'qq' ? '#bfd66b' : (provider === 'kugou' ? '#56e0ff' : (provider === 'qishui' ? '#45d68f' : (provider === 'spotify' ? '#1ed760' : '#d95b67')));
-  var bg = provider === 'qq' ? '#11150b' : (provider === 'kugou' ? '#071722' : (provider === 'qishui' ? '#071a12' : (provider === 'spotify' ? '#06140a' : '#180b0f')));
+  var fill = provider === 'ai6666' ? '#b17aff' : (provider === 'qq' ? '#bfd66b' : (provider === 'kugou' ? '#56e0ff' : (provider === 'qishui' ? '#45d68f' : (provider === 'spotify' ? '#1ed760' : '#d95b67'))));
+  var bg = provider === 'ai6666' ? '#120921' : (provider === 'qq' ? '#11150b' : (provider === 'kugou' ? '#071722' : (provider === 'qishui' ? '#071a12' : (provider === 'spotify' ? '#06140a' : '#180b0f'))));
   var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="' + bg + '"/><circle cx="48" cy="48" r="34" fill="' + fill + '" opacity=".16"/><text x="48" y="56" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="' + fill + '">' + meta.short + '</text></svg>';
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }

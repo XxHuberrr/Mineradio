@@ -67,8 +67,14 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   console.warn('audio graph recovery:', reason || 'unknown');
   return true;
 }
-function resetPlaybackAudioGraphForSourceSwitch(reason) {
+function resetPlaybackAudioGraphForSourceSwitch(reason, opts) {
   if (!audio) return;
+  opts = opts || {};
+  if (opts.freshMediaLifetime) {
+    replaceAudioElementForGraphRecovery(reason || 'fresh-media-lifetime', { preservePlayback: false });
+    if (audio && opts.preferCapture) audio.__mineradioForceCaptureSource = true;
+    return;
+  }
   var preparedGraph = audio.__mineradioPreparedAudioGraph;
   var previousSourceMedia = audioSourceMedia;
   var sourceUsesCapture = !!(source && source.__mineradioUsesCapture);

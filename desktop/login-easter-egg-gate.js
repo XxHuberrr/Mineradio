@@ -15,6 +15,7 @@ const LOGIN_EASTER_EGG_CREDENTIAL_FILES = [
   '.qishui-cookie',
   '.qishui-token',
   '.spotify-token.json',
+  '.ai6666-credentials.json',
 ];
 
 function safeReadJson(file) {

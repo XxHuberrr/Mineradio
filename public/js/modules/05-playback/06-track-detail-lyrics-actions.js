@@ -9,6 +9,7 @@ function songDurationLabel(song) {
   return formatProgramTime(sec);
 }
 function songSourceLabel(song) {
+  if (song && (song.provider === 'ai6666' || song.source === 'ai6666' || song.type === 'ai6666' || song.ai6666Id)) return 'AI6666';
   if (!song) return '未知';
   if (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify' || song.spotifyId || song.spotifyUri) return 'Spotify';
   if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'QQ 音乐';
@@ -610,6 +611,7 @@ function openTrackDetailModal(type, songOverride) {
       detailRow('专辑', song.album || (song.type === 'podcast' ? (song.radioName || 'Podcast') : '未知')) +
       detailRow('时长', songDurationLabel(song)) +
       detailRow('来源', songSourceLabel(song)) +
+      (songAccountProvider(song) === 'ai6666' ? (detailRow('生成模型', song.model || song.album || '未知') + detailRow('AI 标签', song.tags || (song.aiTags || []).join(' · ') || '无')) : '') +
       detailRow('歌词源', lyricSourceMode === 'custom' ? '自定义歌词' : (lyricsTimingSource === 'fallback' ? '占位歌词' : '原词')) +
       '</div>' +
       '<div class="detail-chip-row">' +
@@ -1125,6 +1127,15 @@ function deleteCustomLyricForCurrent() {
 var QISHUI_LIKE_ACCOUNT_ACTIONS_ENABLED = true;
 var QISHUI_PLAYLIST_WRITE_ACTIONS_ENABLED = true;
 var SONG_ACCOUNT_ACTION_ADAPTERS = {
+  ai6666: {
+    provider: 'ai6666',
+    label: 'AI6666',
+    like: true,
+    collect: false,
+    createPlaylist: false,
+    likeUrl: '/api/ai6666/song/favorite',
+    playlistTracksUrl: '/api/ai6666/playlist/tracks'
+  },
   netease: {
     provider: 'netease',
     label: '网易云音乐',
@@ -1211,6 +1222,8 @@ function songAccountIdentityValues(song, provider) {
     if (/^spotify:track:/i.test(uri)) raw.push(uri.split(':').pop());
   } else if (provider === 'qishui') {
     raw = [song.providerSongId, song.trackId, song.track_id, song.id];
+  } else if (provider === 'ai6666') {
+    raw = [song.ai6666Id, song.providerSongId, song.id];
   } else {
     raw = [song.id];
   }
@@ -1234,9 +1247,10 @@ function songAccountStateKey(song) {
 }
 function playlistAccountProvider(playlist) {
   var provider = String(playlist && (playlist.provider || playlist.source) || '').toLowerCase();
-  return /^(netease|qq|kugou|qishui|spotify)$/.test(provider) ? provider : 'netease';
+  return /^(netease|qq|kugou|qishui|spotify|ai6666)$/.test(provider) ? provider : 'netease';
 }
 function songAccountLoginStatus(provider) {
+  if (provider === 'ai6666') return ai6666LoginStatus || {};
   if (provider === 'spotify') return spotifyLoginStatus || {};
   if (provider === 'qishui') return qishuiLoginStatus || {};
   if (provider === 'kugou') return kugouLoginStatus || {};
@@ -1261,7 +1275,9 @@ function isCloudSong(song) {
 }
 function isSongLiked(song) {
   var key = songAccountStateKey(song);
-  return !!(key && likedSongMap[key]);
+  if (!key) return false;
+  if (Object.prototype.hasOwnProperty.call(likedSongMap, key)) return !!likedSongMap[key];
+  return songAccountProvider(song) === 'ai6666' && !!(song && (song.isFavorite || song.userFavorited));
 }
 function ensureLoggedInForAction(provider) {
   provider = provider || 'netease';
@@ -1358,9 +1374,10 @@ function syncLikeStatusForSong(song) {
 }
 function isLikedPlaylistContext(id, title, meta) {
   var rawId = String(id || '');
-  var idParts = rawId.match(/^(netease|qq|kugou|qishui|spotify):(.*)$/);
+  var idParts = rawId.match(/^(netease|qq|kugou|qishui|spotify|ai6666):(.*)$/);
   var provider = idParts ? idParts[1] : playlistAccountProvider(meta);
   var sid = idParts ? idParts[2] : rawId;
+  if (provider === 'ai6666' && sid === 'ai6666-favorites') return true;
   var text = String(title || (meta && meta.name) || '').trim();
   var hit = userPlaylists.find(function (pl) {
     return playlistAccountProvider(pl) === provider && String(pl.id || '') === sid;
@@ -1402,7 +1419,7 @@ async function toggleLikeSong(song) {
     return;
   }
   if (likeBusyMap[stateKey]) return;
-  var next = !likedSongMap[stateKey];
+  var next = !isSongLiked(song);
   likeBusyMap[stateKey] = true;
   likedSongMap[stateKey] = next;
   updateLikeButtons(song);
@@ -1415,7 +1432,14 @@ async function toggleLikeSong(song) {
       body: JSON.stringify({ id: id, like: next, song: song })
     });
     if (r && (r.error || r.success === false)) throw new Error(r.error || r.message || 'LIKE_FAILED');
-    likedSongMap[stateKey] = r && r.liked != null ? !!r.liked : next;
+    if (provider === 'ai6666') {
+      likedSongMap[stateKey] = r && r.liked != null ? !!r.liked : (r && r.isFavorite != null ? !!r.isFavorite : (r && r.userFavorited != null ? !!r.userFavorited : next));
+      song.isFavorite = likedSongMap[stateKey];
+      song.userFavorited = likedSongMap[stateKey];
+      refreshUserPlaylists(true);
+    } else {
+      likedSongMap[stateKey] = r && r.liked != null ? !!r.liked : next;
+    }
     showToast(next ? '已加入红心喜欢' : '已取消红心');
   } catch (err) {
     likedSongMap[stateKey] = !next;

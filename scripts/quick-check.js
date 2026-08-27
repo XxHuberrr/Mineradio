@@ -187,6 +187,44 @@ function runSpotifyApiResilienceRegressionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runAi6666IntegrationRegressionCheck() {
+  logStep('AI6666 adapter, privacy and player integration regression');
+  const testFiles = [
+    path.join(appRoot, 'tests', 'ai6666-api.test.js'),
+    path.join(appRoot, 'tests', 'ai6666-integration.test.js'),
+    path.join(appRoot, 'tests', 'login-provider-direct-actions.test.js'),
+    path.join(appRoot, 'tests', 'provider-isolation-regression.test.js'),
+  ];
+  const result = spawnSync(process.execPath, ['--test'].concat(testFiles), {
+    cwd: appRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`AI6666 integration regression failed: ${testFiles.map(rel).join(', ')}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runHighwayDrivePresetRegressionCheck() {
+  logStep('Highway Drive preset regression');
+  const testFiles = [
+    path.join(appRoot, 'tests', 'highway-drive-preset.test.js'),
+    path.join(appRoot, 'tests', 'visual-effects-access.test.js'),
+  ];
+  const result = spawnSync(process.execPath, ['--test'].concat(testFiles), {
+    cwd: appRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`Highway Drive preset regression failed: ${testFiles.map(rel).join(', ')}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 function runPlatformAccountSyncGuardCheck() {
   logStep('Platform account action and listen-sync guard');
   const testFile = path.join(appRoot, 'tests', 'platform-account-sync-guard.test.js');
@@ -1566,7 +1604,7 @@ function checkQishuiProviderGuard() {
   if (!/\/api\/qishui\/user\/playlists/.test(serverText) || !/\/api\/qishui\/playlist\/tracks/.test(serverText)) {
     fail('server.js must route Qishui user playlists and playlist track detail endpoints');
   }
-  if (!/qishuiPlaylists/.test(coreStoreText) || !/if \(provider === 'qishui'\) return '\/api\/qishui\/user\/playlists'/.test(playlistShellText) || !/neteasePlaylists\.concat\(qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists\)/.test(playlistShellText)) {
+  if (!/qishuiPlaylists/.test(coreStoreText) || !/if \(provider === 'qishui'\) return '\/api\/qishui\/user\/playlists'/.test(playlistShellText) || !/neteasePlaylists\.concat\(qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists, ai6666Playlists\)/.test(playlistShellText)) {
     fail('playlist panel refresh must merge Qishui playlists with the other providers');
   }
   if (!/normalizePlaylistProvider/.test(playlistDetailText) || !/\/api\/qishui\/playlist\/tracks/.test(playlistDetailText) || !/qishui:' \+ id/.test(playlistDetailText) || !/汽水音乐歌单/.test(playlistDetailText)) {
@@ -3030,6 +3068,8 @@ function checkSonicTopographyPresetGuard() {
   const mainLoopText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '11-main-loop.js'), 'utf8');
   const sonicText = fs.readFileSync(path.join(appRoot, 'public', 'sonic-topography-preset.js'), 'utf8');
   const sonicWorkshopText = fs.readFileSync(path.join(appRoot, 'public', 'sonic-workshop-preset.js'), 'utf8');
+  const highwayText = fs.readFileSync(path.join(appRoot, 'public', 'highway-drive-preset.js'), 'utf8');
+  const niulaiText = fs.readFileSync(path.join(appRoot, 'public', 'niulai-dream-preset.js'), 'utf8');
   const sonicWorkshopBridgeText = fs.readFileSync(path.join(appRoot, 'public', 'vendor', 'sonic-workshop', 'mineradio-bridge.html'), 'utf8');
   const paletteText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '02-visual', '07-lyrics-palette-text-utils.js'), 'utf8');
   const accentControlText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '07-fx', '02-accent-background-controls.js'), 'utf8');
@@ -3141,8 +3181,8 @@ function checkSonicTopographyPresetGuard() {
   if (!/function deriveGroundLayoutSettings/.test(sonicText) || !/sonicGroundRange/.test(sonicText) || !/state\.root\.rotation\.x\s*=\s*state\.boundRotX/.test(sonicText) || !/state\.root\.position\.set\(0,\s*layout\.y,\s*layout\.z\)/.test(sonicText) || !/state\.root\.scale\.setScalar\(layout\.scale\)/.test(sonicText)) {
     fail('Sonic Topography must expose a wide, lyric-safe horizontal platter layout inside Mineradio camera space');
   }
-  if (!/MAX_VISUAL_PRESET_INDEX = 8/.test(coreText) || !/SONIC_PRESET_INDEX = 7/.test(coreText) || !/SONIC_WORKSHOP_PRESET_INDEX = 8/.test(coreText) || !/MAX_VISUAL_PRESET_INDEX/.test(runtimeText + persistenceText)) {
-    fail('Sonic preset 7 and Workshop derivative preset 8 must survive autosave and startup restore clamps');
+  if (!/MAX_VISUAL_PRESET_INDEX = 10/.test(coreText) || !/SONIC_PRESET_INDEX = 7/.test(coreText) || !/SONIC_WORKSHOP_PRESET_INDEX = 8/.test(coreText) || !/HIGHWAY_PRESET_INDEX = 9/.test(coreText) || !/NIULAI_PRESET_INDEX = 10/.test(coreText) || !/MAX_VISUAL_PRESET_INDEX/.test(runtimeText + persistenceText)) {
+    fail('Sonic presets 7/8, Highway Drive preset 9, and Niu Lai preset 10 must survive autosave and startup restore clamps');
   }
   if (!/音域回响/.test(archiveText) || !/presetDisplayOrder = \[0, 6, 7, 8/.test(archiveText) || /音域回响[\s\S]{0,120}disabled:\s*true/.test(archiveText)) {
     fail('Sonic Topography must be exposed as the selectable 音域回响 preset');
@@ -3166,6 +3206,12 @@ function checkSonicTopographyPresetGuard() {
   });
   if (!/sonic-workshop-preset\.js/.test(loaderText) || !/BRIDGE_SRC = 'vendor\/sonic-workshop\/mineradio-bridge\.html'/.test(sonicWorkshopText) || !/MineradioSonicWorkshop\.update/.test(mainLoopText) || !/visual\.sonic-workshop/.test(mainLoopText) || !/MineradioSonicWorkshop\.onPresetChange/.test(presetGridText) || !/workshopPresetActive/.test(mainLoopText)) {
     fail('Sonic Workshop derivative preset must load, fade as preset 8, hide base particles, and update from the main loop');
+  }
+  if (!/highway-drive-preset\.js/.test(loaderText) || !/var INDEX = 9/.test(highwayText) || !/ROAD_BAND_COUNT = 8/.test(highwayText) || !/ROAD_SEGMENT_COUNT = 112/.test(highwayText) || !/function roadCenterAt/.test(highwayText) || !/triggerPulse/.test(highwayText) || !/MineradioHighwayDrive\.update/.test(mainLoopText) || !/visual\.highway-drive/.test(mainLoopText) || !/MineradioHighwayDrive\.onPresetChange/.test(presetGridText)) {
+    fail('Highway Drive must load as bounded preset 9 with two-way curves, detailed sonic bands, beat-linked speed, and lifecycle hooks');
+  }
+  if (!/niulai-dream-preset\.js/.test(loaderText) || !/var INDEX = 10/.test(niulaiText) || !/BAND_COUNT = 8/.test(niulaiText) || !/niulai-low-poly-calf/.test(niulaiText) || !/niulai-low-poly-lark/.test(niulaiText) || !/MineradioNiuLaiDream\.update/.test(mainLoopText) || !/visual\.niulai-dream/.test(mainLoopText) || !/MineradioNiuLaiDream\.onPresetChange/.test(presetGridText) || !/作者 Cyberforker/.test(archiveText)) {
+    fail('Niu Lai Dream must load as bounded preset 10 with original 3D characters, audio response, lifecycle hooks, and Cyberforker credit');
   }
   if (!/canvasAnchor\.parentNode\.insertBefore\(layer,\s*canvasAnchor\)/.test(sonicWorkshopText) || !/layer\.setAttribute\('inert'/.test(sonicWorkshopText) || !/iframe\.setAttribute\('inert'/.test(sonicWorkshopText) || !/iframe\.style\.pointerEvents\s*=\s*'none'/.test(sonicWorkshopText) || !/#sonic-workshop-layer,\s*#sonic-workshop-layer \*[\s\S]{0,120}pointer-events:\s*none !important/.test(fs.readFileSync(path.join(appRoot, 'public', 'css', 'index.css'), 'utf8'))) {
     fail('Sonic Workshop iframe layer must remain fully pointer-transparent so player buttons and window controls stay clickable');
@@ -5425,6 +5471,8 @@ async function main() {
   runLoginEasterEggGateRegressionCheck();
   runQishuiProviderDistributionRegressionCheck();
   runSpotifyApiResilienceRegressionCheck();
+  runAi6666IntegrationRegressionCheck();
+  runHighwayDrivePresetRegressionCheck();
   runPlatformAccountSyncGuardCheck();
   runHomeDailyRecommendationRegressionCheck();
   parseCombinedIndexModules();

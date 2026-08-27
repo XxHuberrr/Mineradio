@@ -4783,6 +4783,9 @@ function configureLocalServerEnvironment(port) {
   if (!process.env.SPOTIFY_CONFIG_FILE && !process.env.MINERADIO_SPOTIFY_CONFIG_FILE) {
     process.env.SPOTIFY_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.spotify-credentials.json');
   }
+  if (!process.env.AI6666_CONFIG_FILE && !process.env.MINERADIO_AI6666_CONFIG_FILE) {
+    process.env.AI6666_CONFIG_FILE = path.join(STABLE_USER_DATA_PATH, '.ai6666-credentials.json');
+  }
 }
 
 const APP_OWNED_MIGRATION_FILES = [
@@ -4796,6 +4799,7 @@ const APP_OWNED_MIGRATION_FILES = [
   '.qishui-qr-login.json',
   '.spotify-token.json',
   '.spotify-credentials.json',
+  '.ai6666-credentials.json',
   'current-fx-autosave.json',
   'desktop-behavior.json',
   'cuefield-feedback.jsonl',
@@ -4813,6 +4817,11 @@ function appOwnedMigrationFileValid(name, file) {
     if (name === '.kugou-cookie') return kugouCookieHasLogin(text);
     if (name === '.qishui-cookie') return qishuiCookieHasLogin(text);
     if (name === '.qishui-token') return text.length >= 10;
+    if (name === '.ai6666-credentials.json') {
+      const parsed = JSON.parse(text);
+      const source = parsed && parsed.ai6666 && typeof parsed.ai6666 === 'object' ? parsed.ai6666 : parsed;
+      return /^hh_[A-Za-z0-9_-]{24,160}$/.test(String(source && source.apiKey || ''));
+    }
     if (name === 'cuefield-feedback.jsonl') {
       return text.split(/\r?\n/).filter(Boolean).every(line => {
         try { return !!JSON.parse(line); } catch (_) { return false; }
@@ -4857,6 +4866,19 @@ function migrateMisplacedAppOwnedFiles() {
       console.warn('[UserDataMigration] skipped', name, error.message);
     }
   });
+
+  const ai6666Target = path.join(STABLE_USER_DATA_PATH, '.ai6666-credentials.json');
+  if (appOwnedMigrationFileValid('.ai6666-credentials.json', ai6666Target)) {
+    sources.forEach((sourceDir) => {
+      const candidate = path.join(sourceDir, '.ai6666-credentials.json');
+      if (path.resolve(candidate) === path.resolve(ai6666Target)) return;
+      try {
+        if (fs.existsSync(candidate)) fs.unlinkSync(candidate);
+      } catch (error) {
+        console.warn('[UserDataMigration] AI6666 credential source cleanup skipped', error.message);
+      }
+    });
+  }
 }
 
 function removeDeprecatedKugouVipEvidenceFiles() {

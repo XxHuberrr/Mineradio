@@ -18,6 +18,7 @@ function makeShelfManager() {
   var cardBuildQueue = null;
   var selectedIdx = -1;
   var coverBindResumeUntil = -10;
+  var visualSuppressed = false;
 
   function shelfPointerSelectionForegroundActive() {
     return selectedIdx >= 0 && !document.body.classList.contains('cursor-hidden');
@@ -68,9 +69,11 @@ function makeShelfManager() {
     if (hasAnyPlatformLogin() && (userPlaylists.length || myPodcastCollections.length)) {
       var source = activePlaylists();
       var items = source.map(function (pl) {
-        var provider = pl.provider === 'qq' ? 'qq' : (pl.provider === 'kugou' ? 'kugou' : (pl.provider === 'qishui' ? 'qishui' : (pl.provider === 'spotify' ? 'spotify' : 'netease')));
+        var provider = pl.provider === 'ai6666' ? 'ai6666' : (pl.provider === 'qq' ? 'qq' : (pl.provider === 'kugou' ? 'kugou' : (pl.provider === 'qishui' ? 'qishui' : (pl.provider === 'spotify' ? 'spotify' : 'netease'))));
         var sourceLabel = provider === 'qq' ? 'QQ' : (provider === 'kugou' ? 'KG' : (provider === 'qishui' ? 'QS' : (provider === 'spotify' ? 'SP' : 'NE')));
+        if (provider === 'ai6666') sourceLabel = 'AI';
         if (provider === 'spotify' && String(pl.id || '').indexOf('spotify:') !== 0) pl = Object.assign({}, pl, { id: 'spotify:' + pl.id });
+        if (provider === 'ai6666' && String(pl.id || '').indexOf('ai6666:') !== 0) pl = Object.assign({}, pl, { id: 'ai6666:' + pl.id });
         return {
           type: 'playlist', title: pl.name, sub: sourceLabel + ' · ' + (pl.trackCount || 0) + ' 首 · 播放 ' + compactCount(pl.playCount || 0),
           cover: pl.cover || '', tag: (pl.shelfPane || pl.shelf_pane) === 'fav' || (!(pl.shelfPane || pl.shelf_pane) && pl.subscribed) ? '收藏歌单' : (provider === 'qishui' ? '汽水歌单' : '我的歌单'), playlistId: (provider === 'qq' ? 'qq:' : (provider === 'kugou' ? 'kugou:' : (provider === 'qishui' ? 'qishui:' : ''))) + pl.id, provider: provider
@@ -742,6 +745,11 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
       rebuild(asyncCards);
     },
     getMode: function () { return mode; },
+    setVisualSuppressed: function (suppressed) {
+      visualSuppressed = !!suppressed;
+      if (group && visualSuppressed) group.visible = false;
+      if (connectorParticles && visualSuppressed) connectorParticles.visible = false;
+    },
     update: function (dt) {
       if (!group) return;
       // PSP 滚动平滑
@@ -769,7 +777,7 @@ void main(){ vec4 t = texture2D(uDotTex, gl_PointCoord); if (t.a < 0.02) discard
         : Math.max(0.05, summonVis.closeDuration * 0.65);
       shelfVisibility += (targetVis - shelfVisibility) * durationEaseFactor(visDuration, dt);
       if (shelfVisibility < 0.01 && targetVis === 0) shelfVisibility = 0;
-      group.visible = appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
+      group.visible = !visualSuppressed && appRevealed && (mode !== 'side' || shelfVisibility > 0) && (allItems.length > 0 || (contentList && contentList.isOpen()));
       if (connectorParticles) connectorParticles.visible = group.visible && mode === 'stage';
       if (mode === 'side') {
         var contentOpenForLayer = !!(contentList && contentList.isOpen());

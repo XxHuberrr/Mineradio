@@ -40,6 +40,7 @@ assert(
   '/api/qishui/song/like',
   '/api/qishui/playlist/add-song',
   '/api/qishui/song/comments',
+  '/api/ai6666/song/favorite',
   '/api/album/subscribe',
   '/api/playlist/subscribe',
   '/api/song/comments',
@@ -52,6 +53,12 @@ assert(
     && /accountDurationSync:\s*'unsupported'/.test(server)
     && /PLATFORM_DURATION_WRITE_UNAVAILABLE/.test(server),
   'listen-time capability responses must not overstate platform support'
+);
+assert(
+  /ai6666/.test(listenStats)
+    && /provider === 'ai6666'/.test(server)
+    && /ai6666:\s*\{[\s\S]{0,240}like:\s*true/.test(accountActions),
+  'AI6666 listen identity and favorite write-back must remain provider scoped'
 );
 assert(
   /provider\s*\+\s*':'\s*\+\s*id/.test(accountActions),

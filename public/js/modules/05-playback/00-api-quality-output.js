@@ -32,11 +32,13 @@ function normalizePlaybackProvider(provider) {
   if (provider === 'kugou') return 'kugou';
   if (provider === 'qishui') return 'qishui';
   if (provider === 'spotify') return 'spotify';
+  if (provider === 'ai6666') return 'ai6666';
   return 'netease';
 }
 function normalizePlaybackQualityForProvider(value, provider) {
   provider = normalizePlaybackProvider(provider);
   var q = normalizePlaybackQuality(value);
+  if (provider === 'ai6666') return q === 'lossless' ? 'lossless' : 'standard';
   if (provider === 'qq' && q === 'jymaster') return 'hires';
   return q;
 }
@@ -67,6 +69,7 @@ function getPlaybackQualityForSong(song) {
 function playbackQualityLabel(value, provider) {
   provider = normalizePlaybackProvider(provider || currentPlaybackQualityProvider());
   value = normalizePlaybackQualityForProvider(value, provider);
+  if (provider === 'ai6666') return value === 'lossless' ? 'AI6666 WAV' : 'AI6666 MP3';
   if (provider === 'spotify') return 'Spotify 匹配源';
   if (provider === 'qishui') return '汽水音质';
   if (provider === 'qq') {
@@ -93,6 +96,7 @@ function playbackQualityLabel(value, provider) {
 function playbackQualityShortLabel(value, provider) {
   provider = normalizePlaybackProvider(provider || currentPlaybackQualityProvider());
   value = normalizePlaybackQualityForProvider(value, provider);
+  if (provider === 'ai6666') return value === 'lossless' ? 'AI WAV' : 'AI MP3';
   if (provider === 'spotify') return 'SP';
   if (provider === 'qishui') return 'QS';
   if (provider === 'qq') {
@@ -194,7 +198,8 @@ function readPlaybackQualityPreference() {
     qq: PLAYBACK_QUALITY_DEFAULTS.qq,
     kugou: PLAYBACK_QUALITY_DEFAULTS.kugou,
     qishui: PLAYBACK_QUALITY_DEFAULTS.qishui,
-    spotify: PLAYBACK_QUALITY_DEFAULTS.spotify
+    spotify: PLAYBACK_QUALITY_DEFAULTS.spotify,
+    ai6666: PLAYBACK_QUALITY_DEFAULTS.ai6666
   };
   try {
     var raw = localStorage.getItem(PLAYBACK_QUALITY_STORE_KEY) || '';
@@ -206,7 +211,8 @@ function readPlaybackQualityPreference() {
         qq: normalizePlaybackQualityForProvider(legacy, 'qq'),
         kugou: normalizePlaybackQualityForProvider(legacy, 'kugou'),
         qishui: normalizePlaybackQualityForProvider(fallback.qishui, 'qishui'),
-        spotify: normalizePlaybackQualityForProvider(fallback.spotify, 'spotify')
+        spotify: normalizePlaybackQualityForProvider(fallback.spotify, 'spotify'),
+        ai6666: normalizePlaybackQualityForProvider(fallback.ai6666, 'ai6666')
       };
     }
     var parsed = JSON.parse(raw);
@@ -216,7 +222,8 @@ function readPlaybackQualityPreference() {
       qq: normalizePlaybackQualityForProvider(parsed.qq || fallback.qq, 'qq'),
       kugou: normalizePlaybackQualityForProvider(parsed.kugou || fallback.kugou || 'lossless', 'kugou'),
       qishui: normalizePlaybackQualityForProvider(parsed.qishui || fallback.qishui || 'standard', 'qishui'),
-      spotify: normalizePlaybackQualityForProvider(parsed.spotify || fallback.spotify || 'standard', 'spotify')
+      spotify: normalizePlaybackQualityForProvider(parsed.spotify || fallback.spotify || 'standard', 'spotify'),
+      ai6666: normalizePlaybackQualityForProvider(parsed.ai6666 || fallback.ai6666 || 'standard', 'ai6666')
     };
   } catch (e) {
     return fallback;
@@ -238,7 +245,7 @@ function updatePlaybackQualityUi() {
   var canUseSvip = provider === 'netease' && hasProviderSvip('netease', loginStatus);
   var displayQuality = provider === 'netease' && effectiveQuality === 'jymaster' && !canUseSvip ? 'hires' : effectiveQuality;
   if (label) label.textContent = playbackQualityShortLabel(displayQuality, provider);
-  var qualityProviderTitle = provider === 'spotify' ? 'Spotify 匹配源: ' : (provider === 'qishui' ? '汽水音质: ' : (provider === 'qq' ? 'QQ 音质: ' : (provider === 'kugou' ? '酷狗音质: ' : '网易云音质: ')));
+  var qualityProviderTitle = provider === 'ai6666' ? 'AI6666 音质: ' : (provider === 'spotify' ? 'Spotify 匹配源: ' : (provider === 'qishui' ? '汽水音质: ' : (provider === 'qq' ? 'QQ 音质: ' : (provider === 'kugou' ? '酷狗音质: ' : '网易云音质: '))));
   if (btn) btn.title = qualityProviderTitle + playbackQualityLabel(displayQuality, provider) +
     (provider === 'netease' && currentQuality === 'jymaster' && !canUseSvip ? ' · 超清母带需网易云 SVIP' : '');
   if (btn && runtimeCapQuality) btn.title += ' | 当前歌曲最高: ' + playbackQualityLabel(runtimeCapQuality, provider);
@@ -292,7 +299,7 @@ function canReloadCurrentTrackForQuality() {
   if (!audio || !audio.src || audio.paused || audio.ended) return false;
   var song = playQueue[currentIdx];
   if (!song || song.type === 'local' || song.source === 'local') return false;
-  return songProviderKey(song) === 'netease' || songProviderKey(song) === 'qq' || songProviderKey(song) === 'kugou';
+  return songProviderKey(song) === 'netease' || songProviderKey(song) === 'qq' || songProviderKey(song) === 'kugou' || songProviderKey(song) === 'ai6666';
 }
 function applyPlaybackQualityToCurrentTrack(nextQuality, provider) {
   var song = currentIdx >= 0 && currentIdx < playQueue.length ? playQueue[currentIdx] : null;

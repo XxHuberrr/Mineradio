@@ -32,6 +32,9 @@ function lyricEndpointForSong(songOrId) {
   if (provider === 'spotify') {
     return '/api/spotify/lyric?id=' + encodeURIComponent(song.id || song.providerSongId || song.spotifyId || '');
   }
+  if (provider === 'ai6666') {
+    return '/api/ai6666/lyric?id=' + encodeURIComponent(song.ai6666Id || song.providerSongId || song.id || '');
+  }
   var songId = song ? song.id : songOrId;
   return '/api/lyric?id=' + encodeURIComponent(songId);
 }
@@ -39,7 +42,7 @@ function lyricEndpointForSong(songOrId) {
 function persistentLyricCacheKey(song) {
   song = song || {};
   var provider = typeof songProviderKey === 'function' ? songProviderKey(song) : (song.source || song.provider || 'netease');
-  var id = song.id || song.mid || song.songmid || song.hash || '';
+  var id = song.ai6666Id || song.providerSongId || song.id || song.mid || song.songmid || song.hash || '';
   var artist = song.artist || song.singer || song.artists || '';
   return ['lyrics-v1', provider, id, song.name || song.title || '', artist].join('|');
 }
@@ -274,11 +277,13 @@ function parseLyricResponseToOriginalState(song, response) {
   response = response || {};
   var nativeLines = parseYrcText(response.yrc || '');
   var lrcLines = parseLyricText(response.lyric || '');
+  var isAi6666Song = !!(song && (song.provider === 'ai6666' || song.source === 'ai6666' || song.type === 'ai6666' || song.ai6666Id));
+  var plainLines = (isAi6666Song && !nativeLines.length && !lrcLines.length) ? parsePlainLyricText(response.plainLyric || '', response.duration || playbackDurationFromSong(song)) : [];
   var translationPayload = buildLyricTranslationPayload(response);
   var translationLines = translationPayload.lines;
   var hasNativeKaraoke = nativeLines.some(function (line) { return line.words && line.words.length; });
-  var timingSource = hasNativeKaraoke ? 'yrc-word' : (nativeLines.length ? 'yrc-line' : (lrcLines.length ? 'lrc-line' : 'fallback'));
-  var primaryLines = nativeLines.length ? nativeLines : lrcLines;
+  var timingSource = hasNativeKaraoke ? 'yrc-word' : (nativeLines.length ? 'yrc-line' : (lrcLines.length ? 'lrc-line' : (plainLines.length ? 'plain-estimated' : 'fallback')));
+  var primaryLines = nativeLines.length ? nativeLines : (lrcLines.length ? lrcLines : plainLines);
   var lines = withLyricFallbackForSong(song, attachLyricTranslations(primaryLines, translationLines));
   if (lines.length && lines[0].fallback) timingSource = 'fallback';
   return {
@@ -421,6 +426,23 @@ function parseLyricText(text) {
     var txt = line.replace(reg, '').trim();
     if (!txt) return;
     times.forEach(function (t) { lines.push({ t: t, text: txt, source: 'lrc' }); });
+  });
+  return finalizeLyricLineDurations(lines);
+}
+function parsePlainLyricText(text, durationSeconds) {
+  var source = String(text || '').replace(/^\uFEFF/, '').trim();
+  if (!source) return [];
+  var rows = source.split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean).slice(0, 1000);
+  if (!rows.length) return [];
+  var totalDuration = Math.max(rows.length * 2.4, Number(durationSeconds) || rows.length * 4.8);
+  var weights = rows.map(function (line) { return Math.max(4, Math.min(60, Array.from(line).length)); });
+  var totalWeight = weights.reduce(function (sum, weight) { return sum + weight; }, 0) || rows.length;
+  var cursor = 0;
+  var lines = rows.map(function (line, index) {
+    var share = Math.max(1.8, totalDuration * weights[index] / totalWeight);
+    var entry = { t: cursor, text: line, duration: share, charCount: Math.max(1, Array.from(line).length), source: 'plain-estimated' };
+    cursor += share;
+    return entry;
   });
   return finalizeLyricLineDurations(lines);
 }

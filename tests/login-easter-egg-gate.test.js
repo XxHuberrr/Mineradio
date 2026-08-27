@@ -109,7 +109,7 @@ async function run() {
     assert(preload.includes("resetLoginEasterEgg: () => ipcRenderer.invoke('mineradio-login-easter-egg-reset')"));
 
     const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/qrcode', '/api/qishui/login/check', '/api/spotify/config']
+    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/qrcode', '/api/qishui/login/check', '/api/spotify/config', '/api/ai6666/config']
       .forEach((route) => assert(server.includes(`'${route}'`), `${route} gate missing`));
     assert(!server.includes("pn === '/api/qishui/login/token'"), 'legacy Qishui token-login route must stay removed');
     assert(!server.includes("pn === '/api/qishui/login/cookie'"), 'legacy Qishui cookie-login route must stay removed');
@@ -165,6 +165,7 @@ async function run() {
     assert(css.includes('font-smooth: never'));
     assert(css.includes('.login-easter-pixel-glyph'));
     assert(css.includes('image-rendering: pixelated'));
+    assert(/\.login-easter-answer-hint\s*\{[\s\S]{0,220}color:\s*rgba\(255, 255, 255, \.48\)/.test(css), 'wish answer hint must be visibly rendered below the input');
 
     const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
     assert(html.includes('id="login-easter-unlock-cinematic"'));
@@ -174,6 +175,9 @@ async function run() {
     assert(html.includes('onclick="logoutAllAccountsAndResetEasterEgg()"'));
     assert(html.includes('已达成成就'));
     assert(html.includes('世界和平！'));
+    assert(html.includes('id="login-easter-answer-hint"'));
+    assert(html.includes('提示：四个字——<strong>世界和平</strong>'));
+    assert(html.includes('aria-describedby="login-easter-answer-hint login-easter-status"'));
     assert(!/id="login-easter-egg-input"[^>]*maxlength="4"/.test(html), 'IME composition must not be truncated before Chinese text is committed');
 
     const easterEggRenderer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', '08-account', '00-login-easter-egg.js'), 'utf8');

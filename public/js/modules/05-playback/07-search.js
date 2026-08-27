@@ -5,7 +5,7 @@ var searchLastResultQuery = '';
 var searchProviderNotice = '';
 var SEARCH_HISTORY_STORE_KEY = 'mineradio-search-history';
 var SEARCH_HISTORY_STORE_VERSION = 3;
-var SEARCH_HISTORY_MODES = ['song', 'netease', 'qq', 'kugou', 'qishui', 'spotify', 'podcast'];
+var SEARCH_HISTORY_MODES = ['song', 'netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666', 'podcast'];
 var MUSIC_SEARCH_INITIAL_VISIBLE = 18;
 var MUSIC_SEARCH_APPEND_BATCH = 14;
 var MUSIC_SEARCH_MAX_RESULTS = 180;
@@ -167,6 +167,7 @@ function updateSearchModeTabs() {
   var kugouBtn = document.getElementById('search-mode-kugou');
   var qishuiBtn = document.getElementById('search-mode-qishui');
   var spotifyBtn = document.getElementById('search-mode-spotify');
+  var ai6666Btn = document.getElementById('search-mode-ai6666');
   var podcastBtn = document.getElementById('search-mode-podcast');
   if (songBtn) {
     songBtn.classList.toggle('active', searchMode === 'song');
@@ -192,6 +193,10 @@ function updateSearchModeTabs() {
     spotifyBtn.classList.toggle('active', searchMode === 'spotify');
     spotifyBtn.setAttribute('aria-selected', searchMode === 'spotify' ? 'true' : 'false');
   }
+  if (ai6666Btn) {
+    ai6666Btn.classList.toggle('active', searchMode === 'ai6666');
+    ai6666Btn.setAttribute('aria-selected', searchMode === 'ai6666' ? 'true' : 'false');
+  }
   if (podcastBtn) {
     podcastBtn.classList.toggle('active', searchMode === 'podcast');
     podcastBtn.setAttribute('aria-selected', searchMode === 'podcast' ? 'true' : 'false');
@@ -206,7 +211,7 @@ function updateSearchModeTabs() {
   requestAnimationFrame(updateSearchPillGlassDisplacementMap);
 }
 function setSearchMode(mode) {
-  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify') ? mode : 'song';
+  mode = (mode === 'podcast' || mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' || mode === 'ai6666') ? mode : 'song';
   if (searchMode === mode) return;
   searchMode = mode;
   updateSearchModeTabs();
@@ -443,6 +448,7 @@ document.addEventListener('click', function (e) {
 updateSearchModeTabs();
 
 function songProviderKey(song) {
+  if (song && (song.provider === 'ai6666' || song.source === 'ai6666' || song.type === 'ai6666' || song.ai6666Id)) return 'ai6666';
   if (song && (song.provider === 'spotify' || song.source === 'spotify' || song.type === 'spotify' || song.spotifyId || song.spotifyUri)) return 'spotify';
   if (song && (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq')) return 'qq';
   if (song && (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui')) return 'qishui';
@@ -452,9 +458,10 @@ function songProviderKey(song) {
 function songSourceTagHtml(song, opts) {
   opts = opts || {};
   var rawKey = song && (song.resolvedPlaybackProvider || song.playbackProvider || song.audioProvider || song.providerResolved || '');
-  var key = /^(netease|qq|kugou|qishui|spotify)$/.test(String(rawKey || '')) ? String(rawKey) : songProviderKey(song);
+  var key = /^(netease|qq|kugou|qishui|spotify|ai6666)$/.test(String(rawKey || '')) ? String(rawKey) : songProviderKey(song);
   var label = key === 'qq' ? 'QQ' : (key === 'kugou' ? 'KG' : (key === 'qishui' ? 'QS' : (key === 'spotify' ? 'SP' : 'NE')));
-  if (opts.switcher) {
+  if (key === 'ai6666') label = 'AI';
+  if (opts.switcher && key !== 'ai6666') {
     return '<button type="button" class="tag-source ' + key + ' control-source-chip" title="切换音源" aria-haspopup="true" onclick="toggleControlSourceSwitcher(event)">' + label + '</button>';
   }
   return '<span class="tag-source ' + key + '">' + label + '</span>';
@@ -751,7 +758,7 @@ function searchIntentPrefersQQ(q) {
   q = String(q || '').toLowerCase();
   return /(^|\s)qq($|\s)|qq音乐|qq音樂/.test(q);
 }
-var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var MUSIC_SEARCH_PROVIDER_ORDER = ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666'];
 function searchProviderStatus(provider) {
   if (typeof platformStatus === 'function') return platformStatus(provider);
   if (provider === 'spotify') return spotifyLoginStatus;
@@ -774,7 +781,7 @@ function searchProviderCanSearch(provider) {
   return provider === 'netease' || provider === 'qq' || provider === 'kugou' || provider === 'qishui';
 }
 function searchModeProvider(mode) {
-  return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' ? mode : '';
+  return mode === 'netease' || mode === 'qq' || mode === 'kugou' || mode === 'qishui' || mode === 'spotify' || mode === 'ai6666' ? mode : '';
 }
 function activeSearchProvidersForMode(mode) {
   var specific = searchModeProvider(mode);
@@ -795,6 +802,7 @@ function searchProviderUrl(provider, q, limit, offset) {
   if (provider === 'kugou') return '/api/kugou/search?keywords=' + encodeURIComponent(q) + suffix;
   if (provider === 'qishui') return '/api/qishui/search?keywords=' + encodeURIComponent(q) + suffix;
   if (provider === 'spotify') return '/api/spotify/search?keywords=' + encodeURIComponent(q) + suffix;
+  if (provider === 'ai6666') return '/api/ai6666/search?keywords=' + encodeURIComponent(q) + suffix;
   return '/api/search?keywords=' + encodeURIComponent(q) + suffix;
 }
 function simpleSearchNorm(text) {
@@ -808,7 +816,7 @@ function searchQueryTokens(text) {
   return raw.split(/[\s·・，。,.!?！？"“”‘’()（）【】\[\]\-_/]+/).map(function (token) {
     return simpleSearchNorm(token);
   }).filter(function (token, index, all) {
-    if (!token || /^(qq|网易云|网易云音乐|酷狗|酷狗音乐|汽水|汽水音乐|spotify)$/.test(token)) return false;
+    if (!token || /^(qq|网易云|网易云音乐|酷狗|酷狗音乐|汽水|汽水音乐|spotify|ai6666)$/.test(token)) return false;
     return all.indexOf(token) === index;
   });
 }
@@ -1016,7 +1024,7 @@ function scoreSongSearchResult(song, q, sourceIndex) {
   if (song && song.playable === false) score -= 6;
   return score;
 }
-function mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, qishuiSongs, spotifySongs, limit, q) {
+function mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, qishuiSongs, spotifySongs, ai6666Songs, limit, q) {
   var out = [];
   var providerSeen = {};
   var canonicalSeen = {};
@@ -1026,7 +1034,7 @@ function mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, qishuiSongs, 
     if (providerSeen[key]) return;
     providerSeen[key] = true;
     song._searchScore = scoreSongSearchResult(song, q, sourceIndex);
-    var canonicalKey = searchCanonicalSongKey(song);
+    var canonicalKey = songProviderKey(song) === 'ai6666' ? '' : searchCanonicalSongKey(song);
     if (canonicalKey && canonicalSeen[canonicalKey] != null) {
       var existingIndex = canonicalSeen[canonicalKey];
       if ((song._searchScore || 0) > (out[existingIndex]._searchScore || 0)) out[existingIndex] = song;
@@ -1040,6 +1048,7 @@ function mergeSongSearchResults(neteaseSongs, qqSongs, kugouSongs, qishuiSongs, 
   (kugouSongs || []).forEach(function (song, i) { push(song, i); });
   (qishuiSongs || []).forEach(function (song, i) { push(song, i); });
   (spotifySongs || []).forEach(function (song, i) { push(song, i); });
+  (ai6666Songs || []).forEach(function (song, i) { push(song, i); });
   out.sort(function (a, b) { return (b._searchScore || 0) - (a._searchScore || 0); });
   return out.slice(0, limit);
 }
@@ -1055,7 +1064,7 @@ function mergeUniqueSearchSongPools(existing, incoming) {
   function push(song) {
     if (!song || !song.name || out.length >= MUSIC_SEARCH_MAX_RESULTS) return;
     var providerKey = songProviderKey(song) + ':' + (song.mid || song.id || (song.name + '|' + song.artist));
-    var canonicalKey = searchCanonicalSongKey(song);
+    var canonicalKey = songProviderKey(song) === 'ai6666' ? '' : searchCanonicalSongKey(song);
     if (providerSeen[providerKey] || (canonicalKey && canonicalSeen[canonicalKey])) return;
     providerSeen[providerKey] = true;
     if (canonicalKey) canonicalSeen[canonicalKey] = true;
@@ -1077,7 +1086,7 @@ async function fetchMusicSearchResults(q, mode, previousPages) {
   Object.keys(previousPages || {}).forEach(function (provider) {
     providerPages[provider] = Object.assign({}, previousPages[provider]);
   });
-  var pageLimitByProvider = { netease: 18, qq: 12, kugou: 12, qishui: 12, spotify: 10 };
+  var pageLimitByProvider = { netease: 18, qq: 12, kugou: 12, qishui: 12, spotify: 10, ai6666: 20 };
   var fetchProviders = providers.filter(function (provider) {
     return !previousPages || !previousPages[provider] || previousPages[provider].hasMore;
   });
@@ -1089,7 +1098,7 @@ async function fetchMusicSearchResults(q, mode, previousPages) {
       return { provider: provider, offset: offset, requestedLimit: limit, value: value || {} };
     });
   }));
-  var songsByProvider = { netease: [], qq: [], kugou: [], qishui: [], spotify: [] };
+  var songsByProvider = { netease: [], qq: [], kugou: [], qishui: [], spotify: [], ai6666: [] };
   fetchProviders.forEach(function (provider, index) {
     var entry = result[index];
     if (!entry || entry.status !== 'fulfilled') {
@@ -1124,6 +1133,7 @@ async function fetchMusicSearchResults(q, mode, previousPages) {
     songsByProvider.kugou,
     songsByProvider.qishui,
     songsByProvider.spotify,
+    songsByProvider.ai6666,
     MUSIC_SEARCH_MAX_RESULTS,
     q
   );

@@ -115,15 +115,17 @@ function bindMiniQueueLazyRender() {
   }, { passive: true });
 }
 function normalizePlaylistProvider(provider) {
-  if (provider === 'qq' || provider === 'kugou' || provider === 'qishui' || provider === 'spotify') return provider;
+  if (provider === 'qq' || provider === 'kugou' || provider === 'qishui' || provider === 'spotify' || provider === 'ai6666') return provider;
   return 'netease';
 }
 function playlistProviderLabel(provider) {
   provider = normalizePlaylistProvider(provider);
+  if (provider === 'ai6666') return 'AI';
   return provider === 'qq' ? 'QQ' : (provider === 'kugou' ? 'KG' : (provider === 'qishui' ? 'QS' : (provider === 'spotify' ? 'SP' : 'NE')));
 }
 function playlistProviderName(provider) {
   provider = normalizePlaylistProvider(provider);
+  if (provider === 'ai6666') return 'AI6666';
   if (provider === 'spotify') return 'Spotify';
   return provider === 'qq' ? 'QQ 音乐' : (provider === 'kugou' ? '酷狗音乐' : (provider === 'qishui' ? '汽水音乐' : '网易云音乐'));
 }
@@ -137,6 +139,7 @@ function playlistPanelProviderId(provider, id) {
   if (provider === 'kugou') return 'kugou:' + id;
   if (provider === 'qishui') return 'qishui:' + id;
   if (provider === 'spotify') return 'spotify:' + id;
+  if (provider === 'ai6666') return 'ai6666:' + id;
   return id;
 }
 function playlistCardPriority(pl) {
@@ -265,6 +268,7 @@ function playlistTracksEndpoint(provider, id, params) {
   if (provider === 'kugou') return '/api/kugou/playlist/tracks?' + query;
   if (provider === 'qishui') return '/api/qishui/playlist/tracks?' + query;
   if (provider === 'spotify') return '/api/spotify/playlist/tracks?' + query;
+  if (provider === 'ai6666') return '/api/ai6666/playlist/tracks?' + query;
   return '/api/playlist/tracks?' + query;
 }
 function playlistPanelDetailHtml(pl, provider, detailWindow) {
@@ -541,8 +545,9 @@ function playlistPanelBuildVirtualEntries() {
       playlistPanelVirtualCache.detailKey === playlistPanelDetailState.key &&
       playlistPanelVirtualCache.detailSig === detailSig) return playlistPanelVirtualCache;
   var labels = { netease: '网易云歌单', qq: 'QQ 音乐歌单', kugou: '酷狗音乐歌单', qishui: '汽水音乐歌单', spotify: 'Spotify 歌单' };
-  var order = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
-  var groups = { netease: [], qq: [], kugou: [], qishui: [], spotify: [] };
+  labels.ai6666 = 'AI6666 曲库';
+  var order = ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666'];
+  var groups = { netease: [], qq: [], kugou: [], qishui: [], spotify: [], ai6666: [] };
   userPlaylists.forEach(function (pl, sourceIndex) {
     var key = playlistPanelGroupKey(pl);
     if (!groups[key]) groups[key] = [];

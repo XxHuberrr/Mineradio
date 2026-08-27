@@ -1,5 +1,5 @@
 function loggedProviderCount() {
-  return ['netease', 'qq', 'kugou', 'qishui', 'spotify'].filter(function (key) { return hasPlatformLogin(key); }).length;
+  return ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666'].filter(function (key) { return hasPlatformLogin(key); }).length;
 }
 function updateUserModalUi() {
   activeAccountProvider = firstLoggedProvider();
@@ -16,6 +16,7 @@ function updateUserModalUi() {
   var addKugou = document.getElementById('account-add-kugou');
   var addQishui = document.getElementById('account-add-qishui');
   var addSpotify = document.getElementById('account-add-spotify');
+  var addAi6666 = document.getElementById('account-add-ai6666');
   if (chip) {
     chip.className = 'account-provider-chip ' + activeAccountProvider;
     chip.innerHTML = '<span class="account-source-dot ' + meta.dot + '"></span><span>' + meta.label + '</span>';
@@ -38,6 +39,9 @@ function updateUserModalUi() {
       var qishuiSync = st && st.webSession ? '可同步我的喜欢、歌单并按账号权益播放' : '请使用抖音 App 扫码';
       vipEl.textContent = qishuiMode + '  /  ' + qishuiSync;
       vipEl.style.color = 'rgba(69,214,143,0.78)';
+    } else if (activeAccountProvider === 'ai6666') {
+      vipEl.textContent = '账号曲库直连' + (st && st.credits != null ? ('  /  余额 ' + st.credits) : '') + '  /  播放前自动刷新地址';
+      vipEl.style.color = 'rgba(177,122,255,0.86)';
     } else if (activeAccountProvider === 'spotify') {
       var spProduct = st && st.product === 'premium' ? 'Spotify Premium' : (st && st.product ? ('Spotify ' + String(st.product).toUpperCase()) : 'Spotify 方案未知');
       vipEl.textContent = 'ID: ' + ((st && st.userId) || '-') + '  /  ' + spProduct + '  /  可同步歌单和 Liked Songs';
@@ -50,7 +54,7 @@ function updateUserModalUi() {
       vipEl.style.color = qqVipPending ? 'rgba(255,232,174,0.86)' : (hasProviderVip('qq', st) ? 'rgba(0,245,212,0.82)' : 'rgba(0,245,212,0.58)');
     }
   }
-  ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'both'].forEach(function (key) {
+  ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666', 'both'].forEach(function (key) {
     var btn = document.getElementById('user-provider-' + key);
     if (btn) btn.classList.toggle('active', key === 'both' ? dualAccountMode : (!dualAccountMode && activeAccountProvider === key));
   });
@@ -59,11 +63,13 @@ function updateUserModalUi() {
   if (addKugou) addKugou.textContent = hasPlatformLogin('kugou') ? '查看酷狗音乐' : '补登酷狗音乐';
   if (addQishui) addQishui.textContent = hasPlatformLogin('qishui') ? '重新登录汽水' : '登录汽水音乐';
   if (addSpotify) addSpotify.textContent = hasPlatformLogin('spotify') ? '查看 Spotify' : '连接 Spotify';
+  if (addAi6666) addAi6666.textContent = hasPlatformLogin('ai6666') ? '查看 AI6666' : '连接 AI6666';
   if (logoutBtn) logoutBtn.textContent =
     activeAccountProvider === 'qq' ? '退出 QQ 音乐' :
     (activeAccountProvider === 'kugou' ? '退出酷狗音乐' :
     (activeAccountProvider === 'qishui' ? '清除汽水登录态' :
     (activeAccountProvider === 'spotify' ? '退出 Spotify' : '退出网易云')));
+  if (logoutBtn && activeAccountProvider === 'ai6666') logoutBtn.textContent = '清除 AI6666 API Key';
   if (hint) hint.textContent = dualAccountMode
     ? '右上角已切换为多平台并排展示。'
     : '可切换右上角展示的平台；“我两个都要”会并排显示当前已登录的平台。';
@@ -80,7 +86,7 @@ function showUserModal() {
 }
 function closeUserModal() { closeGsapModal(document.getElementById('user-modal')); }
 function setActiveAccountProvider(provider) {
-  provider = provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  provider = provider === 'ai6666' ? 'ai6666' : (provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease'))));
   if (!hasPlatformLogin(provider)) {
     openProviderLogin(provider);
     return;
@@ -104,7 +110,7 @@ function requestDualLoginMode() {
   enableDualAccountView();
 }
 function openProviderLogin(provider) {
-  provider = provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  provider = provider === 'ai6666' ? 'ai6666' : (provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease'))));
   closeUserModal();
   loginProvider = provider;
   showLoginModal({ provider: provider });
@@ -145,6 +151,7 @@ function resetAllProviderRendererLoginState() {
   kugouLoginStatus = { provider: 'kugou', loggedIn: false, preview: false, nickname: '酷狗音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false };
   qishuiLoginStatus = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match' };
   spotifyLoginStatus = { provider: 'spotify', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: 'Spotify', userId: '', avatar: '', product: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, playbackKeyReady: false, playbackMode: 'recommend-match', tokenConfigured: false, tokenFileExists: false, credentialsFileExists: false, localConfigMissing: false };
+  ai6666LoginStatus = { provider: 'ai6666', loggedIn: false, configured: false, nickname: 'AI6666', avatar: '', credits: null, playbackKeyReady: false, playbackMode: 'direct-refresh', searchReady: false, capabilities: {} };
   loginStatusChecked = true;
   loginStatusCheckFailed = false;
   neteasePlaylists = [];
@@ -152,6 +159,7 @@ function resetAllProviderRendererLoginState() {
   kugouPlaylists = [];
   qishuiPlaylists = [];
   spotifyPlaylists = [];
+  ai6666Playlists = [];
   userPlaylists = [];
   myPodcastCollections = [];
   myPodcastItems = {};
@@ -190,7 +198,8 @@ async function logoutAllAccountsAndResetEasterEgg() {
       apiJson('/api/qq/logout'),
       apiJson('/api/kugou/logout'),
       apiJson('/api/qishui/logout'),
-      apiJson('/api/spotify/logout')
+      apiJson('/api/spotify/logout'),
+      apiJson('/api/ai6666/logout', { method: 'POST' })
     ]);
     var result = await requestLoginEasterEggReplayReset();
     if (!result || !result.ok || result.unlocked || result.resetComplete === false) {
@@ -225,6 +234,21 @@ async function logoutAllAccountsAndResetEasterEgg() {
 }
 
 async function logoutActiveAccount() {
+  if (activeAccountProvider === 'ai6666') {
+    try { await apiJson('/api/ai6666/logout', { method: 'POST' }); } catch (e) { }
+    ai6666LoginStatus = { provider: 'ai6666', loggedIn: false, configured: false, nickname: 'AI6666', avatar: '', credits: null, playbackKeyReady: false, playbackMode: 'direct-refresh', searchReady: false, capabilities: {} };
+    ai6666Playlists = [];
+    userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'ai6666'; });
+    playlistCatalogRevision += 1;
+    dualAccountMode = false;
+    activeAccountProvider = firstLoggedProvider();
+    renderUserBtn();
+    safeShelfRebuild('ai6666-logout');
+    if (hasAnyPlatformLogin()) updateUserModalUi();
+    else closeUserModal();
+    showToast('AI6666 API Key 已清除');
+    return;
+  }
   if (activeAccountProvider === 'spotify') {
     try { await apiJson('/api/spotify/logout'); } catch (e) { }
     try {
@@ -317,7 +341,7 @@ async function doLogout() {
   neteasePlaylists = [];
   if (!hasPlatformLogin('netease') || loggedProviderCount() < 2) dualAccountMode = false;
   activeAccountProvider = firstLoggedProvider();
-  userPlaylists = qqPlaylists.concat(kugouPlaylists || [], qishuiPlaylists || [], spotifyPlaylists || []);
+  userPlaylists = qqPlaylists.concat(kugouPlaylists || [], qishuiPlaylists || [], spotifyPlaylists || [], ai6666Playlists || []);
   playlistCatalogRevision += 1;
   myPodcastCollections = [];
   myPodcastItems = {};

@@ -14,6 +14,24 @@ const modulePath = path.join(
   '05-playback',
   '08-audio-graph-controls.js',
 );
+const playerControlsPath = path.join(
+  __dirname,
+  '..',
+  'public',
+  'js',
+  'modules',
+  '05-playback',
+  '14-player-controls.js',
+);
+const playbackStartPath = path.join(
+  __dirname,
+  '..',
+  'public',
+  'js',
+  'modules',
+  '05-playback',
+  '13-playback-start-audio.js',
+);
 
 function extractFunction(sourceText, functionName) {
   const start = sourceText.indexOf(`function ${functionName}(`);
@@ -301,6 +319,57 @@ function testCaptureTrackSwitchCreatesFreshAudioLifetime() {
   assert.equal(freshAudio.__mineradioQueueItemKey, 'queue-alpha');
 }
 
+function testDirectPlaybackCanRequestFreshCaptureLifetime() {
+  const { context, audio, calls } = makeHarness({ allowReplacement: true });
+  assert.equal(context.initAudio(), true);
+
+  context.resetPlaybackAudioGraphForSourceSwitch('test-direct-playback', {
+    freshMediaLifetime: true,
+    preferCapture: true,
+  });
+  const freshAudio = context.audio;
+
+  assert.notStrictEqual(freshAudio, audio, 'direct playback reused a media lifetime that was already graph-bound');
+  assert.equal(calls.replace, 1);
+  assert.equal(freshAudio.__mineradioForceCaptureSource, true, 'fresh direct playback did not select capture-only analysis');
+  assert.equal(context.initAudio(), false, 'capture analysis must wait until the fresh media has decoded data');
+
+  freshAudio.readyState = 4;
+  assert.equal(context.initAudio(), true, 'capture analysis did not initialize after media became ready');
+  assert.equal(context.source.__mineradioUsesCapture, true);
+  assert.equal(calls.createMediaElementSource, 1, 'fresh direct playback created another MediaElementSource');
+  assert.equal(calls.createMediaStreamSource, 1, 'fresh direct playback did not build capture-only analysis');
+}
+
+function testTrackSwitchWatchdogCoversRefreshableProviders() {
+  const playerControlsSource = fs.readFileSync(playerControlsPath, 'utf8');
+  const context = vm.createContext({
+    canRefreshCurrentPlaybackUrlForResume(song) {
+      return ['netease', 'qq', 'kugou', 'qishui', 'ai6666'].includes(song && song.provider);
+    },
+  });
+  vm.runInContext(extractFunction(playerControlsSource, 'trackSwitchStallRecoveryAllowed'), context);
+
+  assert.equal(context.trackSwitchStallRecoveryAllowed({ provider: 'ai6666' }, { trackSwitch: true }), true);
+  assert.equal(context.trackSwitchStallRecoveryAllowed({ provider: 'netease' }, { trackSwitch: true }), true);
+  assert.equal(context.trackSwitchStallRecoveryAllowed({ provider: 'local' }, { trackSwitch: true }), false);
+  assert.equal(context.trackSwitchStallRecoveryAllowed({ provider: 'local' }, { trackSwitch: false }), true);
+}
+
+function testOrdinaryTrackSwitchesUseFreshCaptureMediaLifetime() {
+  const playbackStartSource = fs.readFileSync(playbackStartPath, 'utf8');
+  assert.match(
+    playbackStartSource,
+    /resetPlaybackAudioGraphForSourceSwitch\('local-track-switch', \{ freshMediaLifetime: true, preferCapture: true \}\)/,
+    'local tracks must not reuse a media element whose clock may already be frozen',
+  );
+  assert.match(
+    playbackStartSource,
+    /albumGaplessHandoff \? 'album-gapless-handoff' : 'track-switch',[\s\S]{0,120}!albumGaplessHandoff[\s\S]{0,120}freshMediaLifetime: true, preferCapture: true/,
+    'ordinary remote track switches must create a fresh capture-backed media lifetime',
+  );
+}
+
 function testFrozenClockDoesNotTriggerCaptureRebuild() {
   const { context, calls, runNextTimer } = makeHarness();
   assert.equal(context.initAudio(), true);
@@ -391,6 +460,9 @@ function testForcedCaptureWaitsForMediaReadyState() {
 }
 
 testCaptureTrackSwitchCreatesFreshAudioLifetime();
+testDirectPlaybackCanRequestFreshCaptureLifetime();
+testTrackSwitchWatchdogCoversRefreshableProviders();
+testOrdinaryTrackSwitchesUseFreshCaptureMediaLifetime();
 testFrozenClockDoesNotTriggerCaptureRebuild();
 testTwoAdvancingSilentSamplesTriggerCaptureRebuild();
 testTransientCaptureSourceFailureRetainsForcedCaptureRetry();

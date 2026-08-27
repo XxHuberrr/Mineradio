@@ -1,5 +1,12 @@
 // ============================================================
+function resetDesktopWindowShellScroll() {
+  var shell = document.getElementById('desktop-window-shell');
+  if (!shell) return;
+  if (shell.scrollLeft) shell.scrollLeft = 0;
+  if (shell.scrollTop) shell.scrollTop = 0;
+}
 function refreshMainRendererViewport(reason) {
+  resetDesktopWindowShellScroll();
   if (typeof camera !== 'undefined' && camera) {
     camera.aspect = Math.max(1, innerWidth) / Math.max(1, innerHeight);
     camera.updateProjectionMatrix();
@@ -19,6 +26,8 @@ window.addEventListener('resize', function () {
   scheduleMainRendererViewportRefresh('resize');
   if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
 });
+var desktopWindowShell = document.getElementById('desktop-window-shell');
+if (desktopWindowShell) desktopWindowShell.addEventListener('scroll', resetDesktopWindowShellScroll, { passive: true });
 document.addEventListener('keydown', function (e) {
   if (isTypingTarget(e.target)) return;
   if (handleConfiguredLocalHotkey(e)) return;
@@ -76,8 +85,7 @@ document.addEventListener('keydown', function (e) {
   }
   else if (e.code === 'KeyL') { if (!immersiveMode) toggleLyricsPanel(); }
   else if (e.code === 'KeyP') {
-    if (!immersiveMode && diyPlayerMode) toggleFxPanel();
-    else if (!immersiveMode) showToast('开启 DIY 玩家模式后可打开视觉控制台');
+    if (!immersiveMode) toggleFxPanel();
   }
   else if (e.code === 'KeyI') toggleImmersiveMode();
   else if (e.code === 'KeyF') toggleFullscreen();

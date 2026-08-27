@@ -129,6 +129,19 @@ const {
   handleSpotifyLyric,
 } = require('./spotify-api');
 const {
+  getAi6666Config,
+  saveAi6666Config,
+  clearAi6666Config,
+  handleAi6666Status,
+  handleAi6666UserPlaylists,
+  handleAi6666PlaylistTracks,
+  handleAi6666Search,
+  handleAi6666SongDetail,
+  handleAi6666SongUrl,
+  handleAi6666Lyric,
+  handleAi6666Favorite,
+} = require('./ai6666-api');
+const {
   appendCuefieldFeedback,
   readCuefieldFeedbackStats,
 } = require('./cuefield/feedback-log');
@@ -148,6 +161,12 @@ const LOGIN_EASTER_EGG_PROTECTED_ROUTES = new Set([
   '/api/qishui/login/qrcode',
   '/api/qishui/login/check',
   '/api/spotify/config',
+  '/api/ai6666/config',
+]);
+const AI6666_READ_ROUTES = new Set([
+  '/api/ai6666/status', '/api/ai6666/user/playlists', '/api/ai6666/playlist/tracks',
+  '/api/ai6666/search', '/api/ai6666/recommendations', '/api/ai6666/song/detail',
+  '/api/ai6666/song/url', '/api/ai6666/lyric',
 ]);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
@@ -405,11 +424,25 @@ function clearAllRuntimeLoginCredentials(reason) {
   clearKugouSessionCaches();
   const qishui = clearQishuiAccessToken();
   const spotify = clearSpotifyToken();
+  let ai6666 = null;
+  try {
+    ai6666 = clearAi6666Config();
+  } catch (error) {
+    return {
+      ok: false,
+      reason: String(reason || 'login-reset'),
+      error: error && error.code || 'AI6666_CONFIG_CLEAR_FAILED',
+      qishui: !qishui || qishui.ok !== false,
+      spotify: !spotify || spotify.ok !== false,
+      ai6666: false,
+    };
+  }
   return {
     ok: true,
     reason: String(reason || 'login-reset'),
     qishui: !qishui || qishui.ok !== false,
     spotify: !spotify || spotify.ok !== false,
+    ai6666: !ai6666 || ai6666.ok !== false,
   };
 }
 
@@ -436,6 +469,49 @@ function sendJSON(res, data, status) {
     'Expires': '0',
   });
   res.end(JSON.stringify(data));
+}
+
+function isLoopbackAddress(value) {
+  value = String(value || '').toLowerCase();
+  return value === '::1' || value === '127.0.0.1' || value === '::ffff:127.0.0.1';
+}
+
+function isTrustedLocalMutationRequest(req) {
+  if (!req || !isLoopbackAddress(req.socket && req.socket.remoteAddress)) return false;
+  const origin = String(req.headers && (req.headers.origin || req.headers.referer) || '').trim();
+  if (!origin) return true;
+  try {
+    const target = new URL(origin);
+    return target.protocol === 'http:' && (target.hostname === '127.0.0.1' || target.hostname === 'localhost' || target.hostname === '[::1]' || target.hostname === '::1');
+  } catch (_) {
+    return false;
+  }
+}
+
+function ai6666PublicError(error, fallbackCode) {
+  const code = String(error && error.code || fallbackCode || 'AI6666_REQUEST_FAILED').slice(0, 80);
+  const messages = {
+    AI6666_API_KEY_REQUIRED: '请先在账号面板配置 AI6666 API Key。',
+    AI6666_API_KEY_INVALID: 'AI6666 API Key 格式无效。',
+    AI6666_AUTH_REQUIRED: 'AI6666 API Key 已失效，请重新保存。',
+    AI6666_SONG_ID_REQUIRED: '缺少有效的 AI6666 歌曲 ID。',
+    AI6666_TIMEOUT: 'AI6666 请求超时，请稍后重试。',
+    AI6666_NETWORK_ERROR: '暂时无法连接 AI6666，请稍后重试。',
+    AI6666_CONFIG_CLEAR_FAILED: 'AI6666 凭据清除失败。',
+    AI6666_RESPONSE_TOO_LARGE: 'AI6666 响应超过安全大小限制。',
+    AI6666_INVALID_RESPONSE: 'AI6666 返回了无效响应。',
+  };
+  const requestedStatus = Number(error && error.statusCode) || 500;
+  const status = requestedStatus >= 400 && requestedStatus <= 599 ? requestedStatus : 500;
+  return {
+    status,
+    body: {
+      provider: 'ai6666',
+      ok: false,
+      error: code,
+      message: messages[code] || 'AI6666 服务暂时不可用，请稍后重试。',
+    },
+  };
 }
 function readPackageInfo() {
   try {
@@ -2847,6 +2923,7 @@ function audioProxyHeadersFor(audioUrl, range) {
     const host = new URL(audioUrl).hostname.toLowerCase();
     if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
     if (host.includes('qishui.com') || host.includes('byteimg.com') || host.includes('douyin')) headers.Referer = 'https://www.qishui.com/';
+    if (host.includes('ai6666.com') || host.includes('suno.ai')) headers.Referer = 'https://ai6666.com/';
     const kugouReferer = kugouAudioReferer(audioUrl);
     if (kugouReferer) headers.Referer = kugouReferer;
   } catch (e) {}
@@ -4496,7 +4573,7 @@ async function getPlaybackLoginInfo() {
 
 function normalizeListenReportProvider(value) {
   value = String(value || '').trim().toLowerCase();
-  if (value === 'qq' || value === 'kugou' || value === 'qishui' || value === 'spotify') return value;
+  if (value === 'qq' || value === 'kugou' || value === 'qishui' || value === 'spotify' || value === 'ai6666') return value;
   return value === 'netease' || value === 'cloud' || value === 'song' ? 'netease' : '';
 }
 
@@ -4506,6 +4583,7 @@ function listenReportSongId(provider, song) {
   if (provider === 'kugou') return String(song.hash || song.mixSongId || song.providerSongId || song.id || '');
   if (provider === 'qishui') return String(song.providerSongId || song.trackId || song.id || '');
   if (provider === 'spotify') return String(song.spotifyId || song.providerSongId || song.id || '').replace(/^spotify:track:/i, '');
+  if (provider === 'ai6666') return String(song.ai6666Id || song.providerSongId || song.id || '');
   return String(song.id || song.providerSongId || '');
 }
 
@@ -4684,6 +4762,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/platform/capabilities') {
     const spotifyStatus = await handleSpotifyStatus().catch(() => ({ loggedIn: false, capabilities: {} }));
+    const ai6666Configured = getAi6666Config().configured;
     sendJSON(res, {
       netease: {
         playlists: true, likeRead: true, likeWrite: true, albumRead: true,
@@ -4714,6 +4793,13 @@ const server = http.createServer(async (req, res) => {
         albumCollect: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
         commentsRead: false, commentsWrite: false, listenReport: false,
         missingWriteScopes: spotifyStatus.missingWriteScopes || [],
+      },
+      ai6666: {
+        playlists: ai6666Configured, likeRead: ai6666Configured, likeWrite: ai6666Configured,
+        playlistWrite: false, albumRead: false, albumCollect: false,
+        commentsRead: false, commentsWrite: false, listenReport: false,
+        search: ai6666Configured, playableUrl: ai6666Configured,
+        timedLyrics: ai6666Configured, wordSyncedLyrics: ai6666Configured,
       },
     });
     return;
@@ -4986,6 +5072,173 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[KugouRecommendations]', err);
       sendJSON(res, { provider: 'kugou', error: err.message, songs: [] }, 500);
+    }
+    return;
+  }
+
+  if (pn.startsWith('/api/ai6666/') && !isTrustedLocalMutationRequest(req)) {
+    sendJSON(res, { provider: 'ai6666', ok: false, error: 'UNTRUSTED_LOCAL_REQUEST' }, 403);
+    return;
+  }
+  if (AI6666_READ_ROUTES.has(pn) && req.method !== 'GET') {
+    sendJSON(res, { provider: 'ai6666', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+    return;
+  }
+
+  if (pn === '/api/ai6666/status') {
+    if (req.method !== 'GET') {
+      sendJSON(res, { provider: 'ai6666', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    try {
+      sendJSON(res, await handleAi6666Status());
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_STATUS_FAILED');
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/config') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { provider: 'ai6666', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!isTrustedLocalMutationRequest(req)) {
+      sendJSON(res, { provider: 'ai6666', ok: false, error: 'UNTRUSTED_LOCAL_REQUEST' }, 403);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const saved = saveAi6666Config(body);
+      const status = await handleAi6666Status();
+      if (status.reauthRequired) {
+        clearAi6666Config();
+        sendJSON(res, Object.assign({}, status, { ok: false, configured: false }), 401);
+      } else {
+        sendJSON(res, Object.assign({}, status, saved, { ok: status.loggedIn === true }));
+      }
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_CONFIG_FAILED');
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/logout') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { provider: 'ai6666', ok: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!isTrustedLocalMutationRequest(req)) {
+      sendJSON(res, { provider: 'ai6666', ok: false, error: 'UNTRUSTED_LOCAL_REQUEST' }, 403);
+      return;
+    }
+    try {
+      sendJSON(res, clearAi6666Config());
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_CONFIG_CLEAR_FAILED');
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/user/playlists') {
+    try {
+      sendJSON(res, await handleAi6666UserPlaylists());
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_PLAYLISTS_FAILED');
+      response.body.playlists = [];
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/playlist/tracks') {
+    try {
+      sendJSON(res, await handleAi6666PlaylistTracks({
+        id: url.searchParams.get('id') || url.searchParams.get('playlistId') || '',
+        offset: url.searchParams.get('offset') || 0,
+        limit: url.searchParams.get('limit') || 48,
+      }));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_PLAYLIST_TRACKS_FAILED');
+      response.body.tracks = [];
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/search' || pn === '/api/ai6666/recommendations') {
+    try {
+      sendJSON(res, await handleAi6666Search({
+        tab: url.searchParams.get('tab') || 'mine',
+        keywords: pn.endsWith('/search') ? (url.searchParams.get('keywords') || url.searchParams.get('q') || '') : '',
+        offset: url.searchParams.get('offset') || 0,
+        limit: url.searchParams.get('limit') || (pn.endsWith('/search') ? 20 : 10),
+      }));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_SEARCH_FAILED');
+      response.body.songs = [];
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/song/detail') {
+    try {
+      sendJSON(res, await handleAi6666SongDetail(url.searchParams.get('id') || ''));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_SONG_DETAIL_FAILED');
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/song/url') {
+    try {
+      sendJSON(res, await handleAi6666SongUrl({
+        id: url.searchParams.get('id') || url.searchParams.get('providerSongId') || '',
+        quality: url.searchParams.get('quality') || 'standard',
+      }));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_SONG_URL_FAILED');
+      response.body.url = '';
+      response.body.playable = false;
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/lyric') {
+    try {
+      sendJSON(res, await handleAi6666Lyric(url.searchParams.get('id') || ''));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_LYRIC_FAILED');
+      Object.assign(response.body, { lyric: '', tlyric: '', yrc: '', ytlrc: '', plainLyric: '' });
+      sendJSON(res, response.body, response.status);
+    }
+    return;
+  }
+
+  if (pn === '/api/ai6666/song/favorite') {
+    if (req.method !== 'POST') {
+      sendJSON(res, { provider: 'ai6666', success: false, error: 'METHOD_NOT_ALLOWED' }, 405);
+      return;
+    }
+    if (!isTrustedLocalMutationRequest(req)) {
+      sendJSON(res, { provider: 'ai6666', success: false, error: 'UNTRUSTED_LOCAL_REQUEST' }, 403);
+      return;
+    }
+    try {
+      const body = await readRequestBody(req);
+      const rawDesired = body.favorite != null ? body.favorite : body.like;
+      const desired = typeof rawDesired === 'boolean' ? rawDesired : (rawDesired == null ? undefined : String(rawDesired) !== 'false');
+      sendJSON(res, await handleAi6666Favorite(body.id || body.providerSongId || '', desired));
+    } catch (error) {
+      const response = ai6666PublicError(error, 'AI6666_FAVORITE_FAILED');
+      response.body.success = false;
+      sendJSON(res, response.body, response.status);
     }
     return;
   }
@@ -6606,21 +6859,28 @@ const server = http.createServer(async (req, res) => {
         res.end('Invalid cover url');
         return;
       }
-      const resp = await fetch(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } });
+      const resp = await fetchWithTimeout(coverUrl, { headers: { 'User-Agent': UA, 'Referer': 'https://music.163.com/' } }, 9000);
       const ct  = resp.headers.get('content-type') || 'image/jpeg';
       const cl  = resp.headers.get('content-length');
+      const signedCover = /[?&](?:q-sign-algorithm|q-signature)=/i.test(coverUrl);
       const hdr = {
         'Content-Type': ct,
         'Access-Control-Allow-Origin': '*',
         'Cross-Origin-Resource-Policy': 'cross-origin',
-        'Cache-Control': 'public, max-age=86400',
+        'Cache-Control': resp.ok
+          ? (signedCover ? 'public, max-age=31536000, immutable' : 'public, max-age=86400')
+          : 'no-store',
       };
       if (cl) hdr['Content-Length'] = cl;
       res.writeHead(resp.status, hdr);
       const reader = resp.body.getReader();
       while (true) { const c = await reader.read(); if (c.done) break; res.write(c.value); }
       res.end();
-    } catch (err) { console.error('[Cover]', err); res.writeHead(500); res.end(); }
+    } catch (err) {
+      console.error('[Cover]', err);
+      res.writeHead(500, { 'Cache-Control': 'no-store' });
+      res.end();
+    }
     return;
   }
 

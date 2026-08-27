@@ -38,6 +38,8 @@
     'js/modules/02-visual/15-ripples-cover-depth.js',
     'sonic-topography-preset.js',
     'sonic-workshop-preset.js',
+    'highway-drive-preset.js',
+    'niulai-dream-preset.js',
     'js/modules/03-beat/00-tempo-worker-cache-prefetch.js',
     'js/modules/03-beat/01-audio-beat-analysis.js',
     'js/modules/03-beat/02-podcast-dj-analysis.js',

@@ -1,0 +1,20 @@
+Solar System Scope planet textures
+
+Source: https://edu.solarsystemscope.com/textures/
+Creator: Solar System Scope / INOVE
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License URL: https://creativecommons.org/licenses/by/4.0/
+
+Included derivatives:
+- moon.jpg
+- mars.jpg
+- jupiter.jpg
+- saturn.jpg
+- saturn-ring.png
+- neptune.jpg
+- venus.jpg (derived from the Venus Atmosphere texture)
+- mercury.jpg
+
+The original 2K textures were resampled to 1024 pixels wide for Mineradio.
+Solar System Scope states that the source maps are based on NASA elevation and
+imagery data, with colors tuned and unmapped areas completed by the creator.

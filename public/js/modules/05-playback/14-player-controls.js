@@ -75,7 +75,7 @@ function currentResumeSeconds(fallback) {
 function canRefreshCurrentPlaybackUrlForResume(song) {
   if (!song || song.type === 'local' || song.source === 'local' || song.localUrl) return false;
   var provider = normalizePlaybackProvider(songProviderKey(song));
-  return provider === 'netease' || provider === 'qq' || provider === 'kugou' || provider === 'qishui';
+  return provider === 'netease' || provider === 'qq' || provider === 'kugou' || provider === 'qishui' || provider === 'ai6666';
 }
 
 function playbackResumeProvider(song) {
@@ -103,7 +103,7 @@ function playbackResumePausedLongEnough(song) {
 function trackSwitchStallRecoveryAllowed(song, opts) {
   opts = opts || {};
   if (!opts.trackSwitch || opts.resumeRecovery) return true;
-  return playbackResumeProvider(song) === 'qishui';
+  return canRefreshCurrentPlaybackUrlForResume(song);
 }
 
 function isQishuiTrackStartStalled(song, opts, media, startTime, current) {

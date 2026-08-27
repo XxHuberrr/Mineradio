@@ -584,6 +584,9 @@ async function resolveAlbumGaplessPlaybackData(song) {
       '&uri=' + encodeURIComponent(song.spotifyUri || song.uri || '') +
       qualityParam, { timeoutMs: 9000 });
   }
+  if (playbackProvider === 'ai6666') {
+    return apiJson('/api/ai6666/song/url?id=' + encodeURIComponent(song.ai6666Id || song.providerSongId || song.id || '') + qualityParam, { timeoutMs: 15000 });
+  }
   return apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
 }
 
@@ -859,7 +862,7 @@ async function playLocalQueueSong(song, idx, token, firstVisualPlay, opts, resum
     clearAudioFadeTimers();
     audio.pause();
   }
-  resetPlaybackAudioGraphForSourceSwitch('local-track-switch');
+  resetPlaybackAudioGraphForSourceSwitch('local-track-switch', { freshMediaLifetime: true, preferCapture: true });
   audio.autoplay = true;
   audio.preload = 'auto';
   bindPlaybackProgressEvents(audio);
@@ -1106,6 +1109,7 @@ async function playQueueAt(idx, opts) {
       var isKugouPlayback = playbackProvider === 'kugou';
       var isQishuiPlayback = playbackProvider === 'qishui';
       var isSpotifyPlayback = playbackProvider === 'spotify';
+      var isAi6666Playback = playbackProvider === 'ai6666';
       var requestedQuality = normalizePlaybackQualityForProvider(opts.qualityOverride || getProviderPlaybackQuality(playbackProvider), playbackProvider);
       if (playbackProvider === 'netease' && requestedQuality === 'jymaster' && !hasProviderSvip('netease', loginStatus)) requestedQuality = 'hires';
       var runtimeQualityCap = playbackQualityCapValue(song, playbackProvider);
@@ -1139,6 +1143,8 @@ async function playQueueAt(idx, opts) {
           '&spotifyId=' + encodeURIComponent(song.spotifyId || '') +
           '&uri=' + encodeURIComponent(song.spotifyUri || song.uri || '') +
           qualityParam, { timeoutMs: 9000 });
+      } else if (isAi6666Playback) {
+        data = await apiJson('/api/ai6666/song/url?id=' + encodeURIComponent(song.ai6666Id || song.providerSongId || song.id || '') + qualityParam, { timeoutMs: 15000 });
       } else {
         data = await apiJson('/api/song/url?id=' + encodeURIComponent(song.id || '') + neteasePlaybackMatchQuery(song) + qualityParam, { timeoutMs: 14000 });
       }
@@ -1235,7 +1241,12 @@ async function playQueueAt(idx, opts) {
         clearAudioFadeTimers();
         audio.pause();
       }
-      resetPlaybackAudioGraphForSourceSwitch(albumGaplessHandoff ? 'album-gapless-handoff' : 'track-switch');
+      resetPlaybackAudioGraphForSourceSwitch(
+        albumGaplessHandoff ? 'album-gapless-handoff' : 'track-switch',
+        !albumGaplessHandoff
+          ? { freshMediaLifetime: true, preferCapture: true }
+          : null
+      );
       audio.autoplay = true;
       audio.preload = 'auto';
       // resetPlaybackAudioGraphForSourceSwitch may deliberately replace a

@@ -518,16 +518,18 @@ var visualGuideSteps = [
     body: '登录后会同步歌单、红心和播客；不登录也可以搜索和播放，不会强制卡住你。'
   },
   {
-    target: 'shelf',
+    selector: '#fx-panel',
     kicker: '05 / Visual',
-    title: '进阶视觉都放在舞台周围',
-    body: '右侧 3D 歌单架和 DIY 玩家模式是进阶入口；先播放一首歌，再慢慢调视觉效果。'
+    title: '不是一个特效：这里有 11 套视觉预设',
+    body: 'Emily、安魂、音域回响、无尽公路、牛来梦境、星河、唱片、星球、滚筒和虚空都在右侧视觉面板；任何模式都能直接切换，播放后会随音乐响应。',
+    action: 'open-visual-presets',
+    actionLabel: '打开 11 个视觉预设'
   },
   {
     selector: '#diy-mode-btn',
     kicker: '06 / DIY',
-    title: '高级功能在 DIY 玩家模式',
-    body: '视觉控制台、上传/封面、自定义歌词、音质和更多面板都会在这里展开。'
+    title: 'DIY 用来展开高级调参',
+    body: '视觉预设始终可用；DIY 会进一步展开上传/封面、自定义歌词、音质、3D 歌单架和精细视觉参数。'
   }
 ];
 var visualGuideStepsDiy = [
@@ -649,13 +651,31 @@ function showVisualGuideStep(index) {
   var hint = document.getElementById('visual-guide-hint');
   var progress = document.getElementById('visual-guide-progress');
   var next = document.getElementById('visual-guide-next');
+  var action = document.getElementById('visual-guide-action');
   if (title) title.textContent = step.title;
   if (body) body.textContent = step.body;
   if (kicker) kicker.textContent = step.kicker;
   if (hint) hint.textContent = visualGuideStep === steps.length - 1 ? '点击空白处完成引导' : '点击空白处也可以继续';
   if (progress) progress.textContent = (visualGuideStep + 1) + ' / ' + steps.length;
   if (next) next.textContent = visualGuideStep === steps.length - 1 ? '完成' : '下一步';
+  if (action) {
+    action.textContent = step.actionLabel || '';
+    action.classList.toggle('show', !!step.action);
+    action.setAttribute('aria-hidden', step.action ? 'false' : 'true');
+  }
   scheduleVisualGuidePositioning();
+}
+function runVisualGuideAction() {
+  var step = activeVisualGuideSteps()[visualGuideStep];
+  if (!step || step.action !== 'open-visual-presets') return;
+  closeVisualGuide(true);
+  toggleFxPanel(true);
+  setTimeout(function () {
+    var panel = document.getElementById('fx-panel');
+    var firstPreset = panel && panel.querySelector('.preset-card');
+    if (panel) panel.scrollTop = 0;
+    if (firstPreset) firstPreset.focus({ preventScroll: true });
+  }, 120);
 }
 function guideTargetRect(step) {
   if (step && step.target === 'stage') {

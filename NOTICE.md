@@ -18,6 +18,10 @@ Mineradio 使用了以下第三方项目或服务。各项目版权归其原作�
 - Full-desktop main-window mode and home-dashboard information hierarchy: initially adapted from [ww085213/Mineradio-LX-Music](https://github.com/ww085213/Mineradio-LX-Music) at commit `82826df814c32853d99697c0ee60f749a2fcad79`, with the homepage refreshed against `812e2dc2e18bbc263e61dbd0206cb765e003d6e9` (GPL-3.0). Mineradio keeps its own provider, queue, playlist, listening-history, WorkerW validation, DPI, lifecycle, and cleanup implementations; see `docs/THIRD_PARTY_PORTS.md` in the corresponding source distribution.
 - Qishui Passport Web QR authentication bridge: focused port from [Wx2yZx/Mineradio-Qishui-QR-Login](https://github.com/Wx2yZx/Mineradio-Qishui-QR-Login) at commit `aaadaab7d011714f94fbe45b382ba8dcc7cf17b9` (declared `GPL-3.0-only`). Only the official QR create/poll, security-signing host, session persistence, and second-verification path are integrated; Mineradio keeps its own catalogue, playlist, entitlement, and playback adapters. The bundled ByteDance/Qishui web security runtime resources remain the property of their respective rights holders and are used only to interoperate with the user's own official account session.
 
+## Visual Assets
+
+- Highway Drive planet surface and Saturn-ring textures are adapted from [Solar System Scope](https://edu.solarsystemscope.com/textures/) by Solar System Scope / INOVE under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The original 2K maps were resampled to 1024 pixels wide for the packaged Three.js scene. See `public/assets/highway-planets/LICENSE.txt`.
+
 ## Third-party Services
 
 Mineradio 可能与网易云音乐、QQ 音乐等第三方音乐服务进行用户自有账号相关的本地客户端交互。

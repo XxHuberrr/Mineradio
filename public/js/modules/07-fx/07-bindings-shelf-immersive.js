@@ -471,23 +471,28 @@ function toggleFx(key) {
 function toggleFxPanel(force) {
   var el = document.getElementById('fx-panel');
   if (!el) return;
-  if (!diyPlayerMode && force !== false) {
-    showToast('开启 DIY 玩家模式后可打开视觉控制台');
-    return;
-  }
   var currentlyOpen = el.classList.contains('show') || el.classList.contains('peek');
   if (peekTimers && peekTimers.fx) { clearTimeout(peekTimers.fx); peekTimers.fx = null; }
   fxPanelPinned = false;
-  if (force === false) {
+  if (force === false || (currentlyOpen && force !== true)) {
     el.classList.remove('show', 'peek');
     el.classList.toggle('closing', currentlyOpen);
     setTimeout(function () { el.classList.remove('closing'); }, 280);
     var fab = document.getElementById('fx-fab');
-    if (fab) fab.classList.remove('active');
+    if (fab) {
+      fab.classList.remove('active');
+      fab.setAttribute('aria-expanded', 'false');
+    }
     return;
   }
-  el.classList.remove('show', 'closing');
-  setPeek(el, true, 'fx');
+  fxPanelPinned = true;
+  el.classList.remove('peek', 'closing');
+  el.classList.add('show');
+  var openFab = document.getElementById('fx-fab');
+  if (openFab) {
+    openFab.classList.add('active');
+    openFab.setAttribute('aria-expanded', 'true');
+  }
 }
 function resetFx() {
   var savedCam = fx.cam;

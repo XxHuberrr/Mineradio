@@ -30,6 +30,7 @@ var homePlatformRecommendationState = {
     qishui: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     kugou: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     spotify: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
+    ai6666: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
   },
 };
 
@@ -863,6 +864,7 @@ function homePlatformRecommendationSourceLabel(source) {
     qq: 'QQ 音乐',
     kugou: '酷狗音乐',
     spotify: 'Spotify',
+    ai6666: 'AI6666',
   }[source] || '当前平台';
 }
 
@@ -888,6 +890,13 @@ function homePlatformRecommendationFeedConfig(source) {
       cardLabel: 'Spotify 推荐',
       readyText: '来自 Spotify 个性化推荐',
       playlistName: 'Spotify 个性化推荐',
+    },
+    ai6666: {
+      endpoint: '/api/ai6666/recommendations?limit=12',
+      sectionTitle: '我的最新创作',
+      cardLabel: 'AI6666 账号曲库',
+      readyText: '来自 AI6666 我的歌曲',
+      playlistName: 'AI6666 · 我的最新创作',
     },
   }[source] || null;
 }
@@ -1216,7 +1225,7 @@ function bindHomePlatformRecommendationControls() {
     closeHomePlatformRecommendations();
     if (kind === 'netease-playlist' && typeof openHomePlaylist === 'function') openHomePlaylist(index);
     else if (kind === 'netease-song' && typeof playHomeSong === 'function') playHomeSong(index);
-    else if (/^(qishui|kugou|spotify)-song$/.test(kind)) playHomePlatformFeedSong(kind.replace(/-song$/, ''), index);
+    else if (/^(qishui|kugou|spotify|ai6666)-song$/.test(kind)) playHomePlatformFeedSong(kind.replace(/-song$/, ''), index);
   });
   if (list) list.addEventListener('scroll', scheduleHomePlatformDailyWindowRender, { passive: true });
   window.addEventListener('resize', scheduleHomePlatformDailyWindowRender, { passive: true });
@@ -1248,7 +1257,8 @@ function openHomePlatformRecommendations(preferredSource) {
       : (kugouLoginStatus && kugouLoginStatus.loggedIn
         ? 'kugou'
         : (spotifyLoginStatus && (spotifyLoginStatus.loggedIn || spotifyLoginStatus.configured) ? 'spotify' : 'netease')));
-  var source = /^(netease|qishui|qq|kugou|spotify)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
+  if ((!loginStatus || !loginStatus.loggedIn) && ai6666LoginStatus && ai6666LoginStatus.loggedIn && defaultSource === 'netease') defaultSource = 'ai6666';
+  var source = /^(netease|qishui|qq|kugou|spotify|ai6666)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
   loadHomePlatformRecommendations(source, false);
   setTimeout(function () {
     var activeTab = mask.querySelector('[data-home-recommend-source="' + source + '"]');

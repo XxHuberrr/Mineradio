@@ -510,6 +510,66 @@ function startSpotifyLoginStatusAutoRefresh() {
   }, 45000);
 }
 
+function normalizeAi6666LoginStatus(info) {
+  var fallback = { provider: 'ai6666', loggedIn: false, configured: false, nickname: 'AI6666', avatar: '', credits: null, playbackKeyReady: false, playbackMode: 'direct-refresh', searchReady: false, stale: false, reauthRequired: false, capabilities: {} };
+  var capabilities = info && info.capabilities || {};
+  var loggedIn = !!(info && info.loggedIn);
+  return Object.assign({}, fallback, info || {}, {
+    provider: 'ai6666',
+    loggedIn: loggedIn,
+    configured: !!(info && (info.configured || loggedIn)),
+    nickname: info && info.nickname || 'AI6666',
+    avatar: info && info.avatar || '',
+    credits: info && info.credits != null ? Math.max(0, Number(info.credits) || 0) : null,
+    playbackKeyReady: loggedIn && capabilities.playableUrl !== false,
+    playbackMode: 'direct-refresh',
+    searchReady: loggedIn && capabilities.search !== false,
+    stale: !!(info && info.error && info.error !== 'AI6666_AUTH_REQUIRED'),
+    reauthRequired: !!(info && (info.reauthRequired || info.error === 'AI6666_AUTH_REQUIRED')),
+    capabilities: capabilities
+  });
+}
+function ai6666LoginStatusText(info) {
+  info = normalizeAi6666LoginStatus(info || ai6666LoginStatus);
+  if (info.reauthRequired) return 'API Key 已失效，请重新保存';
+  if (!info.loggedIn) return info.configured ? '暂时无法验证 AI6666 连接' : '粘贴 AI6666 API Key 连接账号曲库';
+  return 'AI6666 曲库已连接' + (info.credits != null ? (' · 余额 ' + info.credits) : '');
+}
+async function refreshAi6666LoginStatus() {
+  try {
+    var info = await apiJson('/api/ai6666/status?t=' + Date.now());
+    var prevLogged = !!ai6666LoginStatus.loggedIn;
+    ai6666LoginStatus = normalizeAi6666LoginStatus(info);
+    if (!ai6666LoginStatus.loggedIn) {
+      if (prevLogged || ai6666LoginWasLoggedIn) showToast(ai6666LoginStatus.reauthRequired ? 'AI6666 API Key 已失效' : 'AI6666 曲库连接已断开');
+      ai6666Playlists = [];
+      userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'ai6666'; });
+      playlistCatalogRevision += 1;
+      homeDiscoverState.loaded = false;
+    } else if (!userPlaylists.some(function (pl) { return pl && pl.provider === 'ai6666'; })) {
+      homeDiscoverState.loaded = false;
+      homeDiscoverState.loggedIn = true;
+      refreshUserPlaylists(true);
+      loadHomeDiscover(true);
+    }
+    ai6666LoginWasLoggedIn = !!ai6666LoginStatus.loggedIn;
+    if (!hasPlatformLogin(activeAccountProvider)) activeAccountProvider = firstLoggedProvider();
+    renderUserBtn();
+    return ai6666LoginStatus;
+  } catch (e) {
+    console.warn('AI6666 login status failed:', e);
+    ai6666LoginStatus = normalizeAi6666LoginStatus(Object.assign({}, ai6666LoginStatus, { stale: true }));
+    renderUserBtn();
+    return ai6666LoginStatus;
+  }
+}
+function startAi6666LoginStatusAutoRefresh() {
+  if (ai6666LoginAutoRefreshTimer) clearInterval(ai6666LoginAutoRefreshTimer);
+  ai6666LoginAutoRefreshTimer = setInterval(function () {
+    refreshAi6666LoginStatus().catch(function (e) { console.warn('AI6666 login auto refresh failed:', e); });
+  }, 120000);
+}
+
 function renderUserBtn() {
   var btn = document.getElementById('user-btn');
   if (!btn) return;

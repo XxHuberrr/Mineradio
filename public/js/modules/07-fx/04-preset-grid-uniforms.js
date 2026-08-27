@@ -14,11 +14,11 @@ function buildPresetGrid() {
     var p = presetMeta[i];
     var name = p.nameHtml || p.name;
     var desc = p.descHtml || p.desc;
-    return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
+    return '<button class="preset-card" type="button" data-preset="' + i + '" onclick="setPreset(' + i + ')" aria-label="视觉预设：' + p.name + '">' +
       '<div class="pc-icon">' + presetIcons[i] + '</div>' +
       '<div class="pc-name">' + name + '</div>' +
       '<div class="pc-desc">' + desc + '</div>' +
-      '</div>';
+      '</button>';
   }).join('');
   refreshPresetGrid();
 }
@@ -74,6 +74,8 @@ function setPreset(p, opts) {
   if (p === SKULL_PRESET_INDEX) loadSkullParticleAsset();
   if (changed && window.MineradioSonicTopography) MineradioSonicTopography.onPresetChange(prev, p, { scene: scene, fx: fx });
   if (changed && window.MineradioSonicWorkshop) MineradioSonicWorkshop.onPresetChange(prev, p, { scene: scene, fx: fx });
+  if (changed && window.MineradioHighwayDrive) MineradioHighwayDrive.onPresetChange(prev, p, { scene: scene, fx: fx });
+  if (changed && window.MineradioNiuLaiDream) MineradioNiuLaiDream.onPresetChange(prev, p, { scene: scene, fx: fx });
   uniforms.uPreset.value = p;
   refreshPresetGrid();
   if (typeof updateSonicSeriesControlVisibility === 'function') updateSonicSeriesControlVisibility();

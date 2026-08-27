@@ -6,6 +6,44 @@
   box-sizing: border-box
 }
 
+/* AI6666 account-library provider */
+:root {
+  --ai6666-color: #b17aff;
+  --ai6666-color-soft: rgba(177, 122, 255, .18);
+}
+
+.tag-source.ai6666 {
+  color: #d7bbff;
+  border-color: rgba(177, 122, 255, .45);
+  background: rgba(177, 122, 255, .14);
+}
+
+.search-result.ai6666-source:hover {
+  border-color: rgba(177, 122, 255, .38);
+  background: rgba(177, 122, 255, .08);
+}
+
+.account-source-dot.ai6666 {
+  background: var(--ai6666-color);
+  box-shadow: 0 0 12px rgba(177, 122, 255, .72);
+}
+
+.login-platform-tabs button.ai6666.active,
+.user-platform-tabs button.ai6666.active,
+.account-provider-chip.ai6666 {
+  color: #e4d2ff;
+  border-color: rgba(177, 122, 255, .52);
+  background: rgba(177, 122, 255, .13);
+  box-shadow: inset 0 0 0 1px rgba(177, 122, 255, .08), 0 0 20px rgba(177, 122, 255, .09);
+}
+
+.login-node-providers .workflow-node.ai6666 .provider-logo,
+.top-account-vip.ai6666 {
+  color: #d7bbff;
+  border-color: rgba(177, 122, 255, .42);
+  background: rgba(177, 122, 255, .12);
+}
+
 /* Full desktop mode keeps the existing renderer and glass stack intact. */
 .desktop-mode-note {
   margin: 10px 0 4px;
@@ -406,7 +444,7 @@ body.desktop-shell #desktop-window-shell {
   display: block;
   position: fixed;
   inset: 0;
-  overflow: hidden;
+  overflow: clip;
   border-radius: 34px;
   clip-path: inset(0 round 34px);
   background: transparent;
@@ -2138,14 +2176,8 @@ body.empty-home-active.diy-mode #search-area:not(.has-results) #search-mode-tabs
 
 html.simple-mode-preload #search-mode-tabs,
 html.simple-mode-preload #upload-actions,
-html.simple-mode-preload #fx-fab,
-html.simple-mode-preload #fx-fab-hide-btn,
-html.simple-mode-preload #fx-panel,
 body.simple-mode #search-mode-tabs,
-body.simple-mode #upload-actions,
-body.simple-mode #fx-fab,
-body.simple-mode #fx-fab-hide-btn,
-body.simple-mode #fx-panel {
+body.simple-mode #upload-actions {
   display: none !important
 }
 
@@ -7599,6 +7631,8 @@ body.login-guide-active #login-guide-canvas {
   max-height: calc(100vh - 42px);
   padding: 24px 30px 26px;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   text-align: left;
   scrollbar-width: thin;
   background: radial-gradient(circle at 18% 10%, rgba(255, 255, 255, .09), transparent 28%), radial-gradient(circle at 78% 62%, rgba(var(--fc-accent-rgb), .055), transparent 38%), rgba(6, 7, 10, .34);
@@ -7760,6 +7794,20 @@ body.login-guide-active #login-guide-canvas {
 .login-easter-input-shell {
   position: relative;
   width: 100%
+}
+
+.login-easter-answer-hint {
+  margin: 14px 0 0;
+  color: rgba(255, 255, 255, .48);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-align: center
+}
+
+.login-easter-answer-hint strong {
+  color: rgba(255, 226, 170, .92);
+  font-weight: 850
 }
 
 .login-easter-cells {
@@ -8804,6 +8852,24 @@ body.login-guide-active #login-guide-canvas {
   display: none
 }
 
+.login-node-graph.direct-credential-flow #login-provider-ai6666 .flow-port,
+.login-node-graph.direct-credential-flow .login-node-hub > .flow-port {
+  display: none
+}
+
+.login-node-graph.direct-credential-flow #login-mode-cookie {
+  display: none
+}
+
+.login-node-graph.direct-credential-flow .login-node-hub {
+  min-height: 94px
+}
+
+.login-node-graph.direct-credential-flow .login-node-copy small {
+  white-space: normal;
+  line-height: 1.45
+}
+
 @media (max-width: 720px) {
   .dual-login-modal {
     width: min(430px, calc(100vw - 28px));
@@ -8886,6 +8952,66 @@ body.login-guide-active #login-guide-canvas {
     filter .42s ease .08s,
     border-color .38s ease .10s,
     visibility 0s linear 0s
+}
+
+.login-auth-drawer.ai6666-auth {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  align-items: stretch
+}
+
+.login-auth-drawer.ai6666-auth .login-auth-body {
+  align-self: stretch;
+  justify-items: stretch
+}
+
+.login-auth-drawer.ai6666-auth .qr-shell,
+.login-auth-drawer.ai6666-auth .login-auth-actions {
+  display: none
+}
+
+.login-auth-drawer.ai6666-auth .qq-cookie-panel.show {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box
+}
+
+.login-auth-drawer.ai6666-auth .qq-cookie-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  flex-wrap: nowrap
+}
+
+.login-auth-drawer.ai6666-auth .qq-cookie-note {
+  min-width: 0;
+  max-height: 142px;
+  overflow: auto
+}
+
+.login-auth-drawer.ai6666-auth .qq-cookie-input {
+  height: 48px;
+  min-height: 48px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  resize: none;
+  white-space: pre
+}
+
+.login-auth-drawer.ai6666-auth #qq-cookie-save-btn {
+  align-self: end
+}
+
+@media (max-width: 760px) {
+  .login-auth-drawer.ai6666-auth {
+    grid-template-columns: minmax(0, 1fr)
+  }
+
+  .login-auth-drawer.ai6666-auth .qq-cookie-actions {
+    grid-template-columns: minmax(0, 1fr)
+  }
 }
 
 .login-auth-copy h2 {
@@ -10948,6 +11074,7 @@ body.login-guide-active #login-guide-canvas {
 
 .visual-guide-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -10985,6 +11112,22 @@ body.login-guide-active #login-guide-canvas {
   border-color: rgba(255, 83, 103, .42);
   background: rgba(255, 83, 103, .14);
   color: #fff
+}
+
+.visual-guide-actions .visual-guide-action {
+  display: none;
+  border-color: rgba(244, 210, 138, .42);
+  background: rgba(244, 210, 138, .12);
+  color: #fff2cf
+}
+
+.visual-guide-actions .visual-guide-action.show {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  order: -1;
+  flex: 1 0 100%;
+  width: 100%
 }
 
 .visual-guide-actions .primary:hover {
@@ -11423,6 +11566,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 
 .preset-card {
   position: relative;
+  width: 100%;
   min-height: 94px;
   border-radius: 11px;
   border: 1.5px solid rgba(255, 255, 255, .08);
@@ -11433,7 +11577,10 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 10px
+  padding: 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left
 }
 
 .preset-card:hover {
@@ -11488,7 +11635,9 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 }
 
 .preset-card[data-preset="7"] .pc-name,
-.preset-card[data-preset="8"] .pc-name {
+.preset-card[data-preset="8"] .pc-name,
+.preset-card[data-preset="9"] .pc-name,
+.preset-card[data-preset="10"] .pc-name {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
@@ -11508,6 +11657,11 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
 .preset-card .pc-author-ajin {
   color: #f59e0b;
   font-weight: 650
+}
+
+.preset-card .pc-author-cyberforker {
+  color: #e55a4f;
+  font-weight: 700
 }
 
 .preset-card.active .pc-name {

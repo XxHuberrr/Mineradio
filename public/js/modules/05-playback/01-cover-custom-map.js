@@ -45,9 +45,18 @@ function coverUrlWithSize(url, size) {
   if (/[?&]param=\d+y\d+/i.test(url)) return url.replace(/([?&])param=\d+y\d+/i, '$1' + param);
   return url + (url.indexOf('?') >= 0 ? '&' : '?') + param;
 }
+var COVER_REFRESH_MAX_CONCURRENT = 3;
+var COVER_REFRESH_RETRY_MS = 60000;
+var COVER_SIGNED_URL_SKEW_MS = 60000;
+var coverRefreshStateByKey = Object.create(null);
+var coverRefreshQueue = [];
+var coverRefreshActiveCount = 0;
+var coverFailureUntilByKey = Object.create(null);
+var queueCoverRefreshRenderTimer = 0;
 function songCustomCoverKey(song) {
   if (!song) return '';
   if (song.customCoverKey) return String(song.customCoverKey);
+  if (song.provider === 'ai6666' || song.source === 'ai6666' || song.type === 'ai6666' || song.ai6666Id) return 'ai6666:' + (song.ai6666Id || song.providerSongId || song.id || (song.name + '|' + song.artist));
   if (song.provider === 'qq' || song.source === 'qq' || song.type === 'qq') return 'qq:' + (song.mid || song.songmid || song.id || (song.name + '|' + song.artist));
   if (song.provider === 'qishui' || song.source === 'qishui' || song.type === 'qishui') return 'qishui:' + (song.id || song.providerSongId || (song.name + '|' + song.artist));
   if (song.provider === 'kugou' || song.source === 'kugou' || song.type === 'kugou' || song.hash || song.audioHash) return 'kugou:' + (song.hash || song.fileHash || song.audioHash || song.id || (song.name + '|' + song.artist));
@@ -70,10 +79,129 @@ function hydrateCustomCover(song) {
   if (custom) song.customCover = custom;
   return song;
 }
+function isAi6666CoverSong(song) {
+  return !!(song && (song.provider === 'ai6666' || song.source === 'ai6666' || song.type === 'ai6666' || song.ai6666Id));
+}
+function signedCoverExpiryMs(url) {
+  if (!url || !/^https?:\/\//i.test(String(url))) return 0;
+  try {
+    var parsed = new URL(String(url), window.location && window.location.href ? window.location.href : 'http://127.0.0.1/');
+    var signTime = String(parsed.searchParams.get('q-sign-time') || '');
+    var expiresSeconds = Number(signTime.split(';')[1]);
+    return Number.isFinite(expiresSeconds) && expiresSeconds > 0 ? expiresSeconds * 1000 : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+function coverSignedUrlNeedsRefresh(url, nowMs) {
+  var expiryMs = signedCoverExpiryMs(url);
+  return !!expiryMs && expiryMs <= (Number(nowMs) || Date.now()) + COVER_SIGNED_URL_SKEW_MS;
+}
+function queueCoverRequestKey(song, url) {
+  return songCustomCoverKey(song) || String(url || '');
+}
+function scheduleQueueCoverRefreshRender() {
+  if (queueCoverRefreshRenderTimer) return;
+  queueCoverRefreshRenderTimer = setTimeout(function () {
+    queueCoverRefreshRenderTimer = 0;
+    if (typeof renderQueuePanel === 'function') renderQueuePanel({ scrollCurrent: false });
+    else if (typeof renderMiniQueuePanel === 'function') renderMiniQueuePanel();
+    if (typeof saveLastPlaybackSnapshot === 'function') saveLastPlaybackSnapshot(true, 'cover-refresh');
+  }, 80);
+}
+function applyRefreshedAi6666Cover(key, requestedSong, cover) {
+  if (requestedSong) requestedSong.cover = cover;
+  if (Array.isArray(playQueue)) {
+    playQueue.forEach(function (queuedSong) {
+      if (songCustomCoverKey(queuedSong) === key) queuedSong.cover = cover;
+    });
+  }
+  if (typeof currentLocalSong !== 'undefined' && currentLocalSong && songCustomCoverKey(currentLocalSong) === key) currentLocalSong.cover = cover;
+  delete coverFailureUntilByKey[key];
+  scheduleQueueCoverRefreshRender();
+}
+function finishAi6666CoverRefresh(job) {
+  coverRefreshActiveCount = Math.max(0, coverRefreshActiveCount - 1);
+  drainAi6666CoverRefreshQueue();
+}
+function runAi6666CoverRefresh(job) {
+  job.status = 'pending';
+  coverRefreshActiveCount += 1;
+  apiJson('/api/ai6666/song/detail?id=' + encodeURIComponent(job.id), { timeoutMs: 12000, cache: 'no-store' }).then(function (data) {
+    var cover = data && data.song ? String(data.song.cover || '') : '';
+    if (!cover || coverSignedUrlNeedsRefresh(cover)) throw new Error('AI6666_COVER_REFRESH_INVALID');
+    job.status = 'ready';
+    job.url = cover;
+    job.retryAt = 0;
+    applyRefreshedAi6666Cover(job.key, job.song, cover);
+  }).catch(function (error) {
+    job.status = 'failed';
+    job.retryAt = Date.now() + COVER_REFRESH_RETRY_MS;
+    console.warn('[CoverRefresh]', job.key, error && error.message ? error.message : error);
+  }).then(function () {
+    finishAi6666CoverRefresh(job);
+  });
+}
+function drainAi6666CoverRefreshQueue() {
+  while (coverRefreshActiveCount < COVER_REFRESH_MAX_CONCURRENT && coverRefreshQueue.length) {
+    var job = coverRefreshQueue.shift();
+    if (!job || coverRefreshStateByKey[job.key] !== job || job.status !== 'queued') continue;
+    runAi6666CoverRefresh(job);
+  }
+}
+function scheduleAi6666CoverRefresh(song, reason) {
+  if (!isAi6666CoverSong(song)) return false;
+  var key = songCustomCoverKey(song);
+  var id = song.ai6666Id || song.providerSongId || song.id || '';
+  if (!key || !id) return false;
+  var now = Date.now();
+  var state = coverRefreshStateByKey[key];
+  if (state && (state.status === 'queued' || state.status === 'pending')) return false;
+  if (state && state.retryAt > now) return false;
+  state = {
+    key: key,
+    id: String(id),
+    song: song,
+    reason: reason || 'expired',
+    status: 'queued',
+    retryAt: 0,
+    url: state && state.url ? state.url : ''
+  };
+  coverRefreshStateByKey[key] = state;
+  coverRefreshQueue.push(state);
+  drainAi6666CoverRefreshQueue();
+  return true;
+}
 function songCoverSrc(song, size) {
   var custom = getCustomCoverForSong(song);
-  if (custom) return custom;
-  return song && song.cover ? coverUrlWithSize(song.cover, size) : '';
+  var raw = custom || (song && song.cover ? String(song.cover) : '');
+  var key = queueCoverRequestKey(song, raw);
+  if (isAi6666CoverSong(song)) {
+    var refreshed = key && coverRefreshStateByKey[key] && coverRefreshStateByKey[key].url;
+    if (refreshed && !coverSignedUrlNeedsRefresh(refreshed)) {
+      raw = refreshed;
+      song.cover = refreshed;
+    }
+    if (!raw || coverSignedUrlNeedsRefresh(raw)) {
+      scheduleAi6666CoverRefresh(song, raw ? 'expired' : 'missing');
+      return '';
+    }
+  }
+  if (!raw || (key && coverFailureUntilByKey[key] > Date.now())) return '';
+  var sized = coverUrlWithSize(raw, size);
+  return isProxyableCoverUrl(sized) ? coverProxySrc(sized) : sized;
+}
+function handleQueueCoverImageError(img, queueIndex) {
+  if (img) {
+    img.onerror = null;
+    img.removeAttribute('src');
+    img.style.opacity = '0';
+  }
+  var song = Array.isArray(playQueue) ? playQueue[Number(queueIndex)] : null;
+  if (!song) return false;
+  var key = queueCoverRequestKey(song, song.cover);
+  if (key) coverFailureUntilByKey[key] = Date.now() + COVER_REFRESH_RETRY_MS;
+  return scheduleAi6666CoverRefresh(song, 'image-error');
 }
 function cssImageUrl(url) {
   return String(url || '').replace(/\\/g, '\\\\').replace(/"/g, '%22');

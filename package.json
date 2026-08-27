@@ -9,6 +9,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test \"tests/*.test.js\"",
+    "check": "node scripts/quick-check.js",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir",
     "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never"
@@ -39,6 +41,7 @@
       "LICENSE",
       "NOTICE.md",
       "docs/THIRD_PARTY_PORTS.md",
+      "docs/AI6666_INTEGRATION.md",
       "package.json",
       "!desktop/wallpaper-preload.js",
       "!public/wallpaper.html",

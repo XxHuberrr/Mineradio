@@ -2,6 +2,7 @@ var firstPlayDone = false;
 
 function playbackProviderLabel(song) {
   var provider = songProviderKey(song);
+  if (provider === 'ai6666') return 'AI6666';
   if (provider === 'qq') return 'QQ 音乐';
   if (provider === 'kugou') return '酷狗音乐';
   if (provider === 'qishui') return '汽水音乐';
@@ -469,6 +470,7 @@ function sourceFallbackProviderReady(provider) {
 }
 function alternatePlaybackProviders(song) {
   var currentProvider = normalizePlaybackProvider(songProviderKey(song));
+  if (currentProvider === 'ai6666') return [];
   var ordered = typeof accountProviderOrder === 'function'
     ? accountProviderOrder()
     : SOURCE_FALLBACK_DIRECT_PROVIDERS.slice();

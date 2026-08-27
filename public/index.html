@@ -116,6 +116,7 @@
           <button id="search-mode-kugou" type="button" onclick="setSearchMode('kugou')" aria-selected="false">KG</button>
           <button id="search-mode-qishui" type="button" onclick="setSearchMode('qishui')" aria-selected="false">QS</button>
           <button id="search-mode-spotify" type="button" onclick="setSearchMode('spotify')" aria-selected="false">SP</button>
+          <button id="search-mode-ai6666" type="button" onclick="setSearchMode('ai6666')" aria-selected="false">AI</button>
           <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')"
             aria-selected="false">Podcast</button>
         </div>
@@ -296,6 +297,7 @@
           <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
           <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
           <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
+          <button type="button" role="tab" data-home-recommend-source="ai6666" aria-selected="false">AI6666</button>
         </div>
         <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status"
           aria-live="polite"></div>
@@ -326,7 +328,8 @@
       </button>
     </div>
 
-    <button id="fx-fab" title="视觉控制台">
+    <button id="fx-fab" type="button" onclick="toggleFxPanel()" title="打开视觉预设与控制台"
+      aria-label="打开视觉预设与控制台" aria-controls="fx-panel" aria-expanded="false">
       <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
         <path d="M4 7h8" />
         <path d="M16 7h4" />
@@ -342,8 +345,8 @@
     <div id="fx-panel">
       <div class="fx-head">
         <div>
-          <div class="fx-title">视觉控制台</div>
-          <div class="fx-sub">MINERADIO VISUALS · 鼠标移开自动隐藏</div>
+          <div class="fx-title">视觉预设与控制台</div>
+          <div class="fx-sub">11 PRESETS · 点击按钮固定打开 · P 快捷键</div>
         </div>
       </div>
 
@@ -1437,7 +1440,7 @@
     <div id="login-modal" class="modal-mask">
       <div class="modal dual-login-modal">
         <div class="login-panel-head">
-          <div><b>登录接入</b><small>拖接口端口到 MR</small></div>
+          <div><b>登录接入</b><small>选择平台和登录方式即可继续</small></div>
           <button id="login-reset-all-btn" class="login-reset-all-btn" type="button"
             onclick="logoutAllAccountsAndResetEasterEgg()" title="清除所有平台登录并重新锁定彩蛋">退出登录</button>
           <button class="login-panel-close" type="button" onclick="closeLoginModal()">×</button>
@@ -1462,8 +1465,9 @@
               </div>
               <input id="login-easter-egg-input" class="login-easter-input" type="text"
                 inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-                aria-label="输入四个字的愿望">
+                aria-label="输入四个字的愿望" aria-describedby="login-easter-answer-hint login-easter-status">
             </div>
+            <p id="login-easter-answer-hint" class="login-easter-answer-hint">提示：四个字——<strong>世界和平</strong></p>
             <div id="login-easter-status" class="login-easter-status" aria-live="polite"></div>
           </div>
         </section>
@@ -1471,15 +1475,17 @@
           <svg id="login-workflow-svg" class="workflow-link-layer login-link-layer" aria-hidden="true"></svg>
           <div class="login-platform-tabs login-node-providers" id="login-platform-tabs">
             <button id="login-provider-netease" class="netease active workflow-node" type="button" data-login-provider="netease"
-              onclick="selectLoginProviderNode('netease')"><span class="provider-logo">NE</span><b>网易云</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="netease" title="拖到 MR 接入口"></span></button>
+              onclick="selectLoginProviderNode('netease')"><span class="provider-logo">NE</span><b>网易云</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="netease" title="可拖线连接，也可直接点击平台"></span></button>
             <button id="login-provider-qq" class="qq workflow-node" type="button" data-login-provider="qq" onclick="selectLoginProviderNode('qq')"><span
-                class="provider-logo">QQ</span><b>QQ 音乐</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="qq" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">QQ</span><b>QQ 音乐</b><small>官方扫码 / Cookie</small><span class="flow-port out" data-login-provider-output="qq" title="可拖线连接，也可直接点击平台"></span></button>
             <button id="login-provider-kugou" class="kugou workflow-node" type="button" data-login-provider="kugou" onclick="selectLoginProviderNode('kugou')"><span
-                class="provider-logo">KG</span><b>酷狗音乐</b><small>官方窗口 / Cookie</small><span class="flow-port out" data-login-provider-output="kugou" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">KG</span><b>酷狗音乐</b><small>官方窗口 / Cookie</small><span class="flow-port out" data-login-provider-output="kugou" title="可拖线连接，也可直接点击平台"></span></button>
             <button id="login-provider-qishui" class="qishui workflow-node" type="button" data-login-provider="qishui" onclick="selectLoginProviderNode('qishui')"><span
-                class="provider-logo">QS</span><b>汽水音乐</b><small>官方扫码 / 抖音确认</small><span class="flow-port out" data-login-provider-output="qishui" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">QS</span><b>汽水音乐</b><small>官方扫码 / 抖音确认</small><span class="flow-port out" data-login-provider-output="qishui" title="可拖线连接，也可直接点击平台"></span></button>
+            <button id="login-provider-ai6666" class="ai6666 workflow-node" type="button" data-login-provider="ai6666" onclick="selectLoginProviderNode('ai6666')"><span
+                class="provider-logo">AI</span><b>AI6666</b><small>API Key 直连曲库</small><span class="flow-port out" data-login-provider-output="ai6666" title="可拖线连接，也可直接点击平台"></span></button>
             <button id="login-provider-spotify" class="spotify workflow-node" type="button" data-login-provider="spotify" onclick="selectLoginProviderNode('spotify')"><span
-                class="provider-logo">SP</span><b>Spotify</b><small>官方 OAuth</small><span class="flow-port out" data-login-provider-output="spotify" title="拖到 MR 接入口"></span></button>
+                class="provider-logo">SP</span><b>Spotify</b><small>官方 OAuth</small><span class="flow-port out" data-login-provider-output="spotify" title="可拖线连接，也可直接点击平台"></span></button>
           </div>
           <div class="login-node-hub workflow-node" data-login-node="mr">
             <span class="flow-port in" data-login-mr-target="mr" title="MR 接入口"></span>
@@ -1497,7 +1503,7 @@
           <div class="login-auth-copy">
             <h2 id="login-modal-title">扫码登录网易云音乐</h2>
             <div id="login-modal-desc" class="desc">使用 <b>网易云音乐 App</b> 扫码，可同步歌单、红心与播客。</div>
-            <div id="qr-status">拖动接口到 MR 接入口后开始登录。</div>
+            <div id="qr-status">选择平台后，点击扫码、官网或 Cookie 登录。</div>
           </div>
           <div class="login-auth-body">
             <div id="qr-shell" class="qr-shell">
@@ -1507,9 +1513,10 @@
             </div>
             <div id="qq-cookie-panel" class="qq-cookie-panel">
               <textarea id="qq-cookie-input" class="qq-cookie-input" spellcheck="false" autocomplete="off"
+                aria-describedby="qr-status login-credential-note"
                 placeholder="uin=...; qqmusic_key=...; qm_keyst=..."></textarea>
               <div class="qq-cookie-actions">
-                <div class="qq-cookie-note">从 y.qq.com 的登录会话导入。</div>
+                <div id="login-credential-note" class="qq-cookie-note">从 y.qq.com 的登录会话导入。</div>
                 <button id="qq-cookie-save-btn" class="modal-btn primary" type="button"
                   onclick="submitQQCookieLogin()">保存</button>
               </div>
@@ -1586,6 +1593,7 @@
           <button id="user-provider-kugou" class="kugou" type="button" onclick="setActiveAccountProvider('kugou')">酷狗音乐</button>
           <button id="user-provider-qishui" class="qishui" type="button" onclick="setActiveAccountProvider('qishui')">汽水音乐</button>
           <button id="user-provider-spotify" class="spotify" type="button" onclick="setActiveAccountProvider('spotify')">Spotify</button>
+          <button id="user-provider-ai6666" class="ai6666" type="button" onclick="setActiveAccountProvider('ai6666')">AI6666</button>
           <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我两个都要</button>
         </div>
         <div class="account-modal-actions">
@@ -1594,6 +1602,7 @@
           <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登酷狗音乐</button>
           <button id="account-add-qishui" class="modal-btn" onclick="openProviderLogin('qishui')">登录汽水音乐</button>
           <button id="account-add-spotify" class="modal-btn" onclick="openProviderLogin('spotify')">连接 Spotify</button>
+          <button id="account-add-ai6666" class="modal-btn" onclick="openProviderLogin('ai6666')">连接 AI6666</button>
         </div>
         <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
         <div class="btn-row">
@@ -1841,6 +1850,7 @@
         <div id="visual-guide-hint" class="visual-guide-hint">点击空白处也可以继续</div>
         <div class="visual-guide-actions">
           <button type="button" onclick="closeVisualGuide(true)">跳过</button>
+          <button id="visual-guide-action" class="visual-guide-action" type="button" onclick="runVisualGuideAction()"></button>
           <div id="visual-guide-progress" class="visual-guide-progress"></div>
           <button id="visual-guide-next" class="primary" type="button" onclick="nextVisualGuideStep()">下一步</button>
         </div>

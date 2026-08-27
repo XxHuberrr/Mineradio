@@ -1,13 +1,14 @@
 var loginRefreshRequestSeq = 0;
 var loginWorkflowDrag = null;
 var LOGIN_WORKFLOW_CONNECTION_STORE_KEY = 'mineradio-login-workflow-connections-v1';
-var LOGIN_WORKFLOW_PROVIDERS = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var LOGIN_WORKFLOW_PROVIDERS = ['netease', 'qq', 'kugou', 'qishui', 'spotify', 'ai6666'];
 var loginWorkflowPendingProvider = '';
 var loginWorkflowVerifiedSession = {};
 var loginProviderPointer = null;
 var loginProviderClickSuppressed = false;
 var loginWorkflowEdgeRenderFrame = 0;
 var loginWorkflowEdgeRenderTimers = [];
+var ai6666ConfigFeedback = null;
 var SPOTIFY_DEVELOPER_DASHBOARD_URL = 'https://developer.spotify.com/dashboard';
 var SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:43879/callback';
 
@@ -16,18 +17,22 @@ function isLoginRefreshCurrent(provider, seq) {
 }
 
 function normalizeLoginProviderKey(provider) {
-  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  return provider === 'ai6666' ? 'ai6666' : (provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease'))));
 }
 function loginProviderSupportsCookieMode(provider) {
   provider = normalizeLoginProviderKey(provider);
-  return provider !== 'spotify' && provider !== 'qishui';
+  return provider !== 'spotify' && provider !== 'qishui' && provider !== 'ai6666';
+}
+function loginProviderUsesDirectCredentialFlow(provider) {
+  return normalizeLoginProviderKey(provider) === 'ai6666';
 }
 function loginProviderOfficialModeText(provider) {
   provider = normalizeLoginProviderKey(provider);
+  if (provider === 'ai6666') return { title: 'API Key', sub: '安全连接账号曲库' };
   if (provider === 'spotify') return { title: 'OAuth', sub: '弹出 Spotify 授权窗口' };
   if (provider === 'qishui') return { title: '扫码', sub: '使用抖音 App 官方授权' };
   if (provider === 'kugou') return { title: '官网', sub: '弹出酷狗官方窗口' };
-  return { title: '扫码', sub: '连接后弹出官方窗口' };
+  return { title: '扫码', sub: '点击打开官方登录窗口' };
 }
 function setManualCookieOpenForProvider(provider, open) {
   provider = normalizeLoginProviderKey(provider);
@@ -194,12 +199,36 @@ function selectLoginProviderNode(provider) {
   }
   provider = normalizeLoginProviderKey(provider);
   setLoginProvider(provider, true);
+  if (openDirectLoginProviderFlow(provider)) return;
   setLoginAuthDrawerOpen(hasLoginWorkflowConnection(provider) || loginWorkflowPendingProvider === provider);
   updateLoginProviderUi();
+}
+function focusLoginProviderCredentialInput(provider) {
+  if (!loginProviderUsesDirectCredentialFlow(provider)) return;
+  var input = document.getElementById('qq-cookie-input');
+  if (!input) return;
+  setTimeout(function () {
+    if (loginProvider !== normalizeLoginProviderKey(provider)) return;
+    try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) { } }
+  }, 90);
+}
+function openDirectLoginProviderFlow(provider, options) {
+  provider = normalizeLoginProviderKey(provider);
+  if (!loginProviderUsesDirectCredentialFlow(provider)) return false;
+  loginWorkflowPendingProvider = provider;
+  setManualCookieOpenForProvider(provider, false);
+  setLoginAuthDrawerOpen(true);
+  updateLoginProviderUi();
+  if (!options || options.focus !== false) focusLoginProviderCredentialInput(provider);
+  return true;
 }
 function connectLoginProviderToMr(provider) {
   provider = normalizeLoginProviderKey(provider);
   if (provider !== loginProvider) setLoginProvider(provider, true);
+  if (openDirectLoginProviderFlow(provider)) {
+    markLoginNodeConnecting();
+    return;
+  }
   loginWorkflowPendingProvider = provider;
   setLoginAuthDrawerOpen(true);
   markLoginNodeConnecting();
@@ -435,7 +464,11 @@ function bindLoginWorkflowPointerEvents() {
 }
 function updateLoginNodeGraphUi() {
   var graph = document.getElementById('login-node-graph');
-  if (graph) graph.setAttribute('data-provider', loginProvider);
+  var directCredentialFlow = loginProviderUsesDirectCredentialFlow(loginProvider);
+  if (graph) {
+    graph.setAttribute('data-provider', loginProvider);
+    graph.classList.toggle('direct-credential-flow', directCredentialFlow);
+  }
   syncAccountProviderOrderUi();
   var connected = syncLoginWorkflowConnectionsFromStatus();
   loginWorkflowProviderOrder().forEach(function (provider) {
@@ -471,32 +504,44 @@ function updateLoginNodeGraphUi() {
     var meta = platformMeta(loginProvider);
     var copySub = copy.querySelector('small');
     var connectedCount = connected.length;
-    if (copySub) copySub.textContent = hasLoginWorkflowConnection(loginProvider)
-      ? ((meta && meta.label || loginProvider) + ' 已接入 / 共 ' + connectedCount + ' 个接口')
-      : (loginWorkflowPendingProvider === loginProvider
-        ? ((meta && meta.label || loginProvider) + ' 待登录确认')
-        : (connectedCount ? ('已接入 ' + connectedCount + ' 个接口，拖入当前接口可继续添加') : '把左侧接口拖入这里'));
+    if (copySub) copySub.textContent = directCredentialFlow
+      ? (hasLoginWorkflowConnection(loginProvider) ? '曲库已连接 · 可在下方替换 API Key' : '无需拖线 · 直接在下方粘贴 API Key')
+      : (hasLoginWorkflowConnection(loginProvider)
+        ? ((meta && meta.label || loginProvider) + ' 已接入 / 共 ' + connectedCount + ' 个接口')
+        : (loginWorkflowPendingProvider === loginProvider
+          ? ((meta && meta.label || loginProvider) + ' 待登录确认')
+          : (connectedCount ? ('已接入 ' + connectedCount + ' 个接口 · 选择登录方式可继续添加') : '选择登录方式即可继续 · 拖线为可选交互')));
   }
   scheduleLoginWorkflowEdges('node-ui');
 }
 function connectLoginProvider(provider) {
   selectLoginProviderNode(provider);
 }
+function shouldOpenLoginAuthDrawerForMode(provider, mode) {
+  return mode === 'official' ||
+    (mode === 'cookie' && loginProviderSupportsCookieMode(provider)) ||
+    hasLoginWorkflowConnection(provider) ||
+    loginWorkflowPendingProvider === provider;
+}
 function selectLoginMode(mode) {
   if (mode === 'cookie' && !loginProviderSupportsCookieMode(loginProvider)) {
     showToast(loginProvider === 'qishui' ? '汽水音乐仅使用官方扫码登录' : 'Spotify 使用官方 OAuth 登录');
     return;
   }
-  setManualCookieOpenForProvider(loginProvider, mode === 'cookie');
-  updateLoginProviderUi();
-  setLoginAuthDrawerOpen(hasLoginWorkflowConnection(loginProvider) || loginWorkflowPendingProvider === loginProvider);
-}
-function startSelectedLoginConnection() {
-  if (!hasLoginWorkflowConnection(loginProvider) && loginWorkflowPendingProvider !== loginProvider) {
-    showToast('先把左侧接口拖到 MR 接入口');
+  if (loginProviderUsesDirectCredentialFlow(loginProvider)) {
+    openDirectLoginProviderFlow(loginProvider);
     return;
   }
-  setLoginAuthDrawerOpen(true);
+  if (!shouldOpenLoginAuthDrawerForMode(loginProvider, mode)) return;
+  loginWorkflowPendingProvider = loginProvider;
+  connectLoginMode(mode);
+}
+function startSelectedLoginConnection() {
+  if (loginProviderUsesDirectCredentialFlow(loginProvider)) {
+    openDirectLoginProviderFlow(loginProvider);
+    return;
+  }
+  loginWorkflowPendingProvider = loginProvider;
   connectLoginMode(loginWorkflowActiveMode());
 }
 function connectLoginMode(mode) {
@@ -578,17 +623,33 @@ async function showLoginModal(opts) {
 }
 function resumeLoginModalAfterGate() {
   bindLoginWorkflowPointerEvents();
-  setLoginAuthDrawerOpen(false);
-  updateLoginProviderUi();
+  if (!openDirectLoginProviderFlow(loginProvider)) {
+    setLoginAuthDrawerOpen(false);
+    updateLoginProviderUi();
+  }
   scheduleLoginWorkflowEdges('open');
 }
 function closeLoginModal() {
   stopQrPoll();
+  if (loginProvider === 'ai6666') {
+    var keyInput = document.getElementById('qq-cookie-input');
+    if (keyInput) keyInput.value = '';
+    ai6666ConfigFeedback = null;
+  }
   setLoginAuthDrawerOpen(false);
   closeGsapModal(document.getElementById('login-modal'));
 }
+function shouldClearAi6666CredentialInput(previousProvider, nextProvider) {
+  return previousProvider === 'ai6666' && nextProvider !== 'ai6666';
+}
 function setLoginProvider(provider, silent) {
-  loginProvider = normalizeLoginProviderKey(provider);
+  var nextProvider = normalizeLoginProviderKey(provider);
+  if (shouldClearAi6666CredentialInput(loginProvider, nextProvider)) {
+    var previousKeyInput = document.getElementById('qq-cookie-input');
+    if (previousKeyInput) previousKeyInput.value = '';
+    ai6666ConfigFeedback = null;
+  }
+  loginProvider = nextProvider;
   loginRefreshRequestSeq += 1;
   updateLoginProviderUi();
   if (!silent && document.getElementById('login-modal').classList.contains('show')) refreshQr();
@@ -611,6 +672,24 @@ function spotifyLoginStatusText(info) {
   if (info.configured || info.searchReady) return 'Spotify 搜索已可用；登录后可同步会员状态、歌单和红心歌单';
   var missing = info.oauthMissing && info.oauthMissing.length ? (' 缺少: ' + info.oauthMissing.join(', ')) : '';
   return '粘贴 Spotify Client ID，并在 Spotify Developer Dashboard 登记回调地址 http://127.0.0.1:43879/callback' + missing;
+}
+function bindAi6666CredentialInput(input) {
+  if (!input || input.__ai6666CredentialBound) return;
+  input.__ai6666CredentialBound = true;
+  input.addEventListener('input', function () {
+    if (loginProvider !== 'ai6666' || !ai6666ConfigFeedback || ai6666ConfigFeedback.mode !== 'fail') return;
+    ai6666ConfigFeedback = null;
+    var statusEl = document.getElementById('qr-status');
+    if (statusEl) {
+      statusEl.textContent = ai6666LoginStatusText();
+      statusEl.className = ai6666LoginStatus.loggedIn ? 'scan' : 'preview';
+    }
+  });
+  input.addEventListener('keydown', function (event) {
+    if (loginProvider !== 'ai6666' || event.isComposing || event.keyCode === 229 || event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    submitAi6666ConfigLogin();
+  });
 }
 function parseSpotifyConfigInput(text) {
   text = String(text || '').trim();
@@ -703,6 +782,7 @@ function updateLoginProviderUi() {
   var shell = document.getElementById('qr-shell');
   var st = document.getElementById('qr-status');
   var refreshBtn = document.getElementById('refresh-qr-btn');
+  var authDrawer = document.getElementById('login-auth-drawer');
   var qqPanel = document.getElementById('qq-cookie-panel');
   var qqCookieToggle = document.getElementById('qq-cookie-toggle-btn');
   var qqCookieInput = document.getElementById('qq-cookie-input');
@@ -718,10 +798,60 @@ function updateLoginProviderUi() {
   var qishuiSearchReady = qishuiPublicSearchReady();
   var qishuiBusy = !!(qishuiTokenBusy || qishuiOAuthBusy);
   var isSpotify = loginProvider === 'spotify';
+  var isAi6666 = loginProvider === 'ai6666';
   var spotifyBtn = document.getElementById('login-provider-spotify');
+  var ai6666Btn = document.getElementById('login-provider-ai6666');
   var canOpenSpotifyOAuth = !!(window.desktopWindow && typeof window.desktopWindow.openSpotifyMusicLogin === 'function');
   var spotifyBusy = !!(spotifyConfigBusy || spotifyOAuthBusy);
+  var ai6666Busy = !!ai6666ConfigBusy;
+  if (authDrawer) authDrawer.classList.toggle('ai6666-auth', isAi6666);
   updateLoginNodeGraphUi();
+  if (qqCookieInput) qqCookieInput.style.webkitTextSecurity = isAi6666 ? 'disc' : 'none';
+  if (isAi6666) {
+    if (neteaseBtn) neteaseBtn.classList.toggle('active', false);
+    if (qqBtn) qqBtn.classList.toggle('active', false);
+    if (kugouBtn) kugouBtn.classList.toggle('active', false);
+    if (qishuiBtn) qishuiBtn.classList.toggle('active', false);
+    if (spotifyBtn) spotifyBtn.classList.toggle('active', false);
+    if (ai6666Btn) ai6666Btn.classList.toggle('active', true);
+    if (title) title.textContent = '连接 AI6666';
+    if (desc) desc.innerHTML = '粘贴 <b>AI6666 API Key</b>，连接账号下的我的歌曲与收藏。Key 只保存在本机私有配置文件中，不会回显到界面或日志。';
+    if (shell) {
+      shell.classList.add('web-login-preview');
+      shell.classList.remove('qq-preview', 'netease-preview');
+    }
+    if (qqPanel) qqPanel.classList.add('show', 'spotify-guide-panel');
+    if (qqCookieToggle) qqCookieToggle.classList.remove('show');
+    if (qqCookieInput) {
+      qqCookieInput.placeholder = ai6666LoginStatus.configured ? '粘贴新的 hh_... API Key 以替换' : 'hh_your_api_key';
+      qqCookieInput.setAttribute('aria-label', 'AI6666 API Key');
+      qqCookieInput.setAttribute('wrap', 'off');
+      qqCookieInput.setAttribute('enterkeyhint', 'done');
+      bindAi6666CredentialInput(qqCookieInput);
+    }
+    if (qqCookieNote) qqCookieNote.innerHTML = '<div class="spotify-guide-title">本机安全直连</div><div class="spotify-guide-steps"><span>1. 在 ai6666.com/accounts/api/ 创建 API Key</span><span>2. 粘贴到上方并保存验证</span><span>3. 我的歌曲、收藏和歌词会自动出现</span></div><div class="spotify-guide-actions"><span>普通浏览与播放不会调用生成、导出或分轨接口</span></div>';
+    if (qqCookieSaveBtn) {
+      qqCookieSaveBtn.disabled = ai6666Busy;
+      qqCookieSaveBtn.textContent = ai6666Busy ? '验证中…' : '保存并验证';
+    }
+    if (qqCard) qqCard.style.display = 'none';
+    if (st) {
+      st.className = ai6666ConfigBusy ? 'preview' : (ai6666ConfigFeedback ? ai6666ConfigFeedback.mode : (ai6666LoginStatus.loggedIn ? 'scan' : 'preview'));
+      st.textContent = ai6666ConfigBusy ? '正在安全保存并验证 AI6666 API Key…' : (ai6666ConfigFeedback ? ai6666ConfigFeedback.message : ai6666LoginStatusText());
+    }
+    if (refreshBtn) {
+      refreshBtn.disabled = ai6666Busy;
+      refreshBtn.textContent = ai6666Busy ? '验证中…' : '保存并验证';
+      refreshBtn.onclick = submitAi6666ConfigLogin;
+    }
+    updateLoginNodeGraphUi();
+    return;
+  }
+  if (ai6666Btn) ai6666Btn.classList.toggle('active', false);
+  if (qqCookieInput) {
+    qqCookieInput.setAttribute('wrap', 'soft');
+    qqCookieInput.removeAttribute('enterkeyhint');
+  }
   if (isSpotify) {
     if (neteaseBtn) neteaseBtn.classList.toggle('active', false);
     if (qqBtn) qqBtn.classList.toggle('active', false);
@@ -847,6 +977,12 @@ async function refreshQr() {
   updateLoginProviderUi();
   var refreshProvider = loginProvider;
   var refreshSeq = ++loginRefreshRequestSeq;
+  if (loginProvider === 'ai6666') {
+    qrKey = null;
+    await refreshAi6666LoginStatus();
+    if (isLoginRefreshCurrent(refreshProvider, refreshSeq)) updateLoginProviderUi();
+    return;
+  }
   if (loginProvider === 'spotify') {
     qrKey = null;
     var spotifyStatus = document.getElementById('qr-status');
@@ -1048,11 +1184,12 @@ async function pollQishuiQr(generation) {
   }
 }
 function toggleQQCookiePanel() {
-  if (loginProvider === 'spotify') return;
+  if (loginProvider === 'spotify' || loginProvider === 'ai6666') return;
   setManualCookieOpenForProvider(loginProvider, !isManualCookieOpenForProvider(loginProvider));
   updateLoginProviderUi();
 }
 function openProviderWebLogin() {
+  if (loginProvider === 'ai6666') return submitAi6666ConfigLogin();
   if (loginProvider === 'qq') return openQQWebLogin();
   if (loginProvider === 'kugou') return openKugouWebLogin();
   if (loginProvider === 'qishui') return openQishuiWebLogin();
@@ -1148,6 +1285,54 @@ async function submitSpotifyConfigLogin() {
     updateLoginProviderUi();
   }
   if (shouldOpenOAuth) await openSpotifyWebLogin();
+}
+async function submitAi6666ConfigLogin() {
+  if (ai6666ConfigBusy) return;
+  var input = document.getElementById('qq-cookie-input');
+  var statusEl = document.getElementById('qr-status');
+  var saveBtn = document.getElementById('qq-cookie-save-btn');
+  var apiKey = input ? String(input.value || '').trim() : '';
+  if (!/^hh_[A-Za-z0-9_-]{24,160}$/.test(apiKey)) {
+    ai6666ConfigFeedback = { message: '请粘贴有效的 hh_... AI6666 API Key', mode: 'fail' };
+    if (statusEl) { statusEl.textContent = ai6666ConfigFeedback.message; statusEl.className = ai6666ConfigFeedback.mode; }
+    if (input) { try { input.focus({ preventScroll: true }); } catch (e) { try { input.focus(); } catch (_) { } } }
+    return;
+  }
+  ai6666ConfigBusy = true;
+  ai6666ConfigFeedback = null;
+  if (saveBtn) saveBtn.classList.add('busy');
+  if (statusEl) { statusEl.textContent = '正在安全保存并验证 AI6666 API Key…'; statusEl.className = 'preview'; }
+  updateLoginProviderUi();
+  try {
+    var info = await apiJson('/api/ai6666/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: apiKey }),
+      timeoutMs: 16000
+    });
+    if (!info || info.error || info.loggedIn !== true) throw new Error(info && (info.message || info.error) || 'AI6666 API Key 验证失败');
+    ai6666LoginStatus = normalizeAi6666LoginStatus(info);
+    ai6666LoginWasLoggedIn = true;
+    activeAccountProvider = 'ai6666';
+    markLoginWorkflowConnected('ai6666');
+    if (input) input.value = '';
+    renderUserBtn();
+    await refreshUserPlaylists(true);
+    loadHomeDiscover(true);
+    ai6666ConfigFeedback = { message: ai6666LoginStatusText(info), mode: 'scan' };
+    if (statusEl) { statusEl.textContent = ai6666ConfigFeedback.message; statusEl.className = ai6666ConfigFeedback.mode; }
+    setTimeout(function () {
+      closeLoginModal();
+      showToast('AI6666 曲库已连接');
+    }, 420);
+  } catch (e) {
+    ai6666ConfigFeedback = { message: e && e.message ? e.message : 'AI6666 API Key 保存失败', mode: 'fail' };
+    if (statusEl) { statusEl.textContent = ai6666ConfigFeedback.message; statusEl.className = ai6666ConfigFeedback.mode; }
+  } finally {
+    ai6666ConfigBusy = false;
+    if (saveBtn) saveBtn.classList.remove('busy');
+    updateLoginProviderUi();
+  }
 }
 async function openNeteaseWebLogin() {
   if (neteaseWebLoginBusy) return;
@@ -1306,6 +1491,7 @@ async function openQishuiWebLogin() {
   return refreshQr();
 }
 async function submitQQCookieLogin() {
+  if (loginProvider === 'ai6666') return submitAi6666ConfigLogin();
   if (loginProvider === 'spotify') return submitSpotifyConfigLogin();
   if (loginProvider === 'qishui') return openQishuiWebLogin();
   if (loginProvider === 'netease') return submitNeteaseCookieLogin();
