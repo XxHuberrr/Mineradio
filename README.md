@@ -17,6 +17,18 @@ Mineradio 是一款 Windows 桌面沉浸式音乐播放器，把搜索播放、�
 
 安装时只需要下载并运行 `Mineradio-2.1.0-Setup.exe`。不要把 `.blockmap`、`latest.yml` 或 `win-unpacked` 当成正式安装包。
 
+## macOS 版本
+
+> ⚠️ 主仓库仅支持 Windows。此版本为 macOS 适配版，该分支由账号所属 openclaw 自动维护。
+
+| 下载入口 | 说明 |
+| --- | --- |
+| [Releases 下载](https://github.com/uloow/Mineradio/releases) | macOS DMG 安装包 |
+
+**适配内容：** GPU 渲染适配 Metal（macOS 原生加速）
+
+---
+
 ## 下载或安装被拦截怎么办
 
 小众 Electron 桌面软件、未签名安装包有时会被浏览器、Windows Defender 或 SmartScreen 提示风险。请先确认安装包来自上面的网盘入口或官方 GitHub Release，文件名是 `Mineradio-2.1.0-Setup.exe`。

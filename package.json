@@ -80,7 +80,15 @@
         "owner": "XxHuberrr",
         "repo": "Mineradio"
       }
-    ]
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "hardenedRuntime": false,
+      "identity": null,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.plist",
+      "entitlementsInherit": "build/entitlements.plist"
+    }
   },
   "mineradio": {
     "update": {
@@ -110,7 +118,6 @@
   },
   "devDependencies": {
     "electron": "^42.4.1",
-    "electron-builder": "^26.15.3",
-    "rcedit": "^5.0.2"
+    "electron-builder": "^26.15.3"
   }
 }

@@ -1,0 +1,11 @@
+const pkg = JSON.parse(require('fs').readFileSync('package.json'));
+pkg.build = pkg.build || {};
+pkg.build.mac = pkg.build.mac || {};
+pkg.build.mac.category = 'public.app-category.music';
+pkg.build.mac.hardenedRuntime = true;
+pkg.build.mac.gatekeeperAssess = false;
+pkg.build.mac.entitlements = 'build/entitlements.plist';
+pkg.build.mac.entitlementsInherit = 'build/entitlements.plist';
+delete pkg.devDependencies['rcedit'];
+require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+console.log('Build config updated');

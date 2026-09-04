@@ -1,0 +1,98 @@
+name: Build macOS App
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream
+        run: |
+          git remote add upstream https://github.com/XxHuberrr/Mineradio.git 2>/dev/null || true
+          git fetch upstream
+          UPSTREAM=$(git rev-parse upstream/main)
+          LOCAL=$(git rev-parse HEAD)
+          if [ "$LOCAL" != "$UPSTREAM" ]; then
+            echo "检测到上游有更新，正在合并..."
+            git merge upstream/main --no-edit
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --registry=https://registry.npmmirror.com
+
+      - name: Install Electron
+        run: |
+          cd node_modules/electron
+          node install.js
+
+      - name: Apply Metal fix
+        run: node apply-metal-fix.js
+
+      - name: Configure build
+        run: node configure-build.js
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build DMG
+        run: |
+          npx electron-builder --mac dmg --publish never
+
+      - name: Package as zip (backup)
+        run: |
+          ditto -c -k --keepParent dist/mac-arm64/Mineradio.app Mineradio-macos-arm64.zip
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: macos-latest
+          name: Mineradio macOS 构建
+          body: |
+            ## macOS 安装说明
+
+            ### 首次运行提示「开发者未验证」？
+
+            终端执行以下命令即可：
+
+            ```bash
+            xattr -cr /Applications/Mineradio.app
+            ```
+
+            ---
+
+            ## 更新日志
+
+            ### v1.1.1 macOS (2026-07-06)
+            - **新增：系统媒体控制** — 锁屏/Control Center/Touch Bar 显示封面/歌名，支持播放/暂停/切歌
+            - 大幅降低 CPU 占用（Renderer ~20%, GPU ~13%）
+            - 修复打包版崩溃问题
+            - 优化封面粒子渲染性能
+          draft: false
+          prerelease: false
+          files: |
+            dist/*.dmg
+            Mineradio-macos-arm64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
