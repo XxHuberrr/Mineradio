@@ -7,7 +7,7 @@ function normalizeWallpaperFps(value) {
 }
 
 var fxDefaults = {
-  preset: 0,            // 0=emily cover, 1=tunnel, 2=orbit, 3=void, 4=vinyl, 5=wallpaper, 6=skull, 7=sonic topography, 8=sonic workshop
+  preset: 0,            // 0..8 legacy series; 9=halo, 10=neon rain, 11=prism flock, 12=abyssal bloom
   intensity: 0.85,
   cinemaShake: 0.5,
   depth: 0.2,
@@ -50,6 +50,10 @@ var fxDefaults = {
   lyricLineHeight: 1.0,
   lyricWeight: 750,
   lyricTextureClarity: 1,
+  lyricLiveViewportFit: true,
+  lyricContextHighQuality: true,
+  lyricBackdropAdapt: true,
+  coverBackdropAdapt: true,
   visualTintMode: 'auto',
   visualTintColor: '#9db8cf',
   uiAccentColor: '#ffffff',
@@ -192,6 +196,9 @@ var fxDefaults = {
   memorySafetyRevision: 3,
   liveBackgroundKeep: false,
   cam: 'off',
+  gesturePlayerActions: true,
+  gestureHandOverlay: true,
+  gestureSensitivity: 'balanced',
 };
 function normalizeForegroundFpsMode(value) {
   var mode = String(value || '').trim().toLowerCase();

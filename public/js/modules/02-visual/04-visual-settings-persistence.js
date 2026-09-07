@@ -430,7 +430,10 @@ function readSavedLyricLayout() {
       shelfSummonParallax: clampRange(raw.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(raw.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(raw.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(raw.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(raw.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(raw.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(raw.cam || '')) ? raw.cam : fxDefaults.cam,
+      gesturePlayerActions: raw.gesturePlayerActions !== false,
+      gestureHandOverlay: raw.gestureHandOverlay !== false,
+      gestureSensitivity: /^(steady|balanced|quick)$/.test(String(raw.gestureSensitivity || '')) ? raw.gestureSensitivity : fxDefaults.gestureSensitivity
     };
   } catch (e) {
     return readSavedLyricLayoutCriticalFallback(raw, e);
@@ -916,7 +919,10 @@ function saveLyricLayout(opts) {
       shelfSummonParallax: clampRange(fx.shelfSummonParallax == null ? fxDefaults.shelfSummonParallax : Number(fx.shelfSummonParallax), 0, 2.5),
       shelfCameraEnterSpeed: clampRange(fx.shelfCameraEnterSpeed == null ? fxDefaults.shelfCameraEnterSpeed : Number(fx.shelfCameraEnterSpeed), 0.2, 1.5),
       shelfCameraExitSpeed: clampRange(fx.shelfCameraExitSpeed == null ? fxDefaults.shelfCameraExitSpeed : Number(fx.shelfCameraExitSpeed), 0.2, 1.5),
-      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam
+      cam: /^(off|gesture)$/.test(String(fx.cam || '')) ? fx.cam : fxDefaults.cam,
+      gesturePlayerActions: fx.gesturePlayerActions !== false,
+      gestureHandOverlay: fx.gestureHandOverlay !== false,
+      gestureSensitivity: /^(steady|balanced|quick)$/.test(String(fx.gestureSensitivity || '')) ? fx.gestureSensitivity : fxDefaults.gestureSensitivity
     };
     autosavePayload = scopeCurrentFxAutosavePayload(autosavePayload, opts);
     if (shouldSkipCurrentFxAutosaveWrite(autosavePayload, opts)) return;

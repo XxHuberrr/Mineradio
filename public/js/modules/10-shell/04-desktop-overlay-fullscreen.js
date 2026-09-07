@@ -1466,8 +1466,12 @@ function clearDesktopWindowTransitionClasses() {
   document.body.classList.remove('desktop-window-restoring');
 }
 
-function animateDesktopWindowMinimize(api) {
+function animateDesktopWindowMinimize(api, activationEvent) {
   if (!api || typeof api.minimize !== 'function') return;
+  // A minimize request must originate from a real activation of the visible
+  // title-bar control. This keeps stale timers or synthetic DOM clicks from
+  // unexpectedly putting the player in the taskbar during playback.
+  if (!activationEvent || activationEvent.isTrusted !== true) return;
   if (desktopWindowReducedMotion()) {
     api.minimize();
     return;
@@ -1580,7 +1584,7 @@ function toggleFullscreen() {
       e.preventDefault();
       e.stopPropagation();
       var action = btn.getAttribute('data-window-action');
-      if (action === 'minimize') animateDesktopWindowMinimize(api);
+      if (action === 'minimize') animateDesktopWindowMinimize(api, e);
       if (action === 'maximize') toggleFullscreen();
       if (action === 'close') {
         saveLastPlaybackSnapshot(true, 'window-close');

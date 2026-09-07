@@ -4,9 +4,13 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 
-const KUGOU_SEARCH_URL = 'http://songsearch.kugou.com/song_search_v2';
-const KUGOU_PLAY_MOBILE = 'http://m.kugou.com/app/i/getSongInfo.php';
-const KUGOU_PLAY_WEB = 'https://wwwapi.kugou.com/yy/index.php';
+const KUGOU_SEARCH_URL = 'https://songsearch.kugou.com/song_search_v2';
+const KUGOU_PLAY_MOBILE = 'https://m.kugou.com/app/i/getSongInfo.php';
+// The official playbyAudio.js now signs /play/songinfo with infSign's H5 contract.
+const KUGOU_PLAY_WEB = 'https://wwwapi.kugou.com/play/songinfo';
+const KUGOU_PLAY_WEB_RETRY = 'https://wwwapiretry.kugou.com/play/songinfo';
+const KUGOU_PLAY_ATTEMPT_MS = 2500;
+const KUGOU_PLAY_BUDGET_MS = 9000;
 const KUGOU_LYRIC_SEARCH = 'https://krcs.kugou.com/search';
 const KUGOU_LYRIC_DOWNLOAD = 'https://krcs.kugou.com/download';
 const KUGOU_HEADERS = {
@@ -76,6 +80,7 @@ const KUGOU_VIP_STALE_POSITIVE_GRACE_MS = 10 * 60 * 1000;
 const KUGOU_H5_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 function clearKugouSessionCaches() {
+  kugouSearchCache.clear();
   kugouSongUrlCache.clear();
   kugouPlaylistTracksCache.clear();
   kugouProfileCache.clear();
@@ -96,6 +101,12 @@ function requestText(targetUrl, opts, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(targetUrl);
     const lib = u.protocol === 'https:' ? https : http;
+    let deadline;
+    const finish = (error, value) => {
+      clearTimeout(deadline);
+      if (error) reject(error);
+      else resolve(value);
+    };
     const req = lib.request(u, {
       method: opts.method || 'GET',
       headers: opts.headers || {},
@@ -108,14 +119,19 @@ function requestText(targetUrl, opts, body) {
           const err = new Error('HTTP ' + response.statusCode);
           err.statusCode = response.statusCode;
           err.body = text;
-          reject(err);
+          finish(err);
           return;
         }
-        resolve(text);
+        finish(null, text);
       });
+      response.on('error', error => finish(error));
+      response.on('aborted', () => finish(new Error('Response aborted')));
     });
-    req.setTimeout(Math.max(250, Number(opts.timeoutMs) || 12000), () => req.destroy(new Error('Request timeout')));
-    req.on('error', reject);
+    const timeoutMs = Math.max(250, Number(opts.timeoutMs) || 12000);
+    deadline = setTimeout(() => req.destroy(new Error('Request timeout')), timeoutMs);
+    if (typeof deadline.unref === 'function') deadline.unref();
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('Request timeout')));
+    req.on('error', error => finish(error));
     if (body) req.write(body);
     req.end();
   });
@@ -174,14 +190,44 @@ function resolveKugouAlbumAudioId(params) {
 function pickKugouPlayUrl(json) {
   if (!json) return '';
   const pick = (val) => {
-    if (Array.isArray(val)) return val.find(Boolean) || '';
-    return val || '';
+    if (Array.isArray(val)) return val.map(pick).find(Boolean) || '';
+    const candidate = typeof val === 'string' ? val.replace(/\\\//g, '/').trim() : '';
+    return /^https?:\/\/[^\s,]+$/i.test(candidate) ? candidate : '';
   };
   const data = json.data || {};
   return String(
-    pick(json.url) || pick(json.play_url) || pick(json.backupUrl) ||
-    pick(data.url) || pick(data.play_url) || pick(data.backupUrl) || ''
+    pick(json.url) || pick(json.play_url) || pick(json.backupUrl) || pick(json.backup_url) || pick(json.play_backup_url) ||
+    pick(data.url) || pick(data.play_url) || pick(data.backupUrl) || pick(data.backup_url) || pick(data.play_backup_url) || ''
   ).replace(/\\\//g, '/').trim();
+}
+
+function kugouPlaybackTrial(json) {
+  const data = json && json.data && typeof json.data === 'object' ? json.data : json || {};
+  return [json || {}, data].some(value =>
+    ['is_free_part', 'isFreePart', 'trial', 'is_trial', 'isTrial'].some(key => truthyParam(value[key]))
+  );
+}
+
+function kugouPlaybackRestriction(json, auth) {
+  const data = json && json.data && typeof json.data === 'object' ? json.data : {};
+  const code = Number(json && (json.err_code || json.error_code || json.errcode || json.errno)) || 0;
+  const rawMessage = String(json && (json.error || json.errmsg || json.msg || json.message || json.show_tips) || data.msg || data.show_tips || '');
+  let category = 'url_unavailable';
+  let message = '酷狗暂未返回播放地址，请稍后重试';
+  if (code === 30020) {
+    category = 'verification_required';
+    message = '酷狗需要官方安全验证，请打开酷狗官方登录窗口完成验证';
+  } else if (code === 30022) {
+    category = 'client_only';
+    message = '该酷狗歌曲仅支持官方客户端播放';
+  } else if (/登录|token|login|会话|凭证/i.test(rawMessage)) {
+    category = 'login_required';
+    message = '酷狗播放登录态需要重新验证，请重新打开官方登录窗口';
+  } else if (/付费|会员|vip|购买/i.test(rawMessage)) {
+    category = auth && auth.playbackReady ? 'vip_required' : 'login_required';
+    message = '该酷狗歌曲需要有效会员或已购买权限';
+  }
+  return { restricted: true, category, message, upstreamCode: code || undefined };
 }
 
 function kugouCoverUrl(raw, size) {
@@ -204,7 +250,7 @@ function parseCookieString(cookie) {
 }
 
 function kugouCookieObject(cookie) {
-  return parseCookieString(cookie);
+  return parseCookieString(normalizeKugouCookieInput(cookie));
 }
 
 function parseKuGooCompound(raw) {
@@ -787,10 +833,12 @@ async function kugouH5GatewayRequest(path, opts) {
     Cookie: buildKugouRequestCookie(opts.cookie || ''),
   }, opts.headers || {});
   if (opts.router) headers['x-router'] = opts.router;
-  const json = await requestJson(u.toString(), { method: opts.method || (bodyObj == null ? 'GET' : 'POST'), headers }, bodyText || undefined);
+  if (bodyObj != null) headers['Content-Type'] = 'application/json';
+  const json = await requestJson(u.toString(), { method: opts.method || (bodyObj == null ? 'GET' : 'POST'), headers, timeoutMs: opts.timeoutMs }, bodyText || undefined);
   if (json && Number(json.status) === 0) {
     const err = new Error(json.error || json.msg || json.message || 'KUGOU_GATEWAY_FAILED');
     err.body = json;
+    err.upstreamCode = Number(json.error_code || json.err_code || json.errcode || json.errno) || undefined;
     throw err;
   }
   return json;
@@ -968,11 +1016,16 @@ async function kugouSearch(keywords, limit, cookie, offset) {
   const json = await requestJson(u.toString(), {
     headers: { ...KUGOU_HEADERS, Cookie: buildKugouRequestCookie(cookie) },
   });
-  const list = json && json.data && Array.isArray(json.data.lists) ? json.data.lists : [];
+  if (!json || Number(json.status) !== 1 || !json.data || !Array.isArray(json.data.lists)) {
+    const error = new Error('酷狗搜索服务暂时不可用，请稍后重试');
+    error.code = 'KUGOU_SEARCH_UNAVAILABLE';
+    throw error;
+  }
+  const list = json.data.lists;
   return list.map(mapKugouSearchItem).filter(s => s.name && (s.hash || s.id));
 }
 
-async function kugouPlayViaMobile(hash, albumId, cookie, membership) {
+async function kugouPlayViaMobile(hash, albumId, cookie, membership, timeoutMs) {
   const auth = extractKugouAuth(cookie);
   membership = membership || normalizeKugouVipPayloadV2(null, auth);
   const key = kugouCloudKey(hash);
@@ -987,51 +1040,44 @@ async function kugouPlayViaMobile(hash, albumId, cookie, membership) {
   if (auth.userid) u.searchParams.set('userid', auth.userid);
   if (auth.token) u.searchParams.set('token', auth.token);
   const json = await requestJson(u.toString(), {
+    timeoutMs,
     headers: { ...KUGOU_HEADERS, Referer: 'https://m.kugou.com/', Cookie: buildKugouRequestCookie(cookie) },
   });
-  const url = json && (json.url || json.backup_url);
+  const url = pickKugouPlayUrl(json);
   if (json && Number(json.status) === 1 && url) {
-    return { url: String(url).trim(), level: 'standard', quality: '标准', trial: false, source: 'mobile' };
+    return { url, level: 'standard', quality: '标准', trial: kugouPlaybackTrial(json), source: 'mobile' };
   }
-  const err = json && (json.error || json.errmsg || '');
-  if (/付费|会员|vip/i.test(String(err))) {
-    return { restricted: true, category: 'vip_required', message: '酷狗歌曲需要会员或付费权限', error: err };
-  }
-  if (err) return { restricted: true, category: 'url_unavailable', message: err || '酷狗未返回播放地址', error: err };
-  return { restricted: true, category: 'url_unavailable', message: '酷狗未返回播放地址' };
+  return kugouPlaybackRestriction(json, auth);
 }
 
-async function kugouPlayViaWeb(hash, albumId, albumAudioId, cookie) {
+async function kugouPlayViaWeb(hash, albumId, albumAudioId, cookie, timeoutMs, retry) {
   const auth = extractKugouAuth(cookie);
-  const u = new URL(KUGOU_PLAY_WEB);
-  u.searchParams.set('r', 'play/getdata');
-  u.searchParams.set('hash', hash);
-  u.searchParams.set('album_id', albumId || '0');
-  if (albumAudioId) u.searchParams.set('album_audio_id', albumAudioId);
-  u.searchParams.set('appid', String(KUGOU_WEB_APPID));
-  u.searchParams.set('platid', '4');
-  u.searchParams.set('mid', auth.mid);
-  u.searchParams.set('dfid', auth.dfid || '-');
-  u.searchParams.set('userid', auth.userid || '0');
-  u.searchParams.set('token', auth.token || '');
+  const params = buildKugouH5Params(auth, {
+    uuid: auth.mid,
+    platid: 4,
+    hash,
+    album_id: albumId || '0',
+  });
+  if (albumAudioId) params.album_audio_id = albumAudioId;
+  params.signature = signatureH5Params(params, null);
+  const u = new URL(retry ? KUGOU_PLAY_WEB_RETRY : KUGOU_PLAY_WEB);
+  Object.keys(params).forEach(key => u.searchParams.set(key, String(params[key])));
   const json = await requestJson(u.toString(), {
+    timeoutMs,
     headers: { ...KUGOU_HEADERS, Cookie: buildKugouRequestCookie(cookie) },
   });
-  const data = json && json.data;
-  const url = data && (data.play_url || data.play_backup_url);
+  const data = json && json.data || {};
+  const url = pickKugouPlayUrl(json);
   if (json && Number(json.status) === 1 && url) {
     const bitrate = Number(data.bitrate) || 0;
-    const level = bitrate >= 900 ? 'lossless' : (bitrate >= 300 ? 'exhigh' : 'standard');
-    return { url: String(url).replace(/\\\//g, '/').trim(), level, quality: data.quality || level, trial: false, source: 'web' };
+    const kbps = bitrate >= 10000 ? bitrate / 1000 : bitrate;
+    const level = kbps >= 900 ? 'lossless' : (kbps >= 300 ? 'exhigh' : 'standard');
+    return { url, level, quality: data.quality || level, trial: kugouPlaybackTrial(json), source: 'web' };
   }
-  const errMsg = String((json && (json.error || json.msg || (data && data.msg))) || '');
-  if (/付费|会员|vip|登录/i.test(errMsg)) {
-    return { restricted: true, category: auth.playbackReady ? 'vip_required' : 'login_required', message: errMsg || '酷狗歌曲需要登录会员后播放', error: errMsg };
-  }
-  return null;
+  return kugouPlaybackRestriction(json, auth);
 }
 
-async function kugouPlayViaH5(hash, albumId, albumAudioId, cookie, requestedQuality, membership) {
+async function kugouPlayViaH5(hash, albumId, albumAudioId, cookie, requestedQuality, membership, timeoutMs) {
   const auth = extractKugouAuth(cookie);
   membership = membership || normalizeKugouVipPayloadV2(null, auth);
   if (!auth.playbackReady) return null;
@@ -1058,6 +1104,7 @@ async function kugouPlayViaH5(hash, albumId, albumAudioId, cookie, requestedQual
   const u = new URL('/v5/url', KUGOU_GATEWAY);
   Object.keys(params).forEach(key => u.searchParams.set(key, String(params[key])));
   const json = await requestJson(u.toString(), {
+    timeoutMs,
     headers: {
       ...KUGOU_HEADERS,
       'User-Agent': KUGOU_H5_UA,
@@ -1068,16 +1115,12 @@ async function kugouPlayViaH5(hash, albumId, albumAudioId, cookie, requestedQual
   const url = pickKugouPlayUrl(json);
   if (json && Number(json.status) === 1 && url) {
     const level = kugouQualityFromParam(quality, requestedQuality);
-    return { url, level, quality: level, trial: false, source: 'h5' };
+    return { url, level, quality: level, trial: kugouPlaybackTrial(json), source: 'h5' };
   }
-  const errMsg = String((json && (json.error || json.msg)) || '');
-  if (/付费|会员|vip|登录/i.test(errMsg)) {
-    return { restricted: true, category: auth.playbackReady ? 'vip_required' : 'login_required', message: errMsg || '酷狗歌曲需要会员权限', error: errMsg };
-  }
-  return null;
+  return kugouPlaybackRestriction(json, auth);
 }
 
-async function kugouPlayViaGateway(hash, albumId, albumAudioId, cookie, requestedQuality, membership) {
+async function kugouPlayViaGateway(hash, albumId, albumAudioId, cookie, requestedQuality, membership, timeoutMs) {
   const auth = extractKugouAuth(cookie);
   membership = membership || normalizeKugouVipPayloadV2(null, auth);
   if (!auth.playbackReady) return null;
@@ -1111,6 +1154,7 @@ async function kugouPlayViaGateway(hash, albumId, albumAudioId, cookie, requeste
   const u = new URL('/v5/url', KUGOU_GATEWAY);
   Object.keys(params).forEach(key => u.searchParams.set(key, String(params[key])));
   const json = await requestJson(u.toString(), {
+    timeoutMs,
     headers: {
       ...KUGOU_HEADERS,
       'User-Agent': KUGOU_GATEWAY_UA,
@@ -1121,17 +1165,12 @@ async function kugouPlayViaGateway(hash, albumId, albumAudioId, cookie, requeste
       Cookie: buildKugouRequestCookie(cookie),
     },
   });
-  const data = json && (json.data || json);
-  const url = data && (data.url || data.play_url || data.play_backup_url || (Array.isArray(data.url) && data.url[0]));
-  if (url) {
+  const url = pickKugouPlayUrl(json);
+  if (json && Number(json.status) === 1 && url) {
     const level = kugouQualityFromParam(quality, requestedQuality);
-    return { url: String(url).replace(/\\\//g, '/').trim(), level, quality: level, trial: false, source: 'gateway' };
+    return { url, level, quality: level, trial: kugouPlaybackTrial(json), source: 'gateway' };
   }
-  const errMsg = String((json && (json.error || json.msg)) || '');
-  if (/付费|会员|vip|登录/i.test(errMsg)) {
-    return { restricted: true, category: auth.playbackReady ? 'vip_required' : 'login_required', message: errMsg || '酷狗歌曲需要会员权限', error: errMsg };
-  }
-  return null;
+  return kugouPlaybackRestriction(json, auth);
 }
 
 function normalizeQualityPreference(q) {
@@ -1179,13 +1218,17 @@ function hashCandidatesFromSong(song, requestedQuality) {
 
 async function handleKugouSearch(keywords, limit, cookie, offset) {
   const kw = String(keywords || '').trim();
-  const lim = Math.max(1, Math.min(Number(limit) || 10, 20));
-  const start = Math.max(0, Number(offset) || 0);
+  const lim = Math.max(1, Math.min(Math.floor(Number(limit) || 10), 20));
+  const start = Math.max(0, Math.floor(Number(offset) || 0));
   if (!kw) return [];
-  const cacheKey = kw.toLowerCase() + ':' + lim + ':' + start;
+  const cacheKey = kugouVipCacheKey(extractKugouAuth(cookie)) + ':' + kw.toLowerCase() + ':' + lim + ':' + start;
   return kugouSearchCache.wrap(cacheKey, null, async () => {
     console.log('[KugouSearch]', kw, 'limit:', lim, 'offset:', start);
-    return kugouSearch(kw, lim, cookie, start);
+    const skip = start % lim;
+    const first = await kugouSearch(kw, lim, cookie, start - skip);
+    if (!skip || first.length < lim) return first.slice(skip);
+    const next = await kugouSearch(kw, lim, cookie, start - skip + lim);
+    return first.concat(next).slice(skip, skip + lim);
   });
 }
 
@@ -1217,8 +1260,11 @@ async function handleKugouSongUrl(params, cookie) {
   const canAttemptMemberTrack = membershipRights.canPlayVipTracks ||
     membershipRights.canPlayMusicPackageTracks;
   if (memberTrack && !canAttemptMemberTrack) {
-    const category = auth.playbackReady ? 'vip_required' : 'login_required';
-    const message = auth.playbackReady ? '该酷狗歌曲需要有效会员或已购买权限' : '该酷狗歌曲需要先登录并验证播放权益';
+    const membershipPending = auth.playbackReady && (!membership.membershipKnown || !membership.membershipVerified || membership.membershipStale);
+    const category = membershipPending ? 'membership_unknown' : (auth.playbackReady ? 'vip_required' : 'login_required');
+    const message = membershipPending
+      ? '酷狗会员权益暂未完成同步，请稍后重试或重新登录'
+      : (auth.playbackReady ? '该酷狗歌曲需要有效会员或已购买权限' : '该酷狗歌曲需要先登录并验证播放权益');
     return attachKugouPlaybackStatus({
       provider: 'kugou',
       url: '',
@@ -1261,7 +1307,7 @@ async function handleKugouSongUrl(params, cookie) {
     payload = Object.assign({}, payload, {
       requestedQuality,
       effectiveQuality,
-      qualityDowngraded: requestedQuality !== effectiveQuality,
+      qualityDowngraded: requestedQuality !== resolvedLevel,
     });
     if (payload) delete payload.__candidate;
     kugouSongUrlCache.set(cacheKey, payload);
@@ -1269,83 +1315,64 @@ async function handleKugouSongUrl(params, cookie) {
   }
 
   let lastRestriction = null;
+  let trialCandidate = null;
+  const deadline = Date.now() + KUGOU_PLAY_BUDGET_MS;
+  const rememberRestriction = value => {
+    if (!value || !value.restricted) return;
+    if (!lastRestriction || value.category !== 'url_unavailable') lastRestriction = value;
+  };
   for (const item of candidates) {
-    const h5 = await kugouPlayViaH5(item.hash, albumId, albumAudioId, cookie, item.level || effectiveQuality, playbackMembership);
-    if (h5 && h5.url) {
-      const accepted = rememberKugouSongUrl({
-        provider: 'kugou',
-        url: h5.url,
-        playable: true,
-        trial: false,
-        level: h5.level || item.level,
-        quality: h5.quality || item.label,
-        requestedQuality,
-        hash: item.hash,
-        __candidate: item,
-      });
-      if (accepted) return accepted;
-      lastRestriction = { category: 'vip_required', message: '普通账号不能使用酷狗高级音质' };
+    const attempts = [
+      timeout => kugouPlayViaH5(item.hash, albumId, albumAudioId, cookie, item.level, playbackMembership, timeout),
+      timeout => kugouPlayViaWeb(item.hash, albumId, albumAudioId, cookie, timeout),
+      timeout => kugouPlayViaMobile(item.hash, albumId, cookie, playbackMembership, timeout),
+      timeout => kugouPlayViaGateway(item.hash, albumId, albumAudioId, cookie, item.level, playbackMembership, timeout),
+      timeout => kugouPlayViaWeb(item.hash, albumId, albumAudioId, cookie, timeout, true),
+    ];
+    for (const run of attempts) {
+      const remaining = deadline - Date.now();
+      if (remaining < 250) break;
+      let result;
+      try {
+        result = await run(Math.min(KUGOU_PLAY_ATTEMPT_MS, remaining));
+      } catch (_) {
+        // One unavailable endpoint must not prevent the remaining official routes.
+        rememberRestriction({ restricted: true, category: 'url_unavailable', message: '酷狗播放接口暂时不可用，请稍后重试' });
+        continue;
+      }
+      if (result && result.url) {
+        const payload = {
+          provider: 'kugou',
+          url: result.url,
+          playable: true,
+          trial: !!result.trial,
+          level: result.level || item.level,
+          quality: result.quality || item.label,
+          requestedQuality,
+          hash: item.hash,
+          playbackSource: result.source,
+          __candidate: item,
+        };
+        // Keep an official preview as a preview while checking for a full authorized stream.
+        if (payload.trial) {
+          if (!trialCandidate) trialCandidate = payload;
+          continue;
+        }
+        const accepted = rememberKugouSongUrl(payload);
+        if (accepted) return accepted;
+        rememberRestriction({ restricted: true, category: 'vip_required', message: '当前酷狗账号没有该音质的播放权限' });
+      }
+      rememberRestriction(result);
     }
-    if (h5 && h5.restricted) lastRestriction = h5;
-
-    const mobile = await kugouPlayViaMobile(item.hash, albumId, cookie, playbackMembership);
-    if (mobile && mobile.url) {
-      const accepted = rememberKugouSongUrl({
-        provider: 'kugou',
-        url: mobile.url,
-        playable: true,
-        trial: false,
-        level: item.level,
-        quality: item.label,
-        requestedQuality,
-        hash: item.hash,
-        __candidate: item,
-      });
-      if (accepted) return accepted;
-      lastRestriction = { category: 'vip_required', message: '普通账号不能使用酷狗高级音质' };
-    }
-    if (mobile && mobile.restricted) lastRestriction = mobile;
-
-    const web = await kugouPlayViaWeb(item.hash, albumId, albumAudioId, cookie);
-    if (web && web.url) {
-      const accepted = rememberKugouSongUrl({
-        provider: 'kugou',
-        url: web.url,
-        playable: true,
-        trial: false,
-        level: web.level || item.level,
-        quality: web.quality || item.label,
-        requestedQuality,
-        hash: item.hash,
-        __candidate: item,
-      });
-      if (accepted) return accepted;
-      lastRestriction = { category: 'vip_required', message: '普通账号不能使用酷狗高级音质' };
-    }
-    if (web && web.restricted) lastRestriction = web;
-
-    const gateway = await kugouPlayViaGateway(item.hash, albumId, albumAudioId, cookie, effectiveQuality, playbackMembership);
-    if (gateway && gateway.url) {
-      const accepted = rememberKugouSongUrl({
-        provider: 'kugou',
-        url: gateway.url,
-        playable: true,
-        trial: false,
-        level: gateway.level || item.level,
-        quality: gateway.quality || item.label,
-        requestedQuality,
-        hash: item.hash,
-        __candidate: item,
-      });
-      if (accepted) return accepted;
-      lastRestriction = { category: 'vip_required', message: '普通账号不能使用酷狗高级音质' };
-    }
-    if (gateway && gateway.restricted) lastRestriction = gateway;
+    if (Date.now() >= deadline) break;
   }
-
+  if (trialCandidate) {
+    const accepted = rememberKugouSongUrl(trialCandidate);
+    if (accepted) return accepted;
+  }
   const restriction = lastRestriction || {
-    category: auth.playbackReady ? 'vip_required' : 'login_required',
-    message: auth.playbackReady ? '酷狗歌曲需要会员或付费权限' : '酷狗歌曲需要登录后再播放，请重新打开官方登录窗口',
+    category: 'url_unavailable',
+    message: '酷狗暂未返回播放地址，请稍后重试',
   };
   return attachKugouPlaybackStatus({
     provider: 'kugou',
@@ -1578,10 +1605,10 @@ async function fetchKugouVipInfo(cookie, auth) {
 
 async function getKugouLoginInfo(cookie) {
   const auth = extractKugouAuth(cookie);
-  const profile = (!auth.nickname || !auth.avatar)
-    ? await fetchKugouProfileFromPlaylists(cookie, auth).catch(() => ({}))
-    : {};
-  const vipProbe = await fetchKugouVipInfo(cookie, auth).catch(() => null);
+  const [profile, vipProbe] = await Promise.all([
+    (!auth.nickname || !auth.avatar) ? fetchKugouProfileFromPlaylists(cookie, auth).catch(() => ({})) : {},
+    fetchKugouVipInfo(cookie, auth).catch(() => null),
+  ]);
   const vip = normalizeKugouVipPayloadV2(vipProbe, auth);
   const nickname = auth.nickname || profile.nickname || (auth.loggedIn ? ('酷狗 ' + (auth.userid || '用户')) : '酷狗音乐');
   return {
@@ -1618,7 +1645,7 @@ async function getKugouLoginInfo(cookie) {
 
 function kugouProfileCacheKey(auth) {
   auth = auth || {};
-  return 'profile|' + String(auth.userid || '0') + '|' + String(auth.token || '').slice(-10);
+  return 'profile|' + kugouVipCacheKey(auth);
 }
 
 function pickKugouProfileFromLists(lists, auth) {
@@ -1663,6 +1690,7 @@ async function fetchKugouProfileFromPlaylists(cookie, auth) {
   return kugouProfileCache.wrap(cacheKey, 5 * 60 * 1000, async () => {
     const json = await kugouH5GatewayRequest('/v7/get_all_list', {
       method: 'POST',
+      timeoutMs: 2500,
       cookie,
       router: 'cloudlist.service.kugou.com',
       params: { plat: 1 },
@@ -1742,6 +1770,9 @@ async function handleKugouUserPlaylists(cookie) {
       },
     });
     const data = (json && json.data) || {};
+    const info = data.info || data;
+    const hasListShape = [data.info, data.list, info.collect, info.love, info.self, info.list].some(Array.isArray);
+    if (Number(json && json.status) !== 1 || !hasListShape) throw new Error('KUGOU_PLAYLIST_RESPONSE_INVALID');
     const lists = extractKugouGatewayPlaylistLists(data);
     const profile = pickKugouProfileFromLists(lists, auth);
     if (profile.nickname || profile.avatar) kugouProfileCache.set(kugouProfileCacheKey(auth), profile, 5 * 60 * 1000);
@@ -1750,6 +1781,7 @@ async function handleKugouUserPlaylists(cookie) {
       provider: 'kugou',
       loggedIn: true,
       playbackReady: true,
+      libraryReady: true,
       userId: auth.userid,
       nickname: auth.nickname || profile.nickname || '',
       avatar: auth.avatar || profile.avatar || '',
@@ -1760,8 +1792,10 @@ async function handleKugouUserPlaylists(cookie) {
       provider: 'kugou',
       loggedIn: true,
       playbackReady: true,
+      libraryReady: false,
       playlists: [],
       error: err.message || 'KUGOU_PLAYLIST_FAILED',
+      upstreamCode: err.upstreamCode,
       message: '酷狗歌单加载失败，请稍后重试',
     };
   }
@@ -1800,6 +1834,9 @@ async function handleKugouPlaylistTracks(playlistId, cookie, opts = {}) {
     });
     const data = (json && json.data) || {};
     const chunk = data.info || data.songs || data.lists || data.file || [];
+    if (Number(json && json.status) !== 1 || ![data.info, data.songs, data.lists, data.file, chunk.file].some(Array.isArray)) {
+      throw new Error('KUGOU_PLAYLIST_TRACKS_RESPONSE_INVALID');
+    }
     const list = Array.isArray(chunk) ? chunk : (Array.isArray(chunk.file) ? chunk.file : []);
     const tracks = list.map((item, index) => {
       const mapped = mapKugouPlaylistTrack(item);
@@ -1875,7 +1912,7 @@ async function handleKugouPlaylistTracks(playlistId, cookie, opts = {}) {
         hasMore: offset + pageTracks.length < total,
       };
     }
-    return kugouPlaylistTracksCache.wrap(cacheKey, null, async () => {
+    return await kugouPlaylistTracksCache.wrap(cacheKey, null, async () => {
       const tracks = [];
       let total = 0;
       for (let round = 0; round < 500; round++) {
@@ -1895,6 +1932,7 @@ async function handleKugouPlaylistTracks(playlistId, cookie, opts = {}) {
       tracks: [],
       total: 0,
       error: err.message || 'KUGOU_PLAYLIST_TRACKS_FAILED',
+      upstreamCode: err.upstreamCode,
       message: '酷狗歌单歌曲加载失败',
     };
   }
@@ -2208,6 +2246,8 @@ module.exports = {
   kugouAudioReferer,
   mapKugouSearchItem,
   _test: {
+    pickKugouPlayUrl,
+    kugouPlaybackTrial,
     normalizeKugouVipPayloadV2,
     normalizeKugouWebRoleInfoPayload,
     fetchKugouWebVipInfo,

@@ -13,6 +13,10 @@ const {
 } = require('./desktop-icon-shape-runtime');
 const { startNativeDesktopIconLayer } = require('./desktop-native-icon-layer-runtime');
 
+const ICON_HOST_RECOVERY_CIRCUIT_WINDOW_MS = 12000;
+const ICON_HOST_RECOVERY_CIRCUIT_LIMIT = 2;
+const ICON_HOST_RECOVERY_STABLE_MS = 10000;
+
 function normalizeBounds(value, fallback = {}) {
   const source = value && typeof value === 'object' ? value : fallback;
   return {
@@ -540,6 +544,8 @@ class FullDesktopModeRuntime {
     this.iconShapeProbeAbortController = null;
     this.iconShapeReconcileQueued = false;
     this.iconShapeReconcileTimer = null;
+    this.iconHostRecoveryEvents = [];
+    this.iconHostRecoveryStableTimer = null;
     this.softwareInteractionLocked = false;
     this.iconInteractionLocked = false;
     this.iconInteractionLockError = '';
@@ -901,6 +907,59 @@ class FullDesktopModeRuntime {
     }, 180);
   }
 
+  cancelIconHostReconcile() {
+    if (this.iconShapeReconcileTimer) {
+      clearTimeout(this.iconShapeReconcileTimer);
+      this.iconShapeReconcileTimer = null;
+    }
+    this.iconShapeReconcileQueued = false;
+  }
+
+  cancelIconHostRecoveryStableTimer() {
+    if (this.iconHostRecoveryStableTimer) {
+      clearTimeout(this.iconHostRecoveryStableTimer);
+      this.iconHostRecoveryStableTimer = null;
+    }
+  }
+
+  clearIconHostRecoveryEvents() {
+    this.iconHostRecoveryEvents = [];
+  }
+
+  recordIconHostRecoveryEvent(now = Date.now()) {
+    const cutoff = now - ICON_HOST_RECOVERY_CIRCUIT_WINDOW_MS;
+    this.iconHostRecoveryEvents = this.iconHostRecoveryEvents.filter((time) => time >= cutoff);
+    this.iconHostRecoveryEvents.push(now);
+    return this.iconHostRecoveryEvents.length;
+  }
+
+  armIconHostRecoveryStableTimer(watcher) {
+    this.cancelIconHostRecoveryStableTimer();
+    this.iconHostRecoveryStableTimer = setTimeout(() => {
+      this.iconHostRecoveryStableTimer = null;
+      if (this.iconShapeWatcher !== watcher || !this.enabled || !this.interactive || this.disposeRequested) return;
+      if (watcher && typeof watcher.isRunning === 'function' && !watcher.isRunning()) return;
+      this.clearIconHostRecoveryEvents();
+    }, ICON_HOST_RECOVERY_STABLE_MS);
+    if (this.iconHostRecoveryStableTimer && typeof this.iconHostRecoveryStableTimer.unref === 'function') {
+      this.iconHostRecoveryStableTimer.unref();
+    }
+  }
+
+  openIconHostRecoveryCircuit(reason = 'desktop-icon-watcher-restarted') {
+    this.cancelIconHostReconcile();
+    this.cancelIconHostRecoveryStableTimer();
+    this.iconShapeError = 'DESKTOP_ICON_RECOVERY_CIRCUIT_OPEN';
+    this.lastError = this.iconShapeError;
+    this.phase = 'recovering-icon-layer';
+    if (this.isWindowAlive()) safeCall(this.window, 'showInactive', null);
+    this.generation += 1;
+    this.emitStatus(reason + '-circuit-open');
+    Promise.resolve().then(() => {
+      this.disable(reason + '-circuit-open', this.iconShapeError).catch(() => {});
+    });
+  }
+
   handleWatchedIconLayout(layout) {
     if (this.iconLayerRestoreUnconfirmed || !this.enabled || !this.interactive || !this.isWindowAlive()) return;
     const display = this.shapeDisplayForWindow();
@@ -942,6 +1001,7 @@ class FullDesktopModeRuntime {
       },
       onExit: (details = {}) => {
         if (this.iconShapeWatcher !== watcher) return;
+        this.cancelIconHostRecoveryStableTimer();
         const stopRequested = this.iconShapeStopRequested.has(watcher);
         if (details.restored !== true) {
           this.iconShapeStopRequested.delete(watcher);
@@ -969,6 +1029,7 @@ class FullDesktopModeRuntime {
           const recoveryReason = watcherFailureCode === 'DESKTOP_ICON_HOST_CHANGED'
             ? 'desktop-icon-host-changed'
             : 'desktop-icon-watcher-restarted';
+          const recoveryEvents = this.recordIconHostRecoveryEvent();
           this.iconShapeError = watcherFailureCode || 'DESKTOP_ICON_WATCHER_EXITED';
           this.lastError = this.iconShapeError;
           this.phase = 'recovering-icon-layer';
@@ -977,6 +1038,10 @@ class FullDesktopModeRuntime {
           // existing renderer visible while the serialized rebind is queued.
           if (this.isWindowAlive()) safeCall(this.window, 'showInactive', null);
           this.generation += 1;
+          if (recoveryEvents >= ICON_HOST_RECOVERY_CIRCUIT_LIMIT) {
+            this.openIconHostRecoveryCircuit(recoveryReason);
+            return;
+          }
           this.emitStatus(recoveryReason + '-queued');
           this.scheduleIconHostReconcile(recoveryReason);
           return;
@@ -984,6 +1049,7 @@ class FullDesktopModeRuntime {
       },
     });
     this.iconShapeWatcher = watcher;
+    this.armIconHostRecoveryStableTimer(watcher);
     return watcher;
   }
 
@@ -1608,6 +1674,8 @@ class FullDesktopModeRuntime {
 
   async rollback(win, snapshot, reason, originalError) {
     try {
+      this.cancelIconHostReconcile();
+      this.cancelIconHostRecoveryStableTimer();
       await this.stopIconShapeWatcher();
       safeCall(win, 'hide', null);
       const cleared = this.clearIconShapeState(win, { clearWindow: false });
@@ -1653,6 +1721,8 @@ class FullDesktopModeRuntime {
         if (win !== this.window) throw new Error('FULL_DESKTOP_WINDOW_MISMATCH');
         return this.setInteractiveInternal(interactive, reason);
       }
+      this.clearIconHostRecoveryEvents();
+      this.cancelIconHostRecoveryStableTimer();
       this.window = win;
       this.nativeWindowId = nativeWindowHandleDecimal(win);
       this.snapshot = captureBrowserWindowState(win, this.screen);
@@ -1882,6 +1952,8 @@ class FullDesktopModeRuntime {
   }
 
   async disableInternal(reason = 'disabled', preservedError = null) {
+    this.cancelIconHostReconcile();
+    this.cancelIconHostRecoveryStableTimer();
     await this.stopIconShapeWatcher();
     if (!this.enabled && !this.snapshot) {
       this.clearIconShapeState(this.window, { clearWindow: this.isWindowAlive(this.window) });
@@ -1963,11 +2035,11 @@ class FullDesktopModeRuntime {
     return { ok: !this.lastError, enabled: false, interactive: false, error: this.lastError, status: this.emitStatus(reason) };
   }
 
-  disable(reason = 'disabled') {
+  disable(reason = 'disabled', preservedError = null) {
     this.abortNative();
     this.abortIconShapeProbe();
     this.requestIconShapeWatcherStop();
-    return this.enqueue('disable', () => this.disableInternal(reason));
+    return this.enqueue('disable', () => this.disableInternal(reason, preservedError));
   }
 
   dispose(reason = 'dispose') {

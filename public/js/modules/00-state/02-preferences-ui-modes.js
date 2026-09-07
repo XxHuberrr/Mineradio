@@ -229,17 +229,46 @@ function updateFxFabAutoHideFromPointer(x, y) {
   if (!nearBottomRight) fxFabAutoHideRevealArmed = true;
   document.body.classList.toggle('fx-fab-peek', panelOpen || (nearBottomRight && fxFabAutoHideRevealArmed));
 }
+var fullscreenDiyLayoutFrame = 0;
+var fullscreenDiyLayoutResizeObserver = null;
+var fullscreenDiyLayoutMutationObserver = null;
+function visibleFullscreenDiyAccountRects() {
+  var root = document.getElementById('top-right');
+  if (!root) return [];
+  var pills = Array.prototype.slice.call(root.querySelectorAll('.top-account-pill'));
+  var nodes = pills.length ? pills : [document.getElementById('user-btn') || root];
+  return nodes.map(function (node) {
+    if (!node || !node.isConnected) return null;
+    var style = window.getComputedStyle ? getComputedStyle(node) : null;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) return null;
+    var rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? rect : null;
+  }).filter(Boolean);
+}
+function fullscreenDiyAccountBounds() {
+  var rects = visibleFullscreenDiyAccountRects();
+  if (!rects.length) {
+    var fallback = document.getElementById('user-btn') || document.getElementById('top-right');
+    return fallback ? fallback.getBoundingClientRect() : null;
+  }
+  return rects.reduce(function (bounds, rect) {
+    bounds.left = Math.min(bounds.left, rect.left);
+    bounds.right = Math.max(bounds.right, rect.right);
+    bounds.top = Math.min(bounds.top, rect.top);
+    bounds.bottom = Math.max(bounds.bottom, rect.bottom);
+    return bounds;
+  }, { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity });
+}
 function layoutFullscreenDiyZone() {
   var width = innerWidth < 820 ? 104 : 128;
   var height = innerWidth < 720 ? 48 : 52;
   var left = innerWidth - 510;
   var top = 24;
-  var anchor = document.querySelector('#top-right .top-account-pill') || document.getElementById('user-btn') || document.getElementById('top-right');
-  if (anchor) {
-    var rect = anchor.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
+  var rect = fullscreenDiyAccountBounds();
+  if (rect && isFinite(rect.left) && isFinite(rect.right) && isFinite(rect.bottom)) {
+    if (rect.right > rect.left && rect.bottom > rect.top) {
       var gap = innerWidth < 820 ? 8 : 12;
-      left = rect.left + rect.width / 2 - width / 2;
+      left = rect.left + (rect.right - rect.left) / 2 - width / 2;
       top = rect.bottom + gap;
     }
   }
@@ -249,6 +278,29 @@ function layoutFullscreenDiyZone() {
   document.documentElement.style.setProperty('--fullscreen-diy-top', top.toFixed(1) + 'px');
   document.documentElement.style.setProperty('--fullscreen-diy-width', width + 'px');
   return { left: left, top: top, width: width, height: height };
+}
+function scheduleFullscreenDiyLayout() {
+  if (fullscreenDiyLayoutFrame) return;
+  fullscreenDiyLayoutFrame = requestAnimationFrame(function () {
+    fullscreenDiyLayoutFrame = 0;
+    layoutFullscreenDiyZone();
+  });
+}
+function setupFullscreenDiyLayoutTracking() {
+  var root = document.getElementById('top-right');
+  if (!root || root.__fullscreenDiyLayoutTracking) return;
+  root.__fullscreenDiyLayoutTracking = true;
+  window.addEventListener('resize', scheduleFullscreenDiyLayout, { passive: true });
+  document.addEventListener('fullscreenchange', scheduleFullscreenDiyLayout);
+  if (typeof ResizeObserver === 'function') {
+    fullscreenDiyLayoutResizeObserver = new ResizeObserver(scheduleFullscreenDiyLayout);
+    fullscreenDiyLayoutResizeObserver.observe(root);
+  }
+  if (typeof MutationObserver === 'function') {
+    fullscreenDiyLayoutMutationObserver = new MutationObserver(scheduleFullscreenDiyLayout);
+    fullscreenDiyLayoutMutationObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+  }
+  scheduleFullscreenDiyLayout();
 }
 function shouldSuppressFullscreenDiyPeek() {
   var fxPanel = document.getElementById('fx-panel');
@@ -264,8 +316,7 @@ function updateFullscreenDiyPeekFromPointer(x, y) {
     return;
   }
   var rect = layoutFullscreenDiyZone();
-  var anchor = document.querySelector('#top-right .top-account-pill') || document.getElementById('user-btn') || document.getElementById('top-right');
-  var anchorRect = anchor ? anchor.getBoundingClientRect() : rect;
+  var anchorRect = fullscreenDiyAccountBounds() || rect;
   var hitLeft = Math.min(rect.left, anchorRect.left) - 26;
   var hitRight = Math.max(rect.left + rect.width, anchorRect.right) + 26;
   var hitTop = Math.min(rect.top, anchorRect.top) - 18;

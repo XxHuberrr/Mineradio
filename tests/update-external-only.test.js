@@ -25,8 +25,8 @@ function serverFunctionSource(name, nextName) {
   return serverText.slice(start, end);
 }
 
-test('2.1.0 update metadata accepts only a bounded HTTPS external page', () => {
-  assert.equal(packageData.version, '2.1.0');
+test('release update metadata accepts only a bounded HTTPS external page', () => {
+  assert.equal(packageData.version, '2.2.0');
   assert.equal(packageData.mineradio.update.preview, false);
   assert.match(serverText, /function safeExternalUpdateUrl\(value\)/);
   assert.match(serverText, /raw\.length > 2048/);
@@ -38,7 +38,7 @@ test('2.1.0 update metadata accepts only a bounded HTTPS external page', () => {
   assert.match(serverText, /\n\s+downloadPageUrl,/);
   assert.match(serverText, /\n\s+downloadPages,/);
   assert.match(serverText, /patchAvailable:\s*false/);
-  assert.match(htmlText, /id="update-modal-version"[^>]*>v2\.1\.0</);
+  assert.match(htmlText, /id="update-modal-version"[^>]*>v2\.2\.0</);
   assert.match(htmlText, /id="update-download-sources"/);
 });
 
@@ -64,15 +64,15 @@ test('release body preserves all three labelled HTTPS download pages', () => {
     serverFunctionSource('extractReleaseDownloadPages', 'extractReleaseDownloadPage'),
   ].join('\n'), sandbox);
   const pages = sandbox.extractReleaseDownloadPages([
-    '<!-- mineradio-download-page: 夸克盘|https://pan.quark.cn/s/f40289e1c5d3 -->',
-    '<!-- mineradio-download-page: 百度云|https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp -->',
-    '<!-- mineradio-download-page: 蓝奏云|https://xxhuber.lanzout.com/mineradio2 -->',
+    '<!-- mineradio-download-page: 夸克盘|https://pan.quark.cn/s/df00d9520835 -->',
+    '<!-- mineradio-download-page: 百度云|https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP -->',
+    '<!-- mineradio-download-page: 蓝奏云|https://xxhuber.lanzout.com/s/Mineradio -->',
     '<!-- mineradio-download-page: 不安全|http://example.com/file -->',
   ].join('\n'));
   assert.deepEqual(JSON.parse(JSON.stringify(pages)), [
-    { label: '夸克盘', url: 'https://pan.quark.cn/s/f40289e1c5d3' },
-    { label: '百度云', url: 'https://pan.baidu.com/s/14fgTABgbfseOg9QuX0Um7Q?pwd=sjhp' },
-    { label: '蓝奏云', url: 'https://xxhuber.lanzout.com/mineradio2' },
+    { label: '夸克盘', url: 'https://pan.quark.cn/s/df00d9520835' },
+    { label: '百度云', url: 'https://pan.baidu.com/s/1UAAyvXHNJjxVXAHIPtl4Ow?pwd=SJHP' },
+    { label: '蓝奏云', url: 'https://xxhuber.lanzout.com/s/Mineradio' },
   ]);
 });
 
@@ -80,7 +80,9 @@ test('renderer opens the external page without local installer or patch calls', 
   assert.match(updateUiText, /desktopWindow\.openUpdatePage\(target\)/);
   assert.match(updateUiText, /new URL\(raw\)\.protocol === 'https:'/);
   assert.match(updateUiText, /function openUpdateDownloadSource\(index\)/);
-  assert.match(updateUiText, /release\.downloadPages \|\| data\.downloadPages/);
+  assert.match(updateUiText, /Array\.isArray\(release\.downloadPages\)/);
+  assert.match(updateUiText, /Array\.isArray\(data\.downloadPages\)/);
+  assert.match(updateUiText, /explicitPages === null/);
   assert.match(updateUiText, /update-download-source/);
   assert.match(updateUiText, /软件不会在本地下载或应用补丁/);
   assert.doesNotMatch(updateUiText, /\/api\/update\/download/);

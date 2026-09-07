@@ -12,7 +12,7 @@ async function apiJson(url, opts) {
   }
   try {
     var res = await fetch(url, fetchOpts);
-    return res.json();
+    return await res.json();
   } finally {
     if (timer) clearTimeout(timer);
   }

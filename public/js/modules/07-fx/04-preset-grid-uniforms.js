@@ -14,7 +14,11 @@ function buildPresetGrid() {
     var p = presetMeta[i];
     var name = p.nameHtml || p.name;
     var desc = p.descHtml || p.desc;
-    return '<div class="preset-card" data-preset="' + i + '" onclick="setPreset(' + i + ')">' +
+    var cardClass = p.premiumVisual ? ' preset-card-premium' : '';
+    var cardStyle = p.premiumVisual
+      ? ' style="--preset-accent:' + p.accent + ';--preset-accent-2:' + p.accent2 + '"'
+      : '';
+    return '<div class="preset-card' + cardClass + '" data-preset="' + i + '"' + cardStyle + ' onclick="setPreset(' + i + ')">' +
       '<div class="pc-icon">' + presetIcons[i] + '</div>' +
       '<div class="pc-name">' + name + '</div>' +
       '<div class="pc-desc">' + desc + '</div>' +
@@ -111,6 +115,9 @@ function syncFxUniforms() {
   uniforms.uCoverRes.value = normalizeCoverResolution(fx.coverResolution);
   uniforms.uBgFade.value = fx.bgFade;
   uniforms.uBloomStrength.value = fx.bloom ? fx.bloomStrength : 0;
+  if (uniforms.uBackdropAdapt) uniforms.uBackdropAdapt.value = fx.coverBackdropAdapt !== false
+    ? clampRange(Number(fx.lyricBackgroundAdapt) || 0, 0, 1)
+    : 0;
   if (bloomParticles) bloomParticles.visible = fx.bloom && fx.bloomStrength > 0.01;
   uniforms.uEdgeEnabled.value = fx.edge ? 1 : 0;
   if (uniforms.uTintColor) uniforms.uTintColor.value.set(normalizeHexColor(fx.visualTintColor || '#9db8cf'));

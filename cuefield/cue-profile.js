@@ -1,3 +1,5 @@
+const { buildShadowDiagnostics } = require('./shadow-diagnostics');
+
 function toNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -52,18 +54,18 @@ function inferGridStep(map, beats) {
   return round(average(deltas), 3) || 0.5;
 }
 
-function isDownbeat(beat, index, hasExplicitMeter) {
+function isDownbeat(beat, index) {
   if (!beat) return false;
   if (beat.downbeat === true || beat.phrase === true) return true;
   if (String(beat.combo || '').toLowerCase() === 'downbeat') return true;
-  return !hasExplicitMeter && index % 4 === 0;
+  return index % 4 === 0;
 }
 
 function beatsInRange(beats, start, end) {
   return beats.filter((beat) => beat.time >= start && beat.time < end);
 }
 
-function buildBars(beats, downbeats, gridStep, duration) {
+function buildBars(beats, downbeats, gridStep, duration, stableConfidence = 0.75) {
   return downbeats.map((downbeat, index) => {
     const next = downbeats[index + 1];
     const start = downbeat.time;
@@ -77,9 +79,20 @@ function buildBars(beats, downbeats, gridStep, duration) {
       lowDensity: round(average(window.map((beat) => beat.low))),
       bodyDensity: round(average(window.map((beat) => beat.body))),
       snapDensity: round(average(window.map((beat) => beat.snap))),
-      beatStability: round(window.length ? window.filter((beat) => beat.confidence >= 0.75).length / window.length : 0),
+      beatStability: round(window.length ? window.filter((beat) => beat.confidence >= stableConfidence).length / window.length : 0),
     };
   });
+}
+
+function gridTimingStability(beats, gridStep) {
+  if (gridStep <= 0 || beats.length < 2) return 0;
+  let stable = 0;
+  for (let index = 1; index < beats.length; index += 1) {
+    const deltaInBeats = (beats[index].time - beats[index - 1].time) / gridStep;
+    const nearestMultiple = Math.round(deltaInBeats);
+    if (nearestMultiple >= 1 && Math.abs(deltaInBeats - nearestMultiple) <= 0.18) stable += 1;
+  }
+  return round(stable / (beats.length - 1));
 }
 
 function buildPhrases(bars, duration) {
@@ -99,16 +112,7 @@ function buildPhrases(bars, duration) {
   return phrases;
 }
 
-function lyricActivityAt(windows, start, end) {
-  const overlap = (Array.isArray(windows) ? windows : []).reduce((sum, window) => {
-    const left = Math.max(start, toNumber(window && window.start));
-    const right = Math.min(end, toNumber(window && window.end));
-    return sum + Math.max(0, right - left);
-  }, 0);
-  return end > start ? Math.max(0, Math.min(1, overlap / (end - start))) : 0;
-}
-
-function buildWindows(beats, duration, vocalWindows, size = 8) {
+function buildWindows(beats, duration, size = 8) {
   const energy = [];
   const bass = [];
   const vocal = [];
@@ -117,7 +121,7 @@ function buildWindows(beats, duration, vocalWindows, size = 8) {
     const window = beatsInRange(beats, start, end);
     energy.push({ start: round(start), end: round(end), value: round(average(window.map(beatEnergy))) });
     bass.push({ start: round(start), end: round(end), value: round(average(window.map((beat) => beat.low))) });
-    vocal.push({ start: round(start), end: round(end), value: round(lyricActivityAt(vocalWindows, start, end)) });
+    vocal.push({ start: round(start), end: round(end), value: 0 });
   }
   return { energy, bass, vocal };
 }
@@ -151,6 +155,17 @@ function buildCuePoints(candidates, downbeats, bars, duration) {
   };
 }
 
+function normalizeAudioMetrics(value) {
+  const metric = (input) => {
+    const number = toNumber(input, NaN);
+    return Number.isFinite(number) && number >= -80 && number <= 6 ? round(number) : null;
+  };
+  return {
+    shortTermLufs: metric(value && value.shortTermLufs),
+    truePeakDbtp: metric(value && value.truePeakDbtp),
+  };
+}
+
 function buildCueProfile(input = {}) {
   const map = input.map || {};
   const track = input.track || {};
@@ -161,13 +176,17 @@ function buildCueProfile(input = {}) {
     toNumber(map.duration),
     beats.length ? beats[beats.length - 1].time + gridStep : 0,
   ));
-  const hasExplicitMeter = beats.some((beat) => beat.downbeat === true || beat.phrase === true || !!String(beat.combo || ''));
   const downbeats = beats
-    .filter((beat, index) => isDownbeat(beat, index, hasExplicitMeter))
+    .filter((beat, index) => isDownbeat(beat, index))
     .map((beat) => ({ time: beat.time, confidence: beat.confidence, energy: round(beatEnergy(beat)) }));
   const bars = buildBars(beats, downbeats, gridStep, duration);
+  const gridBeats = normalizeBeats(map.gridBeats && map.gridBeats.length ? map.gridBeats : beats);
+  const gridDownbeats = gridBeats
+    .filter((beat, index) => isDownbeat(beat, index))
+    .map((beat) => ({ time: beat.time, confidence: beat.confidence, energy: round(beatEnergy(beat)) }));
+  const gridBars = buildBars(gridBeats, gridDownbeats, gridStep, duration, 0.7);
 
-  return {
+  const profile = {
     track,
     duration,
     bpm: gridStep > 0 ? round(60 / gridStep, 2) : 0,
@@ -175,15 +194,21 @@ function buildCueProfile(input = {}) {
     beats,
     downbeats,
     bars,
+    gridQuality: {
+      downbeatCount: gridDownbeats.length,
+      downbeatConfidence: round(average(gridDownbeats.map((beat) => beat.confidence))),
+      beatStability: round(average(gridBars.map((bar) => bar.beatStability))),
+      timingStability: gridTimingStability(gridBeats, gridStep),
+    },
     phrases: buildPhrases(bars, duration),
     cuePoints: buildCuePoints(input.candidates || [], downbeats, bars, duration),
-    windows: buildWindows(beats, duration, input.vocalWindows || map.vocalWindows),
+    windows: buildWindows(beats, duration),
     candidates: Array.isArray(input.candidates) ? input.candidates.slice() : [],
-    tempoStability: toNumber(map.tempoStability, 0),
-    beatConfidence: toNumber(map.beatConfidence, 0),
-    downbeatStability: toNumber(map.downbeatStability, 0),
-    dataConfidence: toNumber(map.dataConfidence, 0),
+    musicalProfile: map.musicalProfile || null,
+    audioMetrics: normalizeAudioMetrics(map.audioMetrics),
   };
+  profile.shadow = buildShadowDiagnostics(profile);
+  return profile;
 }
 
 module.exports = {

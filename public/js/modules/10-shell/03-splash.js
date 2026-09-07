@@ -574,6 +574,9 @@ function armSplashSoundFallback() {
 function finishSplashReveal(forceLoad, opts) {
   opts = opts || {};
   markAppPerf('home-revealed');
+  if (typeof resumeSavedGestureControl === 'function') {
+    setTimeout(function () { resumeSavedGestureControl(opts.reason || 'splash-reveal'); }, opts.fastSkip ? 120 : 260);
+  }
   // Never make the renderer's visibility depend on the next animation frame.
   // The desktop HWND may already be in its native handoff at this point.
   releaseStartupFastSkipPreload();

@@ -23,7 +23,7 @@ var FX_CONSOLE_LAYOUT = [
     key: 'home',
     groups: [
       { key: 'presets', title: '视觉预设', hint: '先选整体风格，再进入细节调整', open: true, items: [
-        fxConsoleItem('preset-grid', '视觉预设', '风格 场景 Emily 安魂 音域 星河 唱片 星球 滚筒 虚空')
+        fxConsoleItem('preset-grid', '视觉预设', '风格 场景 Emily 安魂 音域 星河 唱片 星球 滚筒 虚空 月蚀圣环 雨幕霓虹 折光蝶群 深海绽放 Eclipse Halo Neon Drizzle Prism Flock Abyssal Bloom')
       ] },
       { key: 'archives', title: '用户存档', hint: '保存、应用和分享整套视觉参数', items: [
         fxConsoleItem('user-archive-grid', '用户存档', '方案 快照 预设码 应用 回退')
@@ -248,7 +248,8 @@ var FX_CONSOLE_LAYOUT = [
         fxConsoleItem('fx-shelfcamexit', '镜头离开速度', '歌单镜头退出')
       ] },
       { key: 'camera', title: '摄像头交互', hint: '摄像头手势触碰开关', items: [
-        fxConsoleItem('cam-seg', '摄像头交互', '关闭 手势触碰')
+        fxConsoleItem('cam-seg', '摄像头交互', '关闭 手势触碰'),
+        fxConsoleItem('gesture-settings-card', '播放手势', '播放 暂停 上一首 下一首 音量 喜欢 歌词 手部光迹 灵敏度')
       ] }
     ]
   },
@@ -267,6 +268,10 @@ var FX_CONSOLE_LAYOUT = [
       { key: 'performance', title: '性能与后台', hint: '画质档位、后台渲染和直播保持', items: [
         fxConsoleItem('performance-quality-seg', '画质档位', '低配 中 高 超高 渲染质量'),
         fxConsoleItem('foreground-fps-seg', '前台帧率上限', 'FPS 跟随屏幕 垂直同步 VSync 高刷 节能 45 60 75 90 120'),
+        fxConsoleItem('t-lyricLiveViewportFit', '歌词实时边界', '逐帧 投影 长歌词 屏幕余量 性能'),
+        fxConsoleItem('t-lyricContextHighQuality', '上下句高清纹理', '歌词 高清 预热 GPU 显存'),
+        fxConsoleItem('t-lyricBackdropAdapt', '全局歌词避光', '歌词 亮底 可读性 动态'),
+        fxConsoleItem('t-coverBackdropAdapt', '封面粒子避光', '粒子 亮底 GPU 着色器'),
         fxConsoleItem('performance-background-seg', '后台渲染策略', '自动优化 保持运行 停止释放'),
         fxConsoleItem('t-liveBackgroundKeep', '直播后台保持', '最小化继续渲染')
       ] },

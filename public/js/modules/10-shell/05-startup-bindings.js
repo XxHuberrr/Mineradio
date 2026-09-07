@@ -29,6 +29,9 @@ var persistedLocalLibraryRestorePromise = Promise.resolve(restorePersistedLocalL
   else if (!restoredLastPlaybackSnapshot) restoredPlaybackAtStartup = false;
   return restored;
 }, function () { return false; });
+var builtInPlaylistRestorePromise = typeof refreshBuiltInPlaylists === 'function'
+  ? Promise.resolve(refreshBuiltInPlaylists(false))
+  : Promise.resolve(false);
 applyStartupStarfieldPreset();
 switchPlaylistTab(queueViewTab, { save: false, animate: false, refresh: false });
 applyPlaylistPanelPinState(false);
@@ -36,11 +39,11 @@ if (fx.floatLayer) createFloatLayer();
 if (fx.particleLyrics) createLyricsParticles();
 if (fx.backCover) createBackCoverLayer();
 initIdleGuideCanvas();
-var startupLoginStatusPromise = Promise.all([refreshLoginStatus(), refreshQQLoginStatus({ forceVip: true, reason: 'startup' }), refreshKugouLoginStatus(), refreshQishuiLoginStatus(), refreshSpotifyLoginStatus(), persistedLocalLibraryRestorePromise]);
+var startupLoginStatusPromise = Promise.all([refreshLoginStatus(), refreshQQLoginStatus({ forceVip: true, reason: 'startup' }), refreshKugouLoginStatus(), refreshQishuiLoginStatus(), persistedLocalLibraryRestorePromise, builtInPlaylistRestorePromise]);
 startQQLoginStatusAutoRefresh();
 startKugouLoginStatusAutoRefresh();
 startQishuiLoginStatusAutoRefresh();
-startSpotifyLoginStatusAutoRefresh();
+if (typeof setupFullscreenDiyLayoutTracking === 'function') setupFullscreenDiyLayoutTracking();
 if (startupLoginStatusPromise && startupLoginStatusPromise.then) {
   startupLoginStatusPromise.then(function () {
     if (hasAnyPlatformLogin()) {

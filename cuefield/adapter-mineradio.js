@@ -117,7 +117,12 @@ function normalizeWindows(windows) {
 function normalizeMineradioBeatMap(track, map, extra = {}) {
   const gridStep = toNumber(map && map.gridStep, 0);
   const rawBeats = (map && (map.cameraBeats || map.beats || map.kicks)) || [];
+  const rawGridBeats = (map && (map.pulseBeats || map.beats || map.cameraBeats || map.kicks)) || [];
   const beats = rawBeats
+    .map((beat, index) => normalizeBeatEvent(beat, index, gridStep))
+    .filter((beat) => Number.isFinite(beat.time))
+    .sort((a, b) => a.time - b.time);
+  const gridBeats = rawGridBeats
     .map((beat, index) => normalizeBeatEvent(beat, index, gridStep))
     .filter((beat) => Number.isFinite(beat.time))
     .sort((a, b) => a.time - b.time);
@@ -126,6 +131,11 @@ function normalizeMineradioBeatMap(track, map, extra = {}) {
   const downbeats = beats.filter((beat, index) => {
     if (beat.downbeat || beat.phrase || beat.combo === 'downbeat') return true;
     return !hasExplicitMeter && gridStep > 0 && index % 4 === 0;
+  });
+  const gridHasExplicitMeter = gridBeats.some((beat) => beat.downbeat || beat.phrase || !!beat.combo);
+  const gridDownbeats = gridBeats.filter((beat, index) => {
+    if (beat.downbeat || beat.phrase || beat.combo === 'downbeat') return true;
+    return !gridHasExplicitMeter && gridStep > 0 && index % 4 === 0;
   });
   const quality = beatGridQuality(beats, gridStep, downbeats, map);
   const phraseBoundaries = downbeats.map((beat) => ({
@@ -146,6 +156,8 @@ function normalizeMineradioBeatMap(track, map, extra = {}) {
       source: 'mineradio',
       beats,
       downbeats,
+      gridBeats,
+      gridDownbeats,
       phraseBoundaries,
       energyCurve: beats.map((beat) => ({ time: beat.time, value: Math.max(0, Math.min(1, beat.impact || beat.strength || 0)) })),
       lowBand: beats.map((beat) => ({ time: beat.time, value: beat.low })),
@@ -163,6 +175,8 @@ function normalizeMineradioBeatMap(track, map, extra = {}) {
       beatConfidence: quality.beatConfidence,
       downbeatStability: quality.downbeatStability,
       dataConfidence: quality.dataConfidence,
+      musicalProfile: map && map.musicalProfile || extra.musicalProfile || null,
+      audioMetrics: map && map.audioMetrics || extra.audioMetrics || null,
     },
   };
 }

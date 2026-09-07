@@ -90,6 +90,7 @@ async function loadPodcastRadioIntoQueue(id, autoplay, title) {
 }
 function playlistQueueSource(id) {
   var raw = String(id || '');
+  if (raw.indexOf('mineradio:') === 0) return { provider: 'mineradio', id: raw.slice(10), requestId: raw };
   if (raw.indexOf('qq:') === 0) return { provider: 'qq', id: raw.slice(3), requestId: raw };
   if (raw.indexOf('kugou:') === 0) return { provider: 'kugou', id: raw.slice(6), requestId: raw };
   if (raw.indexOf('qishui:') === 0) return { provider: 'qishui', id: raw.slice(7), requestId: raw };
@@ -142,7 +143,7 @@ async function hydratePlaylistQueueNextPage(reason) {
   var limit = playlistQueuePageSize(state.provider, false);
   state.loading = true;
   state.pausedForBuffer = false;
-  state.promise = apiJson(playlistQueuePageUrl(source, offset, limit), { timeoutMs: 16000 }).then(function (r) {
+    state.promise = fetchPlaylistTracksPage(source.provider, source.id, { offset: offset, limit: limit }, { timeoutMs: 16000 }).then(function (r) {
     if (!playlistQueueHydrationValid(state, token)) return false;
     var rawTracks = r && r.tracks || [];
     if (r && r.error && !rawTracks.length) throw new Error(r.message || r.error);
@@ -222,7 +223,7 @@ async function loadPlaylistIntoQueueById(id, autoplay, title, opts) {
   var seedTracks = Array.isArray(opts.seedTracks) && opts.seedTracks.length ? opts.seedTracks.map(cloneSong) : [];
   try {
     if (!seedTracks.length) {
-      r = await apiJson(playlistQueuePageUrl(source, 0, playlistQueuePageSize(source.provider, true)), { timeoutMs: 16000 });
+      r = await fetchPlaylistTracksPage(source.provider, source.id, { offset: 0, limit: playlistQueuePageSize(source.provider, true) }, { timeoutMs: 16000 });
       seedTracks = (r && r.tracks || []).map(cloneSong);
     } else {
       r = {

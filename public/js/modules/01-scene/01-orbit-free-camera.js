@@ -212,6 +212,10 @@ function defaultOrbitStateForPreset(p) {
   if (p === 3) return { theta: 0.0, phi: 0.05, radius: 8.0 };
   if (p === 4) return { theta: 0.0, phi: 0.04, radius: 6.5 };
   if (p === 6) return { theta: 0.18, phi: 0.10, radius: 7.4 };
+  if (p === 9) return { theta: -0.08, phi: 0.12, radius: 7.4 };
+  if (p === 10) return { theta: 0.0, phi: 0.02, radius: 7.15 };
+  if (p === 11) return { theta: 0.10, phi: 0.11, radius: 7.0 };
+  if (p === 12) return { theta: -0.12, phi: 0.18, radius: 7.35 };
   if (typeof SONIC_PRESET_INDEX !== 'undefined' && p === SONIC_PRESET_INDEX) {
     return {
       theta: SONIC_ORBIT_BASELINE.theta,

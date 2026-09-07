@@ -115,7 +115,6 @@
           <button id="search-mode-qq" type="button" onclick="setSearchMode('qq')" aria-selected="false">QQ</button>
           <button id="search-mode-kugou" type="button" onclick="setSearchMode('kugou')" aria-selected="false">KG</button>
           <button id="search-mode-qishui" type="button" onclick="setSearchMode('qishui')" aria-selected="false">QS</button>
-          <button id="search-mode-spotify" type="button" onclick="setSearchMode('spotify')" aria-selected="false">SP</button>
           <button id="search-mode-podcast" type="button" onclick="setSearchMode('podcast')"
             aria-selected="false">Podcast</button>
         </div>
@@ -295,7 +294,6 @@
           <button type="button" role="tab" data-home-recommend-source="qishui" aria-selected="false">汽水</button>
           <button type="button" role="tab" data-home-recommend-source="qq" aria-selected="false">QQ</button>
           <button type="button" role="tab" data-home-recommend-source="kugou" aria-selected="false">酷狗</button>
-          <button type="button" role="tab" data-home-recommend-source="spotify" aria-selected="false">Spotify</button>
         </div>
         <div id="home-platform-recommend-status" class="home-platform-recommend-status" role="status"
           aria-live="polite"></div>
@@ -432,6 +430,12 @@
           <button class="fx-mini-btn ghost" id="wallpaper-engine-restore-btn" type="button"
             onclick="deactivateWallpaperEngineBackground()" disabled>恢复原背景</button>
         </div>
+      </div>
+      <div class="wallpaper-engine-visual-controls">
+        <div class="fx-slider"><label>WE 壁纸透明度</label><input id="wallpaper-engine-opacity" type="range" min="0.15" max="1" step="0.01" oninput="setWallpaperEngineVisualSetting('opacity', this.value)"><output></output></div>
+        <div class="fx-slider"><label>WE 水平位置</label><input id="wallpaper-engine-position-x" type="range" min="-50" max="50" step="1" oninput="setWallpaperEngineVisualSetting('positionX', this.value)"><output></output></div>
+        <div class="fx-slider"><label>WE 垂直位置</label><input id="wallpaper-engine-position-y" type="range" min="-50" max="50" step="1" oninput="setWallpaperEngineVisualSetting('positionY', this.value)"><output></output></div>
+        <div class="fx-slider"><label>WE 壁纸缩放</label><input id="wallpaper-engine-scale" type="range" min="1" max="1.6" step="0.01" oninput="setWallpaperEngineVisualSetting('scale', this.value)"><output></output></div>
       </div>
       <div class="fx-slider"><label>背景透明度</label><input id="fx-bgopacity" type="range" min="0" max="1"
           step="0.01"><output></output></div>
@@ -930,6 +934,34 @@
             <button data-cam="off" class="active">关闭</button>
             <button data-cam="gesture">手势触碰</button>
           </div>
+          <div class="gesture-settings-card" id="gesture-settings-card">
+            <div class="gesture-settings-head">
+              <div><strong>播放手势</strong><span>稳定保持才执行，降低误触</span></div>
+              <span class="gesture-live-mark">CAM</span>
+            </div>
+            <div class="fx-toggle-grid gesture-toggle-grid">
+              <div class="fx-toggle on" id="t-gesturePlayerActions" onclick="toggleGesturePlayerActions()">
+                <span>播放器动作</span><span class="dot"></span>
+              </div>
+              <div class="fx-toggle on" id="t-gestureHandOverlay" onclick="toggleGestureHandOverlay()">
+                <span>手部光迹</span><span class="dot"></span>
+              </div>
+            </div>
+            <div class="gesture-settings-subtitle">识别灵敏度</div>
+            <div class="fx-seg gesture-sensitivity-seg" id="gesture-sensitivity-seg">
+              <button data-gesture-sensitivity="steady" onclick="setGestureSensitivity('steady')">稳健</button>
+              <button data-gesture-sensitivity="balanced" class="active" onclick="setGestureSensitivity('balanced')">均衡</button>
+              <button data-gesture-sensitivity="quick" onclick="setGestureSensitivity('quick')">灵敏</button>
+            </div>
+            <div class="gesture-command-grid">
+              <div><b>✌</b><span>保持</span><strong>播放 / 暂停</strong></div>
+              <div><b>↔</b><span>快速滑动</span><strong>上一首 / 下一首</strong></div>
+              <div><b>☝</b><span>保持并上下</span><strong>音量</strong></div>
+              <div><b>👍</b><span>保持</span><strong>喜欢歌曲</strong></div>
+              <div><b>Ⅲ</b><span>三指保持</span><strong>歌词显隐</strong></div>
+              <div><b>◌</b><span>张掌 / 捏合 / 握拳</span><strong>粒子交互</strong></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -983,6 +1015,17 @@
             <button data-foreground-fps="75">75</button>
             <button data-foreground-fps="90">90</button>
             <button data-foreground-fps="120">120</button>
+          </div>
+          <div class="fx-section-label">实时视觉性能</div>
+          <div class="fx-toggle-grid" id="visual-performance-toggle-grid">
+            <div class="fx-toggle" id="t-lyricLiveViewportFit" onclick="toggleFx('lyricLiveViewportFit')"
+              title="逐帧读取歌词在屏幕两侧的真实余量；关闭后停止相机投影计算"><span>歌词实时边界</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-lyricContextHighQuality" onclick="toggleFx('lyricContextHighQuality')"
+              title="为可见上下句和翻译预热高清纹理；关闭后只保留当前原文和当前翻译高清"><span>上下句高清纹理</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-lyricBackdropAdapt" onclick="toggleFx('lyricBackdropAdapt')"
+              title="让所有可见歌词根据亮背景实时增强可读性；关闭后保留基础文字层"><span>全局歌词避光</span><span class="dot"></span></div>
+            <div class="fx-toggle" id="t-coverBackdropAdapt" onclick="toggleFx('coverBackdropAdapt')"
+              title="在封面粒子着色器中启用亮底避光；关闭后跳过对应片元增强"><span>封面粒子避光</span><span class="dot"></span></div>
           </div>
           <div class="fx-toggle-grid">
             <div class="fx-toggle" id="t-liveBackgroundKeep" onclick="toggleFx('liveBackgroundKeep')"
@@ -1100,9 +1143,13 @@
       </div>
       <div id="pl-pane" style="display:none">
         <div class="queue-toolbar">
-          <div class="queue-chip">登录后显示网易云 / QQ 歌单</div>
-          <button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)"
-            style="height:26px;padding:0 10px;font-size:11px">刷新</button>
+          <div class="queue-chip">内置歌单可混合全部平台</div>
+          <div style="display:flex;gap:6px">
+            <button class="fx-mini-btn ghost" onclick="promptCreateBuiltInPlaylist()"
+              style="height:26px;padding:0 10px;font-size:11px">+ 新建内置</button>
+            <button class="fx-mini-btn ghost" onclick="refreshUserPlaylists(true)"
+              style="height:26px;padding:0 10px;font-size:11px">刷新</button>
+          </div>
         </div>
         <div id="pl-list" style="margin-top:6px"></div>
       </div>
@@ -1146,7 +1193,7 @@
       <div>手势：<b id="gesture-label">待命</b></div>
       <div id="gesture-confirm" class="gesture-confirm">将手放进摄像头视野</div>
       <div class="gesture-meter"><span id="gesture-fill"></span></div>
-      <div class="gesture-legend">手掌推开粒子 · 捏合旋转 · 握拳收束</div>
+      <div class="gesture-legend">张掌推开 · 捏合旋转 · 握拳收束 · 左右滑切歌 · V 手势播放 · 食指音量 · 拇指喜欢 · 三指歌词</div>
     </div>
     <canvas id="hand-canvas"></canvas>
 
@@ -1478,8 +1525,6 @@
                 class="provider-logo">KG</span><b>酷狗音乐</b><small>官方窗口 / Cookie</small><span class="flow-port out" data-login-provider-output="kugou" title="拖到 MR 接入口"></span></button>
             <button id="login-provider-qishui" class="qishui workflow-node" type="button" data-login-provider="qishui" onclick="selectLoginProviderNode('qishui')"><span
                 class="provider-logo">QS</span><b>汽水音乐</b><small>官方扫码 / 抖音确认</small><span class="flow-port out" data-login-provider-output="qishui" title="拖到 MR 接入口"></span></button>
-            <button id="login-provider-spotify" class="spotify workflow-node" type="button" data-login-provider="spotify" onclick="selectLoginProviderNode('spotify')"><span
-                class="provider-logo">SP</span><b>Spotify</b><small>官方 OAuth</small><span class="flow-port out" data-login-provider-output="spotify" title="拖到 MR 接入口"></span></button>
           </div>
           <div class="login-node-hub workflow-node" data-login-node="mr">
             <span class="flow-port in" data-login-mr-target="mr" title="MR 接入口"></span>
@@ -1585,7 +1630,6 @@
           <button id="user-provider-qq" class="qq" type="button" onclick="setActiveAccountProvider('qq')">QQ 音乐</button>
           <button id="user-provider-kugou" class="kugou" type="button" onclick="setActiveAccountProvider('kugou')">酷狗音乐</button>
           <button id="user-provider-qishui" class="qishui" type="button" onclick="setActiveAccountProvider('qishui')">汽水音乐</button>
-          <button id="user-provider-spotify" class="spotify" type="button" onclick="setActiveAccountProvider('spotify')">Spotify</button>
           <button id="user-provider-both" class="both" type="button" onclick="enableDualAccountView()">我两个都要</button>
         </div>
         <div class="account-modal-actions">
@@ -1593,7 +1637,6 @@
           <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登 QQ 音乐</button>
           <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登酷狗音乐</button>
           <button id="account-add-qishui" class="modal-btn" onclick="openProviderLogin('qishui')">登录汽水音乐</button>
-          <button id="account-add-spotify" class="modal-btn" onclick="openProviderLogin('spotify')">连接 Spotify</button>
         </div>
         <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
         <div class="btn-row">
@@ -1706,8 +1749,8 @@
         <h2>收藏到歌单</h2>
         <div id="collect-current" class="collect-current"></div>
         <div class="collect-create">
-          <input id="collect-new-name" type="text" placeholder="新建歌单名称" autocomplete="off" maxlength="40">
-          <button class="modal-btn primary" onclick="createPlaylistFromCollect()">创建</button>
+          <input id="collect-new-name" type="text" placeholder="新建 Mineradio 内置歌单" autocomplete="off" maxlength="40">
+          <button class="modal-btn primary" onclick="createPlaylistFromCollect()">创建内置</button>
         </div>
         <div id="collect-list" class="collect-list"></div>
         <div class="btn-row">
@@ -1778,11 +1821,11 @@
             <div>
               <div class="update-kicker">MINERADIO</div>
               <div id="update-modal-title" class="update-title">New release</div>
-              <div id="update-modal-version" class="update-version">v2.1.0</div>
+              <div id="update-modal-version" class="update-version">v2.2.0</div>
             </div>
           </div>
           <div class="update-hero">
-            <div id="update-hero-main" class="update-hero-main">电影镜头更稳，音源兜底更顺。</div>
+            <div id="update-hero-main" class="update-hero-main">请以本次发布公告中的最新网盘链接为准。</div>
             <div id="update-hero-sub" class="update-hero-sub"></div>
           </div>
           <div id="update-list" class="update-list"></div>

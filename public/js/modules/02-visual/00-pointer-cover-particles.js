@@ -364,6 +364,7 @@ var uniforms = {
   uPixel: { value: renderer.getPixelRatio() },
   uAlpha: { value: 0 },          // 整体粒子透明度 (启动 fade-in)
   uParticleDim: { value: 1 },          // 覆盖层打开时只压低粒子背景, 不影响 3D 卡片
+  uBackdropAdapt: { value: 0.72 },     // 与歌词共用亮底避光强度
   uFloatAlpha: { value: 0 },          // 空场/浮空粒子透明度
   uLoading: { value: 0 },          // 加载动画混合度 0..1 (1 = 完全聚成圆环)
 };
@@ -650,7 +651,7 @@ if (coverMask > 0.02) {
   //  Layered music-particle wallpaper: aurora ribbons, depth sparks,
   //  and cover-colored audio flow.
   // ====================================================
-  else {
+  else if (uPreset < 8.5) {
 float bassGlow = smoothstep(0.07, 0.78, uBass) * 0.34 + uBeat * 0.014;
 float midGlow = smoothstep(0.07, 0.62, uMid) * 0.42;
 float highGlow = smoothstep(0.04, 0.46, uTreble) * 0.46;
@@ -722,6 +723,131 @@ if (transition > 0.001) {
   }
 
   // ====================================================
+  //  Preset 9: ECLIPSE HALO — obsidian orbital reliquary
+  // ====================================================
+  else if (uPreset < 9.5) {
+float ringIndex = floor(aUv.y * 8.0);
+float ringLocal = fract(aUv.y * 8.0);
+float ringN = (ringIndex + 0.5) / 8.0;
+float ringSeed = hash11(ringIndex * 19.73 + 2.1);
+float theta = aUv.x * 2.0 * PI + ringIndex * 0.47 + t * (0.035 + ringN * 0.026);
+float eclipseDrive = smoothstep(0.06, 0.76, uBass) * 0.17 + uBeat * 0.08;
+float ridge = exp(-pow((ringLocal - 0.5) / (0.17 + ringSeed * 0.045), 2.0));
+float radius = 0.92 + ringN * 3.18 + (ringLocal - 0.5) * 0.24 + eclipseDrive * (0.18 + ringN * 0.34);
+float eccentric = 0.49 + ringN * 0.20;
+float xh = cos(theta) * radius * (1.18 + ringN * 0.10);
+float yh = sin(theta) * radius * eccentric;
+float zh = (ringN - 0.5) * 1.34 + sin(theta * 2.0 + ringSeed * 6.0) * (0.10 + ringN * 0.09);
+float tilt = -0.34 + ringN * 0.72;
+float ct = cos(tilt), st = sin(tilt);
+pos = vec3(xh, yh * ct - zh * st, yh * st + zh * ct);
+
+vec3 coldRim = vec3(0.48, 0.82, 1.0);
+vec3 antiqueGold = vec3(0.93, 0.72, 0.38);
+vec3 haloColor = mix(coldRim, antiqueGold, smoothstep(0.18, 0.84, ringN + sin(theta) * 0.08));
+haloColor = mix(haloColor, vec3(0.98, 0.96, 0.88), ridge * (0.28 + uTreble * 0.18));
+vColor = mix(coverColor * 0.72, haloColor, 0.62 + ridge * 0.20);
+float corona = pow(0.5 + 0.5 * sin(theta * (13.0 + ringIndex) - t * 0.52 + ringSeed * 9.0), 8.0);
+vAlpha = (0.18 + ridge * 0.74 + corona * (0.08 + uTreble * 0.18)) * smoothstep(0.02, 0.14, aUv.y) * (1.0 - smoothstep(0.93, 1.0, aUv.y));
+maxRippleAmp = max(maxRippleAmp, ridge * (0.12 + eclipseDrive * 0.20) + corona * uTreble * 0.13);
+  }
+
+  // ====================================================
+  //  Preset 10: NEON DRIZZLE — refracted city rain
+  // ====================================================
+  else if (uPreset < 10.5) {
+float column = floor(aUv.x * 52.0);
+float columnN = (column + 0.5) / 52.0;
+float columnLocal = fract(aUv.x * 52.0);
+float rainSeed = hash11(column * 41.17 + floor(columnLocal * 5.0) * 7.9);
+float rainSpeed = 0.026 + rainSeed * 0.052 + smoothstep(0.08, 0.76, uBass) * 0.014;
+float fall = fract(1.0 - aUv.y + t * rainSpeed + rainSeed * 0.87);
+float xRain = (columnN - 0.5) * 11.8 + (columnLocal - 0.5) * 0.11;
+float yRain = (0.5 - fall) * 8.8;
+float cityDepth = mix(-3.8, 2.6, hash11(column * 11.3 + 0.7));
+float wind = sin(t * 0.17 + column * 0.63 + fall * 3.4) * (0.08 + rainSeed * 0.12);
+float perspective = 0.76 + smoothstep(-3.8, 2.6, cityDepth) * 0.34;
+pos = vec3((xRain + wind) * perspective, yRain, cityDepth + sin(fall * PI * 2.0 + rainSeed * 7.0) * 0.05);
+
+float dash = pow(0.5 + 0.5 * sin(fall * (52.0 + rainSeed * 38.0) - t * 0.32), 10.0);
+float dropHead = pow(0.5 + 0.5 * sin(fall * 17.0 + rainSeed * 12.0), 18.0);
+vec3 neonA = vec3(0.20, 0.88, 1.0);
+vec3 neonB = vec3(1.0, 0.26, 0.63);
+vec3 neonC = vec3(1.0, 0.72, 0.30);
+vec3 rainColor = mix(neonA, neonB, smoothstep(0.18, 0.78, rainSeed));
+rainColor = mix(rainColor, neonC, smoothstep(0.84, 0.99, rainSeed));
+vColor = mix(coverColor * 0.82, rainColor, 0.58 + dash * 0.18);
+vAlpha = 0.09 + dash * 0.40 + dropHead * (0.22 + uTreble * 0.30);
+vAlpha *= 0.58 + perspective * 0.42;
+pos.x += dropHead * sin(t * 0.8 + rainSeed * 8.0) * uTreble * 0.055;
+maxRippleAmp = max(maxRippleAmp, dash * uMid * 0.10 + dropHead * (0.10 + uTreble * 0.22));
+  }
+
+  // ====================================================
+  //  Preset 11: PRISM FLOCK — folded spectral migration
+  // ====================================================
+  else if (uPreset < 11.5) {
+float flockIndex = floor(aUv.y * 12.0);
+float wingY = fract(aUv.y * 12.0) * 2.0 - 1.0;
+float wingX = aUv.x * 2.0 - 1.0;
+float flockSeed = hash11(flockIndex * 23.73 + 4.0);
+float gx = mod(flockIndex, 4.0) - 1.5;
+float gy = floor(flockIndex / 4.0) - 1.0;
+float migrate = t * (0.018 + flockSeed * 0.018);
+vec2 flockCenter = vec2(gx * 2.42 + sin(migrate + flockSeed * 8.0) * 0.48,
+                        gy * 2.10 + cos(migrate * 0.83 + flockSeed * 9.0) * 0.36);
+float ax = abs(wingX);
+float wingMask = 1.0 - smoothstep(0.72, 1.18, abs(wingY) + ax * 0.38);
+float bodyMask = exp(-pow(wingX / 0.075, 2.0)) * (1.0 - smoothstep(0.62, 1.0, abs(wingY)));
+float flap = sin(t * (0.72 + flockSeed * 0.35) + flockIndex * 1.7) * (0.34 + uMid * 0.42 + uBeat * 0.16);
+float lx = sign(wingX) * (0.12 + pow(ax, 0.76) * 0.88);
+float ly = wingY * (0.48 + (1.0 - ax) * 0.22);
+float lz = ax * (0.42 + flap) + (1.0 - abs(wingY)) * 0.08;
+float heading = -0.20 + (flockSeed - 0.5) * 0.70;
+float ch = cos(heading), sh = sin(heading);
+vec2 folded = mat2(ch, -sh, sh, ch) * vec2(lx, ly);
+pos = vec3(flockCenter + folded, (flockSeed - 0.5) * 3.4 + lz);
+
+vec3 prismLeft = vec3(0.42, 0.94, 0.82);
+vec3 prismRight = vec3(0.96, 0.62, 0.92);
+vec3 prism = mix(prismLeft, prismRight, smoothstep(-0.8, 0.8, wingX));
+prism = mix(prism, vec3(1.0, 0.91, 0.64), smoothstep(0.72, 1.0, ax));
+vColor = mix(coverColor * 0.78, prism, 0.60 + wingMask * 0.18);
+vAlpha = wingMask * (0.22 + (1.0 - ax) * 0.42 + uTreble * 0.16) + bodyMask * 0.68;
+maxRippleAmp = max(maxRippleAmp, wingMask * (0.07 + abs(flap) * 0.12) + bodyMask * uBass * 0.12);
+  }
+
+  // ====================================================
+  //  Preset 12: ABYSSAL BLOOM — bioluminescent tide crown
+  // ====================================================
+  else {
+float bloomR = pow(aUv.y, 0.72);
+float bloomTheta = aUv.x * 2.0 * PI + bloomR * 0.72 + t * 0.018;
+float petalWave = 0.5 + 0.5 * cos(bloomTheta * 9.0 - bloomR * 3.8);
+float bloomDrive = smoothstep(0.06, 0.74, uBass) * 0.26 + uBeat * 0.10;
+float radiusBloom = bloomR * (3.30 + bloomDrive) * (0.78 + petalWave * 0.34);
+float petalFold = sin(bloomTheta * 9.0 - bloomR * 5.4 + t * 0.13);
+float bowl = (1.0 - bloomR) * 1.12 - bloomR * bloomR * 0.52;
+pos.x = cos(bloomTheta) * radiusBloom;
+pos.y = sin(bloomTheta) * radiusBloom * 0.82;
+pos.z = bowl + petalFold * (0.13 + bloomR * 0.47) + sin(bloomTheta * 3.0 + t * 0.07) * 0.08;
+float bloomTilt = -0.30;
+float cb = cos(bloomTilt), sb = sin(bloomTilt);
+pos.yz = mat2(cb, -sb, sb, cb) * pos.yz;
+
+vec3 abyss = vec3(0.12, 0.58, 0.56);
+vec3 violet = vec3(0.38, 0.32, 0.95);
+vec3 pearl = vec3(0.82, 1.0, 0.94);
+vec3 bloomColor = mix(abyss, violet, smoothstep(0.18, 0.88, bloomR + petalWave * 0.10));
+float luminousEdge = smoothstep(0.64, 0.98, bloomR) * (0.55 + petalWave * 0.45);
+bloomColor = mix(bloomColor, pearl, luminousEdge * (0.32 + uTreble * 0.22));
+vColor = mix(coverColor * 0.72, bloomColor, 0.68);
+float filament = pow(0.5 + 0.5 * sin(bloomTheta * 18.0 + bloomR * 19.0 - t * 0.26), 7.0);
+vAlpha = (0.16 + petalWave * 0.31 + filament * 0.26 + luminousEdge * 0.30) * smoothstep(0.01, 0.10, bloomR);
+maxRippleAmp = max(maxRippleAmp, petalWave * bloomDrive * 0.18 + filament * uTreble * 0.17 + luminousEdge * uMid * 0.09);
+  }
+
+  // ====================================================
   //  鼠标交互 (仅 SILK)
   // ====================================================
   if (uMouseActive > 0.5 && uPreset < 0.5) {
@@ -786,6 +912,7 @@ pos.xy = mat2(cs, -sn, sn, cs) * pos.xy;
   vBright = 0.82 + maxRippleAmp * 0.55 + uBass * 0.10 + edgeBoost * 0.30 + uEnergy * 0.05 + uBurstAmt * 0.40;
   if (uPreset > 4.5) {
 vBright = 0.94 + maxRippleAmp * 0.34 + uBass * 0.020 + uEnergy * 0.026 + uBurstAmt * 0.025;
+if (uPreset > 8.5) vBright = 0.86 + maxRippleAmp * 0.52 + uEnergy * 0.045 + uBeat * 0.055;
   } else if (uPreset > 3.5) {
 vBright = 0.94 + maxRippleAmp * 0.64 + uBass * 0.08 + edgeBoost * 0.12 + uEnergy * 0.05 + uBeat * 0.16 + uBurstAmt * 0.16;
   }
@@ -834,6 +961,10 @@ loadingMistSize = 1.26 + mistBreath * 0.24 + abs(mistRibbon) * 0.14 + glowPick *
   if (uPreset > 4.5) {
 float flowDrive = uBass * 0.070 + uMid * 0.046 + uTreble * 0.060 + uBurstAmt * 0.090 + uBeat * 0.055;
 sz = clamp(depthSize * (1.05 + flowDrive), 1.00, 5.45);
+if (uPreset > 8.5) {
+  float authoredDrive = uBass * 0.10 + uMid * 0.08 + uTreble * 0.12 + uBeat * 0.10;
+  sz = clamp(depthSize * (0.98 + authoredDrive), 1.00, 4.85);
+}
   } else if (uPreset > 3.5) {
 float ringDrive = uBass * 0.30 + uMid * 0.18 + uTreble * 0.22 + uBeat * 0.30;
 sz = clamp(depthSize * (0.90 + ringDrive * 0.62), 1.05, 3.90);
@@ -849,7 +980,7 @@ sz = clamp(depthSize * (0.90 + ringDrive * 0.62), 1.05, 3.90);
 var fs = `
 precision highp float;
 uniform sampler2D uDotTex;
-uniform float uAlpha, uPreset, uParticleDim;
+uniform float uAlpha, uPreset, uParticleDim, uBackdropAdapt;
 varying vec3 vColor;
 varying float vBright, vRipple, vEdgeBoost, vAlpha, vSourceLum;
 
@@ -866,8 +997,11 @@ void main(){
   float outLum = dot(col, vec3(0.299, 0.587, 0.114));
   float lightParticle = smoothstep(0.50, 0.82, outLum) * nonBlack;
   float darkParticle = (1.0 - smoothstep(0.20, 0.50, outLum)) * nonBlack;
-  col = mix(col, vec3(0.0), readableRim * lightParticle * 0.38);
-  col = mix(col, vec3(1.0), readableRim * darkParticle * 0.20);
+  float backdropAdapt = clamp(uBackdropAdapt, 0.0, 1.0);
+  if (backdropAdapt > 0.001) {
+    col = mix(col, vec3(0.0), readableRim * lightParticle * (0.38 + backdropAdapt * 0.30));
+    col = mix(col, vec3(1.0), readableRim * darkParticle * (0.20 + backdropAdapt * 0.12));
+  }
   col = clamp(col, vec3(0.0), vec3(1.6));
   gl_FragColor = vec4(col, tex.a * uAlpha * uParticleDim * vAlpha);
 }
@@ -884,7 +1018,7 @@ var bloomVs = vs
 var bloomFs = `
 precision highp float;
 uniform sampler2D uDotTex;
-uniform float uAlpha, uBloomStrength, uPreset, uParticleDim;
+uniform float uAlpha, uBloomStrength, uPreset, uParticleDim, uBackdropAdapt;
 varying vec3 vColor;
 varying float vBright, vRipple, vEdgeBoost, vAlpha, vSourceLum;
 
@@ -898,6 +1032,12 @@ void main(){
   float pulse = 1.0 + vRipple * 0.65;
   float keepBlack = 1.0 - smoothstep(0.025, 0.115, vSourceLum);
   float bloomKeep = 1.0 - keepBlack * 0.92;
+  float outLum = dot(col, vec3(0.299, 0.587, 0.114));
+  float backdropAdapt = clamp(uBackdropAdapt, 0.0, 1.0);
+  if (backdropAdapt > 0.001) {
+    float brightAvoid = smoothstep(0.48, 0.84, outLum) * backdropAdapt;
+    bloomKeep *= 1.0 - brightAvoid * 0.34;
+  }
   gl_FragColor = vec4(col, soft * uAlpha * uBloomStrength * uParticleDim * pulse * 0.55 * vAlpha * bloomKeep);
 }
 `;
@@ -1023,6 +1163,10 @@ function backgroundStarRiverTargetAlpha() {
   if (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX) return 0;
   if (typeof SONIC_WORKSHOP_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_WORKSHOP_PRESET_INDEX) return 0.28;
   if (typeof SKULL_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SKULL_PRESET_INDEX) return 0.38;
+  if (Number(fx.preset) === 9) return 0.12;
+  if (Number(fx.preset) === 10) return 0.18;
+  if (Number(fx.preset) === 11) return 0.10;
+  if (Number(fx.preset) === 12) return 0.16;
   return 0.34;
 }
 

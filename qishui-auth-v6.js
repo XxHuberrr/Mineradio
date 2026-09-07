@@ -146,6 +146,7 @@ class QishuiAuthRuntime {
     this.initializing = null;
     this.destroying = false;
     this.mfaNetworkLog = [];
+    this.qrGeneration = 0;
   }
 
   async initialize() {
@@ -405,6 +406,7 @@ class QishuiAuthRuntime {
   }
 
   async getQrCode() {
+    this.qrGeneration += 1;
     await this.initialize();
     const identity = ensureIdentity();
     const envelope = await this.request('GET', '/passport/web/get_qrcode/', {
@@ -455,6 +457,7 @@ class QishuiAuthRuntime {
   }
 
   async checkQrConnect(token) {
+    const generation = this.qrGeneration;
     await this.initialize();
     const identity = ensureIdentity();
     const body = {
@@ -488,15 +491,14 @@ class QishuiAuthRuntime {
         throw new Error('二次验证已通过，但服务端仍返回 2046；请重新刷新二维码');
       }
     }
-    if (Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed' || data.session_cookie)) {
-      await this.persistSessionCookies(data.session_cookie || '');
+    if (generation === this.qrGeneration && Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed' || data.session_cookie)) {
+      await this.persistSessionCookies(data.session_cookie || '', generation);
     }
     return envelope;
   }
 
-  async persistSessionCookies(sessionCookie) {
-    const current = parseCookieString(getConfig().cookie || '');
-    Object.assign(current, parseCookieString(sessionCookie));
+  async persistSessionCookies(sessionCookie, generation) {
+    const current = {};
     const cookies = await this.authSession.cookies.get({});
     for (const cookie of cookies) {
       const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
@@ -504,10 +506,13 @@ class QishuiAuthRuntime {
         current[cookie.name] = cookie.value;
       }
     }
+    Object.assign(current, parseCookieString(sessionCookie));
+    if (generation !== this.qrGeneration) return;
     updateConfig({ cookie: buildCookieString(current), msToken: this.msToken });
   }
 
   async clear() {
+    this.qrGeneration += 1;
     if (this.authSession) {
       await this.authSession.clearStorageData({
         storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage', 'serviceworkers'],

@@ -741,6 +741,11 @@ function cyclePlayMode() {
   if (playMode === 'shuffle' && prevMode !== 'shuffle') {
     reorderQueueForShufflePlaybackOrder(currentIdx, { reason: 'play-mode-shuffle' });
   }
+  if (typeof syncActiveAudioRepeatMode === 'function') syncActiveAudioRepeatMode(audio);
+  if (playMode === 'single' && prevMode !== 'single') {
+    if (typeof clearAlbumGaplessPreload === 'function') clearAlbumGaplessPreload('play-mode-single');
+    if (typeof resetCuefieldAutoMix === 'function') resetCuefieldAutoMix('play-mode-single');
+  }
   updatePlayModeButton(true);
   showToast('播放模式: ' + playModeLabel(playMode));
 }

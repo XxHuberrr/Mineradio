@@ -18,6 +18,29 @@ function applyLyricVerticalEdgeFade(ctx, W, H, strength, activeLine, lineCount) 
   ctx.restore();
 }
 
+function configureLyricTextureSampling(texture) {
+  if (!texture) return texture;
+  var image = texture.image || {};
+  var width = Math.max(1, Math.round(Number(image.width) || 1));
+  var height = Math.max(1, Math.round(Number(image.height) || 1));
+  var isPowerOfTwo = function (value) { return value > 0 && (value & (value - 1)) === 0; };
+  var webgl2 = !!(renderer && renderer.capabilities && renderer.capabilities.isWebGL2);
+  var mipmapsAllowed = webgl2 || (isPowerOfTwo(width) && isPowerOfTwo(height));
+  var maxAnisotropy = renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy
+    ? Math.max(1, Number(renderer.capabilities.getMaxAnisotropy()) || 1) : 1;
+  var profile = typeof runtimeHardwareProfile !== 'undefined' ? runtimeHardwareProfile : null;
+  var anisotropyBudget = profile && profile.lowSpec ? 4 : (profile && profile.balancedSpec ? 8 : 16);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = mipmapsAllowed && THREE.LinearMipmapLinearFilter != null
+    ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  texture.generateMipmaps = mipmapsAllowed;
+  texture.anisotropy = Math.min(anisotropyBudget, maxAnisotropy);
+  texture.needsUpdate = true;
+  texture.userData = texture.userData || {};
+  texture.userData.__mineradioLyricMipmapped = mipmapsAllowed;
+  return texture;
+}
+
 function beginLyricMaskLayoutBuild(input, layoutOverride) {
   layoutOverride = layoutOverride || {};
   var payload = normalizeStageLyricPayload(input);
@@ -351,10 +374,7 @@ function makeLyricMask(input, layoutOverride) {
   var tex = new THREE.CanvasTexture(canvas);
   tex.userData = tex.userData || {};
   tex.userData.__mineradioLyricOwned = true;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false;
-  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
+  configureLyricTextureSampling(tex);
   return { texture: tex, width: W, height: H, textWidth: width, activeTextWidth: activeWidth, textHeight: blockH, fontSize: fontSize, lineHeight: lineHeight, lineY0: y0, lineCount: lines.length, lines: lines, entries: entries, activeLine: activeLine, contextLayer: payload.contextLayer, activeLayer: payload.activeLayer, fitScaleX: fitScaleX, textMin: layout.textMin, textMax: layout.textMax, stoneSeed: stoneSeed };
 }
 
@@ -471,10 +491,7 @@ function makeLyricQualityTexture(mask, tier) {
   texture.userData.__mineradioLyricOwned = true;
   texture.userData.__mineradioLyricQuality = true;
   texture.userData.__mineradioLyricQualityBytes = target.bytes;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
+  configureLyricTextureSampling(texture);
   return { texture: texture, tier: target.tier, width: target.width, height: target.height, bytes: target.bytes, key: target.tier + 'x|' + target.width + 'x' + target.height + '|' + stoneSeed };
 }
 
@@ -552,10 +569,7 @@ function compactLyricLineMaskTexture(mask) {
   var compactTexture = new THREE.CanvasTexture(compactCanvas);
   compactTexture.userData = compactTexture.userData || {};
   compactTexture.userData.__mineradioLyricOwned = true;
-  compactTexture.minFilter = THREE.LinearFilter;
-  compactTexture.magFilter = THREE.LinearFilter;
-  compactTexture.generateMipmaps = false;
-  compactTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
+  configureLyricTextureSampling(compactTexture);
   var originalTexture = mask.texture;
   originalTexture.userData = originalTexture.userData || {};
   originalTexture.userData.__mineradioDisposed = true;
@@ -699,10 +713,7 @@ function stepLyricReadabilityTextureBuild(state) {
   var tex = new THREE.CanvasTexture(state.canvas);
   tex.userData = tex.userData || {};
   tex.userData.__mineradioLyricOwned = true;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false;
-  tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
+  configureLyricTextureSampling(tex);
   state.texture = tex;
   state.phase = LYRIC_READABILITY_BUILD_PHASES;
   state.lastPhase = 'outline-fine';
@@ -852,9 +863,7 @@ function finishLyricGlowTexturePixels(state) {
   var tex = new THREE.CanvasTexture(state.canvas);
   tex.userData = tex.userData || {};
   tex.userData.__mineradioLyricOwned = true;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.generateMipmaps = false;
+  configureLyricTextureSampling(tex);
   Object.assign(tex.userData, {
     width: state.W,
     height: state.H,

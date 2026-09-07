@@ -16,7 +16,9 @@ var desktopRuntimeState = {
   minimized: false,
   visible: true,
   focused: true,
-  fullscreen: false
+  fullscreen: false,
+  embedded: false,
+  interactive: false
 };
 var renderPowerState = { mode: '', width: 0, height: 0, pixelRatio: 0 };
 var backgroundCacheTrimTimer = 0;
@@ -428,8 +430,11 @@ function updateDesktopRuntimeState(state) {
   desktopRuntimeState.visible = state.isVisible !== false;
   desktopRuntimeState.focused = state.isFocused !== false;
   desktopRuntimeState.fullscreen = !!(state.isFullScreen || state.isNativeFullScreen || state.isHtmlFullScreen || state.isWindowFullScreen);
+  desktopRuntimeState.embedded = state.isDesktopEmbedded === true;
+  desktopRuntimeState.interactive = state.isDesktopInteractive === true;
   updateRenderPowerClasses();
   applyRendererPowerMode();
+  if (typeof syncGestureControlHostVisibility === 'function') syncGestureControlHostVisibility('desktop-runtime-state');
   if ((desktopRuntimeState.minimized || !desktopRuntimeState.visible) && typeof flushLyricLayoutSave === 'function') {
     flushLyricLayoutSave();
   }
@@ -450,12 +455,14 @@ function installRenderPowerHooks() {
   document.addEventListener('visibilitychange', function () {
     updateRenderPowerClasses();
     applyRendererPowerMode();
+    if (typeof syncGestureControlHostVisibility === 'function') syncGestureControlHostVisibility('visibilitychange');
     if (!isDeepBackgroundMode()) recoverVisualsAfterBackground('visibilitychange');
   });
   window.addEventListener('focus', function () {
     desktopRuntimeState.focused = true;
     updateRenderPowerClasses();
     applyRendererPowerMode();
+    if (typeof syncGestureControlHostVisibility === 'function') syncGestureControlHostVisibility('focus');
     if (!isDeepBackgroundMode()) recoverVisualsAfterBackground('focus');
   });
   window.addEventListener('blur', function () {

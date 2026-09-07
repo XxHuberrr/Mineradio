@@ -187,8 +187,8 @@ function lyricBackgroundAdaptStrengthValue() {
   var value = fx && fx.lyricBackgroundAdapt != null ? Number(fx.lyricBackgroundAdapt) : fallback;
   return clampRange(value, 0, 1);
 }
-function lyricSonicBackdropAdaptActive() {
-  return lyricBackgroundAdaptStrengthValue() > 0.001;
+function lyricBackdropAdaptActive() {
+  return (!fx || fx.lyricBackdropAdapt !== false) && lyricBackgroundAdaptStrengthValue() > 0.001;
 }
 function lyricReadabilityColorForBrightBackdrop(strength) {
   if (typeof THREE === 'undefined') return null;
@@ -234,6 +234,76 @@ function lyricRowLogicalWorldWidth(mask, baseWorldW) {
   // A larger logical canvas prevents clipping; it must widen the plane rather
   // than squeeze the same-size glyphs into the old plane.
   return baseWorldW * clampRange(logicalWidth / 2048, 1, 3);
+}
+
+function lyricViewportSafeMarginPx(viewportWidth) {
+  return clampRange(Math.max(1, Number(viewportWidth) || 1) * 0.045, 42, 92);
+}
+
+function lyricViewportFitRatio(viewportWidth, centerX, projectedUnitTextWidth, intendedScale, marginPx) {
+  viewportWidth = Math.max(1, Number(viewportWidth) || 1);
+  centerX = Number(centerX);
+  projectedUnitTextWidth = Math.max(0, Number(projectedUnitTextWidth) || 0);
+  intendedScale = Math.max(0.001, Number(intendedScale) || 1);
+  marginPx = clampRange(Number(marginPx) || lyricViewportSafeMarginPx(viewportWidth), 0, viewportWidth * 0.25);
+  if (!isFinite(centerX) || projectedUnitTextWidth <= 0.001) return 1;
+  var leftSpace = Math.max(0, centerX - marginPx);
+  var rightSpace = Math.max(0, viewportWidth - marginPx - centerX);
+  // The lyric stays centred on its authored world position, so the shorter
+  // side is the real limit. This deliberately does not force every long line
+  // to one fixed width: a centred row may use nearly the entire viewport,
+  // while an intentionally offset row respects the smaller free side.
+  var availableWidth = Math.max(1, Math.min(leftSpace, rightSpace) * 2);
+  var intendedWidth = projectedUnitTextWidth * intendedScale;
+  if (intendedWidth <= availableWidth) return 1;
+  return clampRange(availableWidth / intendedWidth, 0.22, 1);
+}
+
+var lyricViewportFitLeft = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+var lyricViewportFitRight = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+
+function lyricRowLiveViewportScale(row, intendedScale) {
+  if (!row || !row.mesh || !row.lineMask || !lyricViewportFitLeft || !lyricViewportFitRight || typeof camera === 'undefined' || !camera) return 1;
+  var documentWidth = typeof document !== 'undefined' && document.documentElement
+    ? Number(document.documentElement.clientWidth) || 0
+    : 0;
+  var viewportWidth = typeof window !== 'undefined'
+    ? Math.max(1, Number(window.innerWidth) || documentWidth || 1)
+    : Math.max(1, documentWidth || 1);
+  if (viewportWidth <= 1) return 1;
+  var currentScale = Math.max(0.001, Math.abs(Number(row.mesh.scale && row.mesh.scale.x) || 1));
+  var maskWidth = Math.max(1, Number(row.lineMask.width) || 1);
+  var textWidth = Math.max(1, Number(row.lineMask.activeTextWidth) || Number(row.lineMask.textWidth) || maskWidth);
+  var localTextWidth = Math.max(0.001, Number(row.lineWorldW) || 0.001) * clampRange(textWidth / maskWidth, 0.02, 1);
+  try {
+    row.mesh.updateWorldMatrix(true, false);
+    lyricViewportFitLeft.set(-localTextWidth * 0.5, 0, 0);
+    lyricViewportFitRight.set(localTextWidth * 0.5, 0, 0);
+    row.mesh.localToWorld(lyricViewportFitLeft);
+    row.mesh.localToWorld(lyricViewportFitRight);
+    lyricViewportFitLeft.project(camera);
+    lyricViewportFitRight.project(camera);
+  } catch (error) {
+    return 1;
+  }
+  if (!isFinite(lyricViewportFitLeft.x) || !isFinite(lyricViewportFitRight.x)) return 1;
+  var leftPx = (lyricViewportFitLeft.x + 1) * viewportWidth * 0.5;
+  var rightPx = (lyricViewportFitRight.x + 1) * viewportWidth * 0.5;
+  var centerX = (leftPx + rightPx) * 0.5;
+  var currentProjectedWidth = Math.abs(rightPx - leftPx);
+  var projectedUnitTextWidth = currentProjectedWidth / currentScale;
+  var safeMargin = lyricViewportSafeMarginPx(viewportWidth);
+  var ratio = lyricViewportFitRatio(
+    viewportWidth,
+    centerX,
+    projectedUnitTextWidth,
+    intendedScale,
+    safeMargin
+  );
+  row.viewportFitScale = ratio;
+  row.viewportFitAvailableLeft = Math.max(0, centerX - safeMargin);
+  row.viewportFitAvailableRight = Math.max(0, viewportWidth - safeMargin - centerX);
+  return ratio;
 }
 
 function makeLyricRowGlowMesh(row, pal, worldW, preparedGlowTexture) {
@@ -430,6 +500,7 @@ function beginLyricRowLayerBuildEntry(state) {
     baseY: lineY,
     baseZ: lineZ,
     baseScale: lineScale,
+    viewportFitScale: 1,
     fontScale: fontScale,
     virtualIndex: virtualIndex,
     lineIndex: entryLineIndex,
@@ -1360,11 +1431,12 @@ function updateLyricRowLayers(data, opts) {
   var rowDrift = previewMotionLock ? 0 : (0.5 - shownProgress) * contextDrift * motionBlend;
   var rowGlow = clampRange(Number(opts.rowGlow) || 0, 0, 1);
   var rowGlowBeat = clampRange(Number(opts.rowGlowBeat) || 0, 0, 1.5);
-  var backdropAdapt = lyricSonicBackdropAdaptActive() ? lyricBackgroundAdaptStrengthValue() : 0;
+  var backdropAdapt = lyricBackdropAdaptActive() ? lyricBackgroundAdaptStrengthValue() : 0;
   var readabilityBackdropColor = backdropAdapt > 0.001 ? lyricReadabilityColorForBrightBackdrop(backdropAdapt) : null;
   var activeRow = null;
   var renderRevealCandidates = [];
   var lyricQualityTier = lyricTextureClarityScale();
+  var contextHighQualityEnabled = !fx || fx.lyricContextHighQuality !== false;
   var qualityBuildDeferred = typeof isProgressDragPreviewActive === 'function' && isProgressDragPreviewActive();
   var lyricQualityCandidates = [];
   var revealOffsets = lyricDisplayOffsetsForMode(displayMode);
@@ -1458,10 +1530,11 @@ function updateLyricRowLayers(data, opts) {
       row.renderWindowActive = false;
       row.renderRevealAt = 0;
     }
-    if (lyricQualityTier <= 1) {
+    var rowHighQualityAllowed = contextHighQualityEnabled || isActive || currentTranslation;
+    if (lyricQualityTier <= 1 || !rowHighQualityAllowed) {
       if (row.qualityTexture || row.qualityPendingTexture || row.qualityQueuedKey) releaseLyricRowQuality(row, true);
     } else if (!initialTextRevealPending && (renderWindowActive || lineUploadPrewarm || pendingWindowAllowed)) {
-      var qualityPriority = isActive ? 10 : (currentTranslation ? 12 : (lineUploadPrewarm ? 34 : 24 + Math.min(8, visibilityAbs)));
+      var qualityPriority = isActive ? 10 : (currentTranslation ? 11 : (row.isTranslation ? 22 : (lineUploadPrewarm ? 34 : 24 + Math.min(8, visibilityAbs))));
       lyricQualityCandidates.push({
         row: row,
         priority: qualityPriority,
@@ -1539,8 +1612,13 @@ function updateLyricRowLayers(data, opts) {
     if (singleLineTranslationSwap) {
       if (isFinite(Number(row.baseZ))) zTarget = Number(row.baseZ);
       if (isFinite(Number(row.baseScale))) baseScale = Number(row.baseScale);
-    } else if (row.isTranslation) {
-      baseScale *= 1.00 + translationFocus * 0.16;
+    } else {
+      if (row.isTranslation) baseScale *= 1.00 + translationFocus * 0.16;
+    }
+    if ((row.isPrimary || row.isTranslation) && renderWindowActive && (!fx || fx.lyricLiveViewportFit !== false)) {
+      baseScale *= lyricRowLiveViewportScale(row, baseScale);
+    } else if (row.viewportFitScale !== 1) {
+      row.viewportFitScale = 1;
     }
     var stableMotionIndex = row.virtualIndex != null && isFinite(Number(row.virtualIndex))
       ? Number(row.virtualIndex)
@@ -1603,9 +1681,14 @@ function updateLyricRowLayers(data, opts) {
     }
     if (row.readabilityMat) {
       var readabilityMix = row.isTranslation ? (0.46 + translationFocus * 0.18) : (isActive ? 0.74 : 0.52);
+      if (backdropAdapt > 0.001) {
+        readabilityMix = Math.max(readabilityMix, row.isTranslation
+          ? (0.54 + backdropAdapt * 0.10)
+          : (0.60 + backdropAdapt * 0.12));
+      }
       if (readabilityBackdropColor) setLyricTextureMaterialColor(row.readabilityMat, readabilityBackdropColor);
       else if (lyricReadabilityLightColor) setLyricTextureMaterialColor(row.readabilityMat, lyricReadabilityLightColor);
-      var readabilityBoost = 1 + backdropAdapt * (motionAnchor ? (row.isTranslation ? 0.62 : 0.86) : 0.46);
+      var readabilityBoost = 1 + backdropAdapt * (row.isTranslation ? 0.66 : 0.78);
       var readabilityOpacity = getLyricTextureMaterialOpacity(row.readabilityMat);
       var readabilityOpacityTarget = !data.usesTrack || (readabilityLayerVisible && row.renderReadabilityUploaded)
         ? target * readability * readabilityMix * readabilityBoost * depthFade

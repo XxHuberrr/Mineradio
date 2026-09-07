@@ -1140,6 +1140,32 @@ test('unexpected watcher exit with confirmed restoration queues recovery without
   assert.equal(win.visible, true);
 });
 
+test('repeated unexpected watcher exits open a recovery circuit instead of flickering forever', async () => {
+  const win = new FakeBrowserWindow();
+  const watcherCallbacks = [];
+  const { runtime, calls } = makeRuntime({
+    startDesktopIconWatcher: (input, _count, watcher) => {
+      watcherCallbacks.push(input);
+      return watcher;
+    },
+  });
+
+  await runtime.enable(win, { interactive: true, reason: 'watcher-circuit-enable' });
+  watcherCallbacks[0].onExit({ code: 1, signal: '', restored: true });
+  await new Promise((resolve) => setTimeout(resolve, 260));
+  assert.ok(watcherCallbacks.length >= 2, 'first watcher exit did not perform the bounded repair pass');
+
+  watcherCallbacks[1].onExit({ code: 1, signal: '', restored: true });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+
+  const status = runtime.getStatus('watcher-circuit-result');
+  assert.equal(status.enabled, false);
+  assert.equal(status.interactive, false);
+  assert.equal(status.lastError, 'DESKTOP_ICON_RECOVERY_CIRCUIT_OPEN');
+  assert.equal(win.visible, true, 'circuit fallback must restore the ordinary Mineradio window');
+  assert.equal(calls.status.some((entry) => /circuit-open/.test(entry.reason)), true);
+});
+
 test('setInteractive true repairs a stale enabled interactive state instead of returning unchanged', async () => {
   const win = new FakeBrowserWindow();
   const { runtime, calls } = makeRuntime();

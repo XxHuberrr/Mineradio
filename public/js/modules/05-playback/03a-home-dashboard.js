@@ -29,7 +29,6 @@ var homePlatformRecommendationState = {
   feeds: {
     qishui: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
     kugou: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
-    spotify: { loading: false, loaded: false, songs: [], error: '', message: '', mode: '', source: '', fallback: false, provenance: '' },
   },
 };
 
@@ -862,7 +861,6 @@ function homePlatformRecommendationSourceLabel(source) {
     qishui: '汽水',
     qq: 'QQ 音乐',
     kugou: '酷狗音乐',
-    spotify: 'Spotify',
   }[source] || '当前平台';
 }
 
@@ -881,13 +879,6 @@ function homePlatformRecommendationFeedConfig(source) {
       cardLabel: '酷狗推荐 FM',
       readyText: '来自酷狗 FM 推荐',
       playlistName: '酷狗推荐 FM',
-    },
-    spotify: {
-      endpoint: '/api/spotify/recommendations?limit=12',
-      sectionTitle: '个性化推荐',
-      cardLabel: 'Spotify 推荐',
-      readyText: '来自 Spotify 个性化推荐',
-      playlistName: 'Spotify 个性化推荐',
     },
   }[source] || null;
 }
@@ -1245,10 +1236,8 @@ function openHomePlatformRecommendations(preferredSource) {
     ? 'netease'
     : (qishuiLoginStatus && (qishuiLoginStatus.loggedIn || qishuiLoginStatus.configured)
       ? 'qishui'
-      : (kugouLoginStatus && kugouLoginStatus.loggedIn
-        ? 'kugou'
-        : (spotifyLoginStatus && (spotifyLoginStatus.loggedIn || spotifyLoginStatus.configured) ? 'spotify' : 'netease')));
-  var source = /^(netease|qishui|qq|kugou|spotify)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
+      : (kugouLoginStatus && kugouLoginStatus.loggedIn ? 'kugou' : 'netease'));
+  var source = /^(netease|qishui|qq|kugou)$/.test(String(preferredSource || '')) ? preferredSource : defaultSource;
   loadHomePlatformRecommendations(source, false);
   setTimeout(function () {
     var activeTab = mask.querySelector('[data-home-recommend-source="' + source + '"]');

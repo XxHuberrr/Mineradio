@@ -77,14 +77,14 @@ function onUserBtnClick() {
   }
   showLoginModal({ provider: hasAnyPlatformLogin() ? firstLoggedProvider() : loginProvider, source: 'top-account' });
 }
-var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou', 'qishui', 'spotify'];
+var ACCOUNT_PROVIDER_KEYS = ['netease', 'qq', 'kugou', 'qishui'];
 var ACCOUNT_PROVIDER_ORDER_STORE_KEY = 'mineradio-account-provider-order-v1';
 var ACCOUNT_PROVIDER_VISIBLE_STORE_KEY = 'mineradio-account-provider-visible-v1';
 var topAccountPillDrag = null;
 var topAccountPillClickSuppressed = false;
 
 function normalizeAccountProviderKey(provider) {
-  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : (provider === 'spotify' ? 'spotify' : 'netease')));
+  return provider === 'qq' ? 'qq' : (provider === 'kugou' ? 'kugou' : (provider === 'qishui' ? 'qishui' : 'netease'));
 }
 function normalizeAccountProviderList(list) {
   var seen = {};
@@ -280,7 +280,7 @@ function hasPlatformLogin(provider) {
   return !!(st && st.loggedIn);
 }
 function hasAnyPlatformLogin() {
-  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || hasPlatformLogin('qishui') || hasPlatformLogin('spotify');
+  return hasPlatformLogin('netease') || hasPlatformLogin('qq') || hasPlatformLogin('kugou') || hasPlatformLogin('qishui');
 }
 function firstLoggedProvider() {
   if (hasPlatformLogin(activeAccountProvider)) return activeAccountProvider;
@@ -299,19 +299,26 @@ function providerAvatarSrc(provider, status) {
   var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="' + bg + '"/><circle cx="48" cy="48" r="34" fill="' + fill + '" opacity=".16"/><text x="48" y="56" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="700" fill="' + fill + '">' + meta.short + '</text></svg>';
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
-function providerVipBadge(provider, status, idAttr, includeNormal) {
-  status = status || platformStatus(provider) || {};
-  if (!status.loggedIn) return '';
-  var pendingQQSync = provider === 'qq' && (
+function providerMembershipNeedsSync(provider, status) {
+  if (!status || !status.loggedIn) return false;
+  if (provider === 'qq') return !!(
     (typeof qqLoginNeedsAuthorizationRefresh === 'function' && qqLoginNeedsAuthorizationRefresh(status)) ||
     (typeof qqMembershipNeedsSync === 'function' && qqMembershipNeedsSync(status))
   );
+  if (provider !== 'kugou' && provider !== 'qishui') return false;
+  return !!(status.stale || status.membershipStale ||
+    (provider === 'kugou' ? status.membershipVerified !== true : status.membershipKnown !== true));
+}
+function providerVipBadge(provider, status, idAttr, includeNormal) {
+  status = status || platformStatus(provider) || {};
+  if (!status.loggedIn) return '';
+  var pendingSync = providerMembershipNeedsSync(provider, status);
   var level = providerVipLevel(provider, status);
-  if (level === 'none' && !includeNormal && !pendingQQSync) return '';
+  if (level === 'none' && !includeNormal && !pendingSync) return '';
   var id = idAttr ? ' id="' + idAttr + '"' : '';
-  var badgeLevel = pendingQQSync ? 'pending' : (level === 'none' ? 'normal' : level);
+  var badgeLevel = pendingSync ? 'pending' : (level === 'none' ? 'normal' : level);
   var cls = 'top-account-vip ' + escHtml(provider || 'netease') + ' ' + badgeLevel;
-  var label = pendingQQSync ? '待同步' : (level === 'svip' ? 'SVIP' : (level === 'vip' ? 'VIP' : '普通'));
+  var label = pendingSync ? '待同步' : (level === 'svip' ? 'SVIP' : (level === 'vip' ? 'VIP' : '普通'));
   return '<span' + id + ' class="' + cls + '">' + label + '</span>';
 }
 function providerAccountIdentity(provider, status) {

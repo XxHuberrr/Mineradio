@@ -11,6 +11,7 @@ const DEFAULT_SPOTIFY_CONFIG_FILE = path.join(__dirname, '.spotify-credentials.j
 const DEFAULT_SPOTIFY_TOKEN_FILE = path.join(__dirname, '.spotify-token.json');
 const DEFAULT_SPOTIFY_REDIRECT_URI = 'http://127.0.0.1:43879/callback';
 const DEFAULT_SPOTIFY_SCOPES = [
+  'user-read-private',
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-library-read',
@@ -33,6 +34,31 @@ const spotifySearchInflight = new Map();
 const SPOTIFY_PROFILE_CACHE_TTL_MS = 60 * 1000;
 const SPOTIFY_SHORT_RATE_LIMIT_WAIT_MAX_MS = 5000;
 const SPOTIFY_TRANSIENT_RETRY_DELAYS_MS = [320, 900];
+
+function spotifyClientIdLooksValid(value) {
+  return /^[A-Za-z0-9]{16,128}$/.test(normalizeText(value));
+}
+
+function inspectSpotifyRedirectUri(value) {
+  value = normalizeText(value || DEFAULT_SPOTIFY_REDIRECT_URI);
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    const loopback = host === '127.0.0.1' || host === '[::1]' || host === '::1';
+    const pathName = (parsed.pathname || '/').replace(/\/+$/, '') || '/';
+    return {
+      ok: parsed.protocol === 'http:' && loopback && !!parsed.port && pathName === '/callback' && !parsed.username && !parsed.password,
+      value: parsed.toString(),
+      protocol: parsed.protocol,
+      host,
+      port: Number(parsed.port || 0),
+      path: pathName,
+      loopback,
+    };
+  } catch (err) {
+    return { ok: false, value, error: 'SPOTIFY_REDIRECT_URI_INVALID' };
+  }
+}
 
 function normalizeText(value) {
   return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
@@ -120,6 +146,18 @@ function saveSpotifyConfig(input) {
     const err = new Error('SPOTIFY_CLIENT_ID_REQUIRED');
     err.code = 'SPOTIFY_CLIENT_ID_REQUIRED';
     err.missing = ['SPOTIFY_CLIENT_ID'];
+    throw err;
+  }
+  if (!spotifyClientIdLooksValid(clientId)) {
+    const err = new Error('SPOTIFY_CLIENT_ID_INVALID');
+    err.code = 'SPOTIFY_CLIENT_ID_INVALID';
+    throw err;
+  }
+  const redirectCheck = inspectSpotifyRedirectUri(redirectUri);
+  if (!redirectCheck.ok) {
+    const err = new Error('SPOTIFY_REDIRECT_URI_INVALID');
+    err.code = 'SPOTIFY_REDIRECT_URI_INVALID';
+    err.redirectUri = redirectUri;
     throw err;
   }
   const file = getSpotifyConfigFile();
@@ -236,12 +274,17 @@ function getSpotifyOAuthConfig() {
   const market = (firstEnv(['SPOTIFY_MARKET', 'MINERADIO_SPOTIFY_MARKET']) || fileConfig.market || DEFAULT_SPOTIFY_MARKET || 'US').toUpperCase();
   const missing = [];
   if (!clientId) missing.push('SPOTIFY_CLIENT_ID');
+  const clientIdValid = spotifyClientIdLooksValid(clientId);
+  const redirectCheck = inspectSpotifyRedirectUri(redirectUri);
   return {
     provider: 'spotify',
-    configured: missing.length === 0,
+    configured: missing.length === 0 && clientIdValid && redirectCheck.ok,
     clientId,
     clientSecret,
     redirectUri,
+    clientIdValid,
+    redirectValid: redirectCheck.ok,
+    redirectCheck,
     scopes,
     scope: scopes.join(' '),
     market,
@@ -257,7 +300,7 @@ function getSpotifyConfig() {
   const tokenFileExists = !!(token.file && fs.existsSync(token.file));
   const credentialsFileExists = !!(oauth.credentialsFile && fs.existsSync(oauth.credentialsFile));
   const clientCredentialsConfigured = !!(oauth.clientId && oauth.clientSecret);
-  const oauthConfigured = !!(oauth.clientId && oauth.redirectUri);
+  const oauthConfigured = !!(oauth.clientId && oauth.clientIdValid && oauth.redirectUri && oauth.redirectValid);
   const tokenConfigured = !!(token.accessToken || token.refreshToken);
   const localConfigMissing = !tokenConfigured && !oauth.clientId && !credentialsFileExists;
   const spotifyConfigMessage = clientCredentialsConfigured || tokenConfigured
@@ -277,6 +320,8 @@ function getSpotifyConfig() {
     clientId: oauth.clientId,
     clientSecret: oauth.clientSecret,
     redirectUri: oauth.redirectUri,
+    clientIdValid: oauth.clientIdValid,
+    redirectValid: oauth.redirectValid,
     scopes: oauth.scopes,
     scope: oauth.scope,
     market: oauth.market,
@@ -351,6 +396,7 @@ function spotifyErrorDetails(err) {
   err = err || {};
   let apiMessage = '';
   let apiStatus = '';
+  let apiReason = '';
   try {
     const body = err.body ? JSON.parse(String(err.body)) : null;
     if (body && body.error) {
@@ -359,6 +405,7 @@ function spotifyErrorDetails(err) {
       } else {
         apiMessage = body.error.message || body.error.reason || '';
         apiStatus = body.error.status || '';
+        apiReason = body.error.reason || '';
       }
     }
   } catch (parseErr) { }
@@ -371,9 +418,11 @@ function spotifyErrorDetails(err) {
     message = 'Spotify 登录已过期，请重新连接 Spotify。';
   } else if (statusCode === 429) {
     const seconds = Math.max(1, Math.ceil(Number(err.retryAfterMs || spotifyRetryAfterMs(err)) / 1000));
-    message = 'Spotify 请求过于频繁，请约 ' + seconds + ' 秒后重试。';
+    message = apiReason === 'QUOTA_EXCEEDED'
+      ? 'Spotify 开发者账号的共享 API 配额已用完，请稍后再试。'
+      : 'Spotify 请求过于频繁，请约 ' + seconds + ' 秒后重试。';
   } else if (statusCode === 403) {
-    message = 'Spotify 授权权限不够，请在 Spotify 登录面板里重新连接一次。';
+    message = 'Spotify 拒绝了当前开发应用。请确认 App 所有者是 Premium，并且当前登录账号已加入 Users Management。';
   } else if (statusCode === 404) {
     message = 'Spotify 没找到这个歌单，可能已删除、未公开或当前账号无权访问。';
   } else if (statusCode === 500 || statusCode === 502 || statusCode === 503) {
@@ -386,6 +435,8 @@ function spotifyErrorDetails(err) {
     message,
     statusCode,
     spotifyApiMessage: apiMessage,
+    spotifyApiReason: apiReason,
+    quotaExceeded: apiReason === 'QUOTA_EXCEEDED',
     retryAfterSeconds: Math.max(0, Math.ceil(Number(err.retryAfterMs || spotifyRetryAfterMs(err)) / 1000)),
     reauthRequired,
   };
@@ -884,6 +935,108 @@ async function handleSpotifyStatus() {
         : 'Spotify 登录态已保存，可同步会员状态、喜欢和歌单；播放仍会自动换源。')
       : config.message,
   });
+}
+
+async function handleSpotifySetupDiagnostics() {
+  const config = getSpotifyConfig();
+  const token = readStoredSpotifyToken();
+  const tokenScopes = normalizeScopes(token.scope);
+  const checks = [];
+  const push = (id, ok, title, message, extra) => {
+    checks.push(Object.assign({ id, ok: !!ok, title, message: normalizeText(message) }, extra || {}));
+  };
+
+  push(
+    'client',
+    !!(config.clientId && config.clientIdValid),
+    'Client ID',
+    config.clientId && config.clientIdValid ? 'Client ID 格式有效并已安全保存在本机。' : '请粘贴 Spotify Dashboard 中的 Client ID。'
+  );
+  push(
+    'redirect',
+    !!config.redirectValid,
+    '回调地址',
+    config.redirectValid
+      ? '回调地址符合 Spotify 的 127.0.0.1 精确匹配规则。'
+      : '回调必须使用 Mineradio 显示的 127.0.0.1 地址。',
+    { redirectUri: config.redirectUri }
+  );
+  push(
+    'token',
+    !!(token.accessToken || token.refreshToken),
+    'OAuth 授权',
+    token.accessToken || token.refreshToken ? '已取得并保存 PKCE 用户授权。' : '尚未从 Spotify 收到用户授权。'
+  );
+
+  let profile = null;
+  let profileDetail = null;
+  if (token.accessToken || token.refreshToken) {
+    try {
+      profile = await getSpotifyProfile({ force: true, timeoutMs: 9000 });
+      push('profile', true, '账号验证', '已通过 Spotify /me 验证：' + normalizeText(profile.display_name || profile.id || 'Spotify 用户') + '。');
+    } catch (err) {
+      profileDetail = spotifyErrorDetails(err);
+      push('profile', false, '账号验证', profileDetail.message, profileDetail);
+    }
+  } else {
+    push('profile', false, '账号验证', '完成 OAuth 授权后由 Mineradio 自动验证。');
+  }
+
+  const requiredReadScopes = ['user-read-private', 'user-library-read', 'playlist-read-private'];
+  const missingReadScopes = requiredReadScopes.filter(scope => !tokenScopes.includes(scope));
+  push(
+    'scopes',
+    !!profile && missingReadScopes.length === 0,
+    '权限范围',
+    !profile
+      ? '等待账号验证。'
+      : (missingReadScopes.length ? '缺少权限：' + missingReadScopes.join(', ') + '，请重新授权。' : '账号方案、喜欢歌曲和私人歌单权限齐全。'),
+    { missingScopes: missingReadScopes }
+  );
+
+  let libraryReady = false;
+  let playlistsReady = false;
+  if (profile && missingReadScopes.length === 0) {
+    try {
+      await spotifyUserGet('/me/tracks', { limit: 1, offset: 0, market: config.market }, { timeoutMs: 9000 });
+      libraryReady = true;
+      push('library', true, '喜欢歌曲', 'Liked Songs 接口已接通。');
+    } catch (err) {
+      const detail = spotifyErrorDetails(err);
+      push('library', false, '喜欢歌曲', detail.message, detail);
+    }
+    try {
+      await spotifyUserGet('/me/playlists', { limit: 1, offset: 0 }, { timeoutMs: 9000 });
+      playlistsReady = true;
+      push('playlists', true, '歌单接口', '个人歌单接口已接通。');
+    } catch (err) {
+      const detail = spotifyErrorDetails(err);
+      push('playlists', false, '歌单接口', detail.message, detail);
+    }
+  } else {
+    push('library', false, '喜欢歌曲', '权限验证通过后自动检测。');
+    push('playlists', false, '歌单接口', '权限验证通过后自动检测。');
+  }
+
+  const ready = !!(profile && !missingReadScopes.length && libraryReady && playlistsReady);
+  return {
+    provider: 'spotify',
+    ok: ready,
+    ready,
+    loggedIn: !!profile,
+    configured: config.oauthConfigured,
+    clientId: config.clientId,
+    clientIdValid: config.clientIdValid,
+    redirectUri: config.redirectUri,
+    redirectValid: config.redirectValid,
+    nickname: normalizeText(profile && (profile.display_name || profile.id)),
+    product: normalizeText(profile && profile.product).toLowerCase() || 'unknown',
+    checks,
+    currentStep: !config.oauthConfigured ? 1 : (!(token.accessToken || token.refreshToken) ? 3 : (ready ? 4 : 3)),
+    message: ready
+      ? 'Spotify 账号、喜欢歌曲和歌单接口均已接通。'
+      : (profileDetail && profileDetail.message || '按当前步骤继续，Mineradio 会在每一步自动检测。'),
+  };
 }
 
 async function handleSpotifySearch(keywords, limit, offset) {
@@ -1451,6 +1604,7 @@ module.exports = {
   saveSpotifyOAuthToken,
   clearSpotifyToken,
   handleSpotifyStatus,
+  handleSpotifySetupDiagnostics,
   handleSpotifySearch,
   handleSpotifyRecommendations,
   handleSpotifyUserPlaylists,
@@ -1473,6 +1627,8 @@ module.exports = {
     requireSpotifyScopes,
     spotifyErrorDetails,
     normalizeSpotifyProfile,
+    spotifyClientIdLooksValid,
+    inspectSpotifyRedirectUri,
     readStoredSpotifyToken,
     invalidateSpotifyAccessToken,
     resetSpotifyRuntimeStateForTests,

@@ -40,7 +40,7 @@ function writeConfig(file, value) {
 }
 
 function hasLoginCookie(cookie) {
-  return /(?:^|;\s*)(?:sessionid|sessionid_ss|sid_guard|sid_tt)=/i.test(String(cookie || ''));
+  return /(?:^|;\s*)(?:sessionid|sessionid_ss|sid_guard|sid_tt)=[^;\s]+/i.test(String(cookie || ''));
 }
 
 function createQishuiQrLoginBridge(options) {
@@ -51,6 +51,11 @@ function createQishuiQrLoginBridge(options) {
     ...readConfig(configFile),
     ...(options.initialConfig && typeof options.initialConfig === 'object' ? options.initialConfig : {}),
   };
+  let qrGeneration = 0;
+  let activeQrToken = '';
+  let confirmedQrToken = '';
+  let confirmedQrResult = null;
+  let qrPending = false;
 
   function getConfig() {
     return { ...config };
@@ -66,6 +71,11 @@ function createQishuiQrLoginBridge(options) {
   auth.configure({ getConfig, updateConfig });
 
   async function createQrCode() {
+    const generation = ++qrGeneration;
+    activeQrToken = '';
+    confirmedQrToken = '';
+    confirmedQrResult = null;
+    qrPending = true;
     const result = await auth.getQrCode();
     const data = result && result.data || {};
     if (!data.token || !data.qrcode) {
@@ -73,6 +83,12 @@ function createQishuiQrLoginBridge(options) {
       error.code = 'QISHUI_QR_PAYLOAD_INCOMPLETE';
       throw error;
     }
+    if (generation !== qrGeneration) {
+      const error = new Error('QISHUI_QR_REPLACED');
+      error.code = 'QISHUI_QR_REPLACED';
+      throw error;
+    }
+    activeQrToken = String(data.token);
     return result;
   }
 
@@ -83,7 +99,24 @@ function createQishuiQrLoginBridge(options) {
       error.code = 'QISHUI_QR_TOKEN_REQUIRED';
       throw error;
     }
-    return auth.checkQrConnect(token);
+    if (token !== activeQrToken) {
+      return { message: 'error', data: { error_code: 2, status: 'expired', confirmed: false } };
+    }
+    if (confirmedQrToken === token && confirmedQrResult) return confirmedQrResult;
+    const generation = qrGeneration;
+    const result = await auth.checkQrConnect(token);
+    const data = result && result.data || {};
+    const confirmed = generation === qrGeneration && token === activeQrToken &&
+      Number(data.error_code) === 0 &&
+      (String(data.status) === '3' || String(data.status) === 'confirmed' || !!data.session_cookie) &&
+      hasLoginCookie(config.cookie);
+    if (confirmed) {
+      confirmedQrToken = token;
+      qrPending = false;
+      confirmedQrResult = { ...result, data: { ...data, confirmed: true } };
+      return confirmedQrResult;
+    }
+    return { ...result, data: { ...data, confirmed } };
   }
 
   function getCookie() {
@@ -94,8 +127,10 @@ function createQishuiQrLoginBridge(options) {
     const cookie = getCookie();
     return {
       provider: 'qishui',
-      loggedIn: hasLoginCookie(cookie),
+      loggedIn: !qrPending && hasLoginCookie(cookie),
       cookieReady: hasLoginCookie(cookie),
+      qrPending,
+      qrConfirmed: !!activeQrToken && confirmedQrToken === activeQrToken,
       deviceId: String(config.deviceId || ''),
       msTokenReady: !!config.msToken,
       configFile,
@@ -103,6 +138,11 @@ function createQishuiQrLoginBridge(options) {
   }
 
   async function clear() {
+    qrGeneration += 1;
+    activeQrToken = '';
+    confirmedQrToken = '';
+    confirmedQrResult = null;
+    qrPending = false;
     await auth.clear();
     updateConfig({ cookie: '', msToken: '' });
     return getStatus();

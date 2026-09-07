@@ -50,6 +50,7 @@ function replaceAudioElementForGraphRecovery(reason, opts) {
   audio = new Audio();
   audio.crossOrigin = 'anonymous';
   audio.preload = oldAudio.preload || 'auto';
+  audio.loop = !!oldAudio.loop || (typeof playMode !== 'undefined' && playMode === 'single');
   audio.playbackRate = rate;
   audio.onended = endedHandler;
   audio.onloadedmetadata = metadataHandler;

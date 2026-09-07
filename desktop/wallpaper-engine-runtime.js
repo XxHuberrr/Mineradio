@@ -997,6 +997,10 @@ $hostWindowId = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_HOST_WIN
 $hostExecutable = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_HOST_EXECUTABLE', 'Process')
 $hostCornerRadius = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_HOST_CORNER_RADIUS', 'Process')
 $desktopIconLayering = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_DESKTOP_ICON_LAYERING', 'Process')
+$visualOpacity = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_VISUAL_OPACITY', 'Process')
+$visualPositionX = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_VISUAL_POSITION_X', 'Process')
+$visualPositionY = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_VISUAL_POSITION_Y', 'Process')
+$visualScale = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_VISUAL_SCALE', 'Process')
 $sessionId = [Environment]::GetEnvironmentVariable('MINERADIO_WE_DWM_SESSION_ID', 'Process')
 if ([string]::IsNullOrWhiteSpace($sourceId) -or [string]::IsNullOrWhiteSpace($expectedTitle) -or
     [string]::IsNullOrWhiteSpace($expectedExecutable) -or [string]::IsNullOrWhiteSpace($hostWindowId) -or
@@ -1123,14 +1127,23 @@ public sealed class MineradioWeDwmSurfaceHost : Form {
   int lastRadius = -1;
   int consecutiveFollowFailures = 0;
   IntPtr desktopIconHost = IntPtr.Zero;
+  int visualOpacity = 255;
+  int visualPositionX = 0;
+  int visualPositionY = 0;
+  int visualScale = 1080000;
 
   MineradioWeDwmSurfaceHost(IntPtr host, IntPtr source, string expectedTitle, int cornerRadius,
-      bool enableDesktopIconLayering) {
+      bool enableDesktopIconLayering, int initialOpacity, int initialPositionX,
+      int initialPositionY, int initialScale) {
     hostWindow = host;
     sourceWindow = source;
     sourceTitle = expectedTitle ?? "";
     windowCornerRadius = Math.Max(0, Math.Min(512, cornerRadius));
     desktopIconLayeringEnabled = enableDesktopIconLayering;
+    visualOpacity = Math.Max(38, Math.Min(255, initialOpacity));
+    visualPositionX = Math.Max(-500000, Math.Min(500000, initialPositionX));
+    visualPositionY = Math.Max(-500000, Math.Min(500000, initialPositionY));
+    visualScale = Math.Max(1000000, Math.Min(1600000, initialScale));
     FormBorderStyle = FormBorderStyle.None;
     // A normal top-level style lets Electron obtain an exact WGC source for
     // the SVG sampler. DeleteTab below keeps this implementation surface out
@@ -1200,6 +1213,29 @@ public sealed class MineradioWeDwmSurfaceHost : Form {
                 FollowHost();
                 Console.WriteLine("{\"ok\":true,\"iconLayering\":true,\"enabled\":"
                   + (enabled ? "true" : "false") + "}");
+                Console.Out.Flush();
+              }));
+            } catch { }
+            continue;
+          }
+          if (command.StartsWith("V|", StringComparison.Ordinal)) {
+            string[] values = command.Split('|');
+            int nextOpacity, nextPositionX, nextPositionY, nextScale;
+            if (values.Length != 5
+                || !Int32.TryParse(values[1], out nextOpacity)
+                || !Int32.TryParse(values[2], out nextPositionX)
+                || !Int32.TryParse(values[3], out nextPositionY)
+                || !Int32.TryParse(values[4], out nextScale)) continue;
+            try {
+              if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(delegate() {
+                visualOpacity = Math.Max(38, Math.Min(255, nextOpacity));
+                visualPositionX = Math.Max(-500000, Math.Min(500000, nextPositionX));
+                visualPositionY = Math.Max(-500000, Math.Min(500000, nextPositionY));
+                visualScale = Math.Max(1000000, Math.Min(1600000, nextScale));
+                FollowHost();
+                Console.WriteLine("{\"ok\":true,\"visual\":true,\"opacity\":" + visualOpacity
+                  + ",\"positionX\":" + visualPositionX + ",\"positionY\":" + visualPositionY
+                  + ",\"scale\":" + visualScale + "}");
                 Console.Out.Flush();
               }));
             } catch { }
@@ -1396,8 +1432,24 @@ public sealed class MineradioWeDwmSurfaceHost : Form {
       DWM_THUMBNAIL_PROPERTIES properties = new DWM_THUMBNAIL_PROPERTIES();
       properties.dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_OPACITY
         | DWM_TNP_VISIBLE | DWM_TNP_SOURCECLIENTAREAONLY;
-      properties.rcDestination = new RECT { Left = 0, Top = 0, Right = width, Bottom = height };
-      properties.opacity = 255;
+      double positionX = visualPositionX / 500000.0;
+      double positionY = visualPositionY / 500000.0;
+      double requestedScale = visualScale / 1000000.0;
+      double automaticOverscan = 1.0 + Math.Max(Math.Abs(positionX), Math.Abs(positionY)) * 0.18;
+      double appliedScale = Math.Max(requestedScale, automaticOverscan);
+      int destinationWidth = Math.Max(width, (int)Math.Round(width * appliedScale));
+      int destinationHeight = Math.Max(height, (int)Math.Round(height * appliedScale));
+      int travelX = Math.Max(0, (destinationWidth - width) / 2);
+      int travelY = Math.Max(0, (destinationHeight - height) / 2);
+      int destinationLeft = -travelX + (int)Math.Round(travelX * positionX);
+      int destinationTop = -travelY + (int)Math.Round(travelY * positionY);
+      properties.rcDestination = new RECT {
+        Left = destinationLeft,
+        Top = destinationTop,
+        Right = destinationLeft + destinationWidth,
+        Bottom = destinationTop + destinationHeight
+      };
+      properties.opacity = (byte)visualOpacity;
       properties.fVisible = true;
       properties.fSourceClientAreaOnly = true;
       int result = DwmUpdateThumbnailProperties(thumbnail, ref properties);
@@ -1409,7 +1461,8 @@ public sealed class MineradioWeDwmSurfaceHost : Form {
   }
 
   public static void Run(string sourceId, string expectedTitle, string expectedExecutable,
-      string hostWindowId, string hostExecutable, string rawCornerRadius, string rawDesktopIconLayering) {
+      string hostWindowId, string hostExecutable, string rawCornerRadius, string rawDesktopIconLayering,
+      string rawOpacity, string rawPositionX, string rawPositionY, string rawScale) {
     SetProcessDpiAwarenessContext(new IntPtr(-4));
     IntPtr source = ParseSourceHandle(sourceId);
     IntPtr host = ParseRawHandle(hostWindowId);
@@ -1421,16 +1474,21 @@ public sealed class MineradioWeDwmSurfaceHost : Form {
     int cornerRadius;
     if (!Int32.TryParse(rawCornerRadius ?? "", out cornerRadius)) cornerRadius = 0;
     bool enableDesktopIconLayering = String.Equals(rawDesktopIconLayering, "1", StringComparison.Ordinal);
+    int initialOpacity, initialPositionX, initialPositionY, initialScale;
+    if (!Int32.TryParse(rawOpacity ?? "", out initialOpacity)) initialOpacity = 255;
+    if (!Int32.TryParse(rawPositionX ?? "", out initialPositionX)) initialPositionX = 0;
+    if (!Int32.TryParse(rawPositionY ?? "", out initialPositionY)) initialPositionY = 0;
+    if (!Int32.TryParse(rawScale ?? "", out initialScale)) initialScale = 1080000;
     Application.EnableVisualStyles();
     Application.SetCompatibleTextRenderingDefault(false);
     Application.Run(new MineradioWeDwmSurfaceHost(host, source, expectedTitle, cornerRadius,
-      enableDesktopIconLayering));
+      enableDesktopIconLayering, initialOpacity, initialPositionX, initialPositionY, initialScale));
   }
 }
 '@
 Add-Type -ReferencedAssemblies @('System.Windows.Forms', 'System.Drawing') -TypeDefinition $source -Language CSharp
 try {
-  [MineradioWeDwmSurfaceHost]::Run($sourceId, $expectedTitle, $expectedExecutable, $hostWindowId, $hostExecutable, $hostCornerRadius, $desktopIconLayering)
+  [MineradioWeDwmSurfaceHost]::Run($sourceId, $expectedTitle, $expectedExecutable, $hostWindowId, $hostExecutable, $hostCornerRadius, $desktopIconLayering, $visualOpacity, $visualPositionX, $visualPositionY, $visualScale)
 } catch {
   [Console]::Error.WriteLine($_.Exception.ToString())
   if ($_.Exception.InnerException) { [Console]::Error.WriteLine($_.Exception.InnerException.ToString()) }
@@ -1661,6 +1719,10 @@ class WallpaperEngineRuntime {
       dwmSurfaceHelperPid: Math.max(0, Number(session.dwmSurfaceHelperPid) || 0),
       dwmSurfaceWindowId: Math.max(0, Number(session.dwmSurfaceWindowId) || 0),
       dwmDesktopIconLayering: session.dwmDesktopIconLayering === true,
+      dwmVisualOpacity: Math.max(0.15, Math.min(1, Number(session.dwmVisualOpacity) || 1)),
+      dwmVisualPositionX: Math.max(-0.5, Math.min(0.5, Number(session.dwmVisualPositionX) || 0)),
+      dwmVisualPositionY: Math.max(-0.5, Math.min(0.5, Number(session.dwmVisualPositionY) || 0)),
+      dwmVisualScale: Math.max(1, Math.min(1.6, Number(session.dwmVisualScale) || 1.08)),
       dwmGlassSurfaceReady: session.dwmGlassSurfaceReady === true,
       dwmGlassSurfaceActive: session.dwmGlassSurfaceActive === true,
       dwmGlassSurfaceWindowId: Math.max(0, Number(session.dwmGlassSurfaceWindowId) || 0),
@@ -1856,6 +1918,10 @@ class WallpaperEngineRuntime {
             MINERADIO_WE_DWM_HOST_EXECUTABLE: hostExecutable,
             MINERADIO_WE_DWM_HOST_CORNER_RADIUS: String(session.dwmSurfaceHostCornerRadius || 0),
             MINERADIO_WE_DWM_DESKTOP_ICON_LAYERING: session.dwmSurfaceDesktopIconLayering === true ? '1' : '0',
+            MINERADIO_WE_DWM_VISUAL_OPACITY: String(Math.round(Math.max(0.15, Math.min(1, Number(session.dwmVisualOpacity) || 1)) * 255)),
+            MINERADIO_WE_DWM_VISUAL_POSITION_X: String(Math.round(Math.max(-0.5, Math.min(0.5, Number(session.dwmVisualPositionX) || 0)) * 1000000)),
+            MINERADIO_WE_DWM_VISUAL_POSITION_Y: String(Math.round(Math.max(-0.5, Math.min(0.5, Number(session.dwmVisualPositionY) || 0)) * 1000000)),
+            MINERADIO_WE_DWM_VISUAL_SCALE: String(Math.round(Math.max(1, Math.min(1.6, Number(session.dwmVisualScale) || 1.08)) * 1000000)),
             MINERADIO_WE_DWM_SESSION_ID: session.sessionId,
           }),
         });
@@ -2104,6 +2170,29 @@ class WallpaperEngineRuntime {
       }
     }
     return false;
+  }
+
+  updateDwmVisualSettings(expectedSessionId = '', settings = {}) {
+    const session = this.active;
+    expectedSessionId = String(expectedSessionId || '');
+    if (!session || (expectedSessionId && session.sessionId !== expectedSessionId)) return false;
+    const opacity = Math.max(0.15, Math.min(1, Number(settings.opacity) || 1));
+    const positionX = Math.max(-0.5, Math.min(0.5, Number(settings.positionX) || 0));
+    const positionY = Math.max(-0.5, Math.min(0.5, Number(settings.positionY) || 0));
+    const scale = Math.max(1, Math.min(1.6, Number(settings.scale) || 1.08));
+    session.dwmVisualOpacity = opacity;
+    session.dwmVisualPositionX = positionX;
+    session.dwmVisualPositionY = positionY;
+    session.dwmVisualScale = scale;
+    const child = session.dwmSurfaceProcess;
+    const stdin = child && child.stdin;
+    if (session.dwmSurfaceReady !== true || !stdin || stdin.destroyed === true || stdin.writableEnded === true) return false;
+    try {
+      stdin.write(`V|${Math.round(opacity * 255)}|${Math.round(positionX * 1000000)}|${Math.round(positionY * 1000000)}|${Math.round(scale * 1000000)}\n`, 'ascii');
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   async getDwmGlassCaptureSource(expectedSessionId = '', options = {}) {
@@ -3809,6 +3898,10 @@ class WallpaperEngineRuntime {
       dwmSurfaceRetryTimer: null,
       dwmDesktopIconLayering: false,
       dwmDesktopIconLayeringAckToken: 0,
+      dwmVisualOpacity: 1,
+      dwmVisualPositionX: 0,
+      dwmVisualPositionY: 0,
+      dwmVisualScale: 1.08,
       dwmGlassSurfaceReady: false,
       dwmGlassSurfaceActive: false,
       dwmGlassSurfaceWindowId: 0,

@@ -100,34 +100,34 @@ function applyLatestUpdateInfo(data) {
   updatePreviewState.preview = !!data.preview;
   updatePreviewState.updateAvailable = !!data.updateAvailable;
   updatePreviewState.releaseUrl = release.htmlUrl || data.htmlUrl || '';
-  updatePreviewState.externalUrl = release.externalUrl || data.externalUrl || '';
-  updatePreviewState.downloadPages = normalizeUpdateDownloadPages(
-    release.downloadPages || data.downloadPages || []
-  );
+  var legacyExternalUrl = release.externalUrl || data.externalUrl || '';
+  var explicitPages = Array.isArray(release.downloadPages)
+    ? release.downloadPages
+    : (Array.isArray(data.downloadPages) ? data.downloadPages : null);
+  updatePreviewState.downloadPages = normalizeUpdateDownloadPages(explicitPages || []);
   if (
-    isSafeUpdatePageUrl(updatePreviewState.externalUrl)
-    && !updatePreviewState.downloadPages.some(function (page) { return page.url === updatePreviewState.externalUrl; })
+    explicitPages === null
+    && isSafeUpdatePageUrl(legacyExternalUrl)
   ) {
     updatePreviewState.downloadPages.unshift({
       label: '网盘下载',
-      url: updatePreviewState.externalUrl
+      url: legacyExternalUrl
     });
   }
+  updatePreviewState.externalUrl = updatePreviewState.downloadPages.length
+    ? updatePreviewState.downloadPages[0].url
+    : '';
   if (updatePreviewState.selectedDownloadPageIndex >= updatePreviewState.downloadPages.length) {
     updatePreviewState.selectedDownloadPageIndex = 0;
   }
-  updatePreviewState.downloadPageUrl = release.downloadPageUrl
-    || data.downloadPageUrl
-    || updatePreviewState.externalUrl
-    || updatePreviewState.releaseUrl
-    || '';
+  updatePreviewState.downloadPageUrl = explicitPages !== null
+    ? (updatePreviewState.externalUrl || updatePreviewState.releaseUrl || '')
+    : (release.downloadPageUrl || data.downloadPageUrl || updatePreviewState.externalUrl || updatePreviewState.releaseUrl || '');
   updatePreviewState.status = 'idle';
   updatePreviewState.errorReason = '';
   updatePreviewState.hero = release.summary
     || (updatePreviewState.updateAvailable ? '发现新版本，建议更新。' : '当前版本已是最新。');
-  if (Array.isArray(release.notes) && release.notes.length) {
-    updatePreviewState.notes = release.notes.slice(0, 4);
-  }
+  updatePreviewState.notes = Array.isArray(release.notes) ? release.notes.slice(0, 4) : [];
   renderUpdatePreviewPanel();
   setUpdatePreviewVisible(updatePreviewState.updateAvailable || updatePreviewState.preview);
 }
@@ -245,8 +245,7 @@ function syncUpdatePreviewStateClass() {
     if (isOpening) foot.textContent = '正在调用系统浏览器。';
     else if (isError) foot.textContent = '无法打开下载页：' + (updatePreviewState.errorReason || '请稍后重试');
     else if (!updatePreviewState.updateAvailable) foot.textContent = '当前版本已是最新。';
-    else if (downloadPages.length > 1) foot.textContent = '可选择任一网盘线路；软件不会在本地下载或应用补丁。';
-    else if (updatePreviewState.externalUrl) foot.textContent = '将在浏览器打开网盘下载页；软件不会在本地下载或应用补丁。';
+    else if (downloadPages.length || updatePreviewState.externalUrl) foot.textContent = '请使用本次公告中的最新网盘链接，旧收藏链接可能不是最新版。软件不会在本地下载或应用补丁。';
     else foot.textContent = '将在浏览器打开 GitHub 更新页面；软件不会在本地下载或应用补丁。';
   }
 }

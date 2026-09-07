@@ -539,9 +539,14 @@ function animate() {
   treble = Math.min(0.62, smoothTreb * 1.20) * fx.intensity;
   if (fx.preset >= 4) {
     var wallpaperAudio = fx.preset === 5;
-    var ringBass = smoothBass * (wallpaperAudio ? 1.10 : 1.58) + beatPulse * (wallpaperAudio ? 0.18 : 0.42) - smoothMid * 0.16 - smoothTreb * 0.06;
-    var ringMid = smoothMid * (wallpaperAudio ? 1.16 : 1.82) - smoothBass * 0.14 - smoothTreb * 0.07;
-    var ringTreble = smoothTreb * (wallpaperAudio ? 1.34 : 2.28) - smoothMid * 0.10 - smoothBass * 0.05;
+    var authoredParticles = fx.preset >= 9 && fx.preset <= 12;
+    var ringBassGain = wallpaperAudio ? 1.10 : (authoredParticles ? 1.32 : 1.58);
+    var ringMidGain = wallpaperAudio ? 1.16 : (authoredParticles ? 1.48 : 1.82);
+    var ringTrebleGain = wallpaperAudio ? 1.34 : (authoredParticles ? 1.72 : 2.28);
+    var ringBeatGain = wallpaperAudio ? 0.18 : (authoredParticles ? 0.31 : 0.42);
+    var ringBass = smoothBass * ringBassGain + beatPulse * ringBeatGain - smoothMid * 0.16 - smoothTreb * 0.06;
+    var ringMid = smoothMid * ringMidGain - smoothBass * 0.14 - smoothTreb * 0.07;
+    var ringTreble = smoothTreb * ringTrebleGain - smoothMid * 0.10 - smoothBass * 0.05;
     bass = Math.pow(clamp01((ringBass - 0.050) / 0.58), 0.72) * fx.intensity;
     mid = Math.pow(clamp01((ringMid - 0.045) / 0.46), 0.78) * fx.intensity;
     treble = Math.pow(clamp01((ringTreble - 0.030) / 0.34), 0.84) * fx.intensity;
@@ -550,6 +555,11 @@ function animate() {
       mid = Math.min(mid, 0.40 * fx.intensity);
       treble = Math.min(treble, 0.36 * fx.intensity);
       beatPulse *= 0.34;
+    } else if (authoredParticles) {
+      bass = Math.min(bass, 0.72 * fx.intensity);
+      mid = Math.min(mid, 0.62 * fx.intensity);
+      treble = Math.min(treble, 0.58 * fx.intensity);
+      beatPulse *= 0.72;
     }
   }
   if (djMode.active) {

@@ -351,6 +351,14 @@ function updateFxInputs() {
   if (backgroundStarRiverToggle) backgroundStarRiverToggle.classList.toggle('on', fx.backgroundStarRiver !== false);
   var lyricVerticalFloatToggle = document.getElementById('t-lyricVerticalFloat');
   if (lyricVerticalFloatToggle) lyricVerticalFloatToggle.classList.toggle('on', fx.lyricVerticalFloat !== false);
+  var lyricLiveViewportFitToggle = document.getElementById('t-lyricLiveViewportFit');
+  if (lyricLiveViewportFitToggle) lyricLiveViewportFitToggle.classList.toggle('on', fx.lyricLiveViewportFit !== false);
+  var lyricContextHighQualityToggle = document.getElementById('t-lyricContextHighQuality');
+  if (lyricContextHighQualityToggle) lyricContextHighQualityToggle.classList.toggle('on', fx.lyricContextHighQuality !== false);
+  var lyricBackdropAdaptToggle = document.getElementById('t-lyricBackdropAdapt');
+  if (lyricBackdropAdaptToggle) lyricBackdropAdaptToggle.classList.toggle('on', fx.lyricBackdropAdapt !== false);
+  var coverBackdropAdaptToggle = document.getElementById('t-coverBackdropAdapt');
+  if (coverBackdropAdaptToggle) coverBackdropAdaptToggle.classList.toggle('on', fx.coverBackdropAdapt !== false);
   var lyricPauseHoldToggle = document.getElementById('t-lyricPauseHold');
   if (lyricPauseHoldToggle) lyricPauseHoldToggle.classList.toggle('on', fx.lyricPauseHold !== false);
   var lyricCameraLockToggle = document.getElementById('t-lyricCameraLock');
@@ -391,7 +399,9 @@ function updateFxInputs() {
   // 三态
   document.querySelectorAll('#shelf-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.shelf === fx.shelf); });
   updateShelfControlUi();
-  document.querySelectorAll('#cam-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.cam === fx.cam); });
+  if (typeof syncGestureCameraUi === 'function') syncGestureCameraUi();
+  else document.querySelectorAll('#cam-seg button').forEach(function (b) { b.classList.toggle('active', b.dataset.cam === fx.cam); });
+  if (typeof applyGestureSettingsUi === 'function') applyGestureSettingsUi();
   refreshPresetGrid();
   updateLyricColorControls();
   updateLyricHighlightControls();

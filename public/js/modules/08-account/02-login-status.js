@@ -80,6 +80,7 @@ function providerVipAuditSameUser(previous, current) {
 }
 function auditProviderVipState(provider, status) {
   if (!status) return;
+  if (providerMembershipNeedsSync(provider, status)) return;
   var state = readProviderVipAuditState();
   var previous = state[provider] || null;
   var current = providerVipAuditSnapshot(provider, status);
@@ -117,7 +118,7 @@ async function refreshLoginStatus(force) {
       syncLikeStatusForSongs(playQueue.concat(playlist || []));
     } else {
       neteasePlaylists = [];
-      userPlaylists = qqPlaylists.concat(kugouPlaylists || [], qishuiPlaylists || [], spotifyPlaylists || []);
+      userPlaylists = (builtInPlaylists || []).concat(qqPlaylists || [], kugouPlaylists || [], qishuiPlaylists || [], spotifyPlaylists || []);
       playlistCatalogRevision += 1;
       myPodcastCollections = [];
       myPodcastItems = {};
@@ -342,6 +343,7 @@ function applyQQPlaybackStatusEvidence(info, song) {
 async function refreshKugouLoginStatus() {
   try {
     var info = await apiJson('/api/kugou/login/status?t=' + Date.now());
+    if (info && info.error && !info.reauthRequired) throw new Error(info.error);
     var prevLogged = !!kugouLoginStatus.loggedIn;
     kugouLoginStatus = normalizeKugouLoginStatus(info);
     auditProviderVipState('kugou', kugouLoginStatus);
@@ -364,7 +366,11 @@ async function refreshKugouLoginStatus() {
     return kugouLoginStatus;
   } catch (e) {
     console.warn('Kugou login status failed:', e);
-    kugouLoginStatus = normalizeKugouLoginStatus(null);
+    kugouLoginStatus = normalizeKugouLoginStatus(kugouLoginStatus && kugouLoginStatus.loggedIn
+      ? Object.assign({}, kugouLoginStatus, {
+        stale: true, membershipStale: true, membershipVerified: false,
+        playbackReady: false, playbackKeyReady: false, authorizationIncomplete: true
+      }) : null);
     renderUserBtn();
     return kugouLoginStatus;
   }
@@ -379,12 +385,13 @@ function startKugouLoginStatusAutoRefresh() {
 function normalizeQishuiLoginStatus(info) {
   var fallback = { provider: 'qishui', loggedIn: false, configured: false, oauthConfigured: false, oauthMissing: [], preview: false, nickname: '汽水音乐', userId: '', avatar: '', vipType: 0, vipLevel: 'none', isVip: false, isSvip: false, stale: false, playbackKeyReady: false, playbackMode: 'recommend-match', searchReady: false, publicCatalog: false };
   var configured = !!(info && (info.configured || info.loggedIn));
-  var webSession = !!(info && info.webSession);
+  var loggedIn = !!(info && info.loggedIn === true && info.webSession === true);
+  var webSession = !!(loggedIn && info.webSession);
   var capabilities = info && info.capabilities || {};
   var searchReady = !!(configured || capabilities.search || info && info.publicCatalog);
   return Object.assign({}, fallback, info || {}, {
     provider: 'qishui',
-    loggedIn: configured,
+    loggedIn: loggedIn,
     configured: configured,
     oauthConfigured: !!(info && (info.oauthConfigured || (info.oauth && info.oauth.configured))),
     oauthMissing: info && Array.isArray(info.oauthMissing) ? info.oauthMissing : [],
@@ -395,24 +402,25 @@ function normalizeQishuiLoginStatus(info) {
     vipLevel: info && (info.vipLevel || info.vip_level) || 'none',
     isVip: !!(info && info.isVip),
     isSvip: !!(info && info.isSvip),
-    playbackKeyReady: !!(webSession && capabilities.playableUrl),
+    playbackKeyReady: !!(webSession && capabilities.playableUrl && info.playbackKeyReady !== false && !info.stale && !info.reauthRequired),
     playbackMode: info && info.playbackMode || 'recommend-match',
     searchReady: searchReady,
     webSession: webSession,
     cookieReady: !!(info && info.cookieReady),
     tokenConfigured: !!(info && info.tokenConfigured),
     publicCatalog: !!(!configured && searchReady),
-    stale: false
+    stale: !!(info && info.stale)
   });
 }
 async function refreshQishuiLoginStatus() {
   try {
     var info = await apiJson('/api/qishui/status?t=' + Date.now());
+    if (info && info.error && !info.reauthRequired) throw new Error(info.error);
     var prevLogged = !!qishuiLoginStatus.loggedIn;
     qishuiLoginStatus = normalizeQishuiLoginStatus(info);
     auditProviderVipState('qishui', qishuiLoginStatus);
     if (!qishuiLoginStatus.loggedIn) {
-      if (prevLogged || qishuiLoginWasLoggedIn) showToast('汽水音乐授权已清除');
+      if (prevLogged || qishuiLoginWasLoggedIn) showToast(qishuiLoginStatus.reauthRequired ? '汽水音乐登录已失效，请重新扫码' : '汽水音乐授权已清除');
       qishuiPlaylists = [];
       userPlaylists = userPlaylists.filter(function (pl) { return pl.provider !== 'qishui'; });
       playlistCatalogRevision += 1;
@@ -429,7 +437,10 @@ async function refreshQishuiLoginStatus() {
     return qishuiLoginStatus;
   } catch (e) {
     console.warn('Qishui login status failed:', e);
-    qishuiLoginStatus = normalizeQishuiLoginStatus(null);
+    qishuiLoginStatus = normalizeQishuiLoginStatus(qishuiLoginStatus && qishuiLoginStatus.loggedIn
+      ? Object.assign({}, qishuiLoginStatus, {
+        stale: true, membershipStale: true, playbackKeyReady: false
+      }) : null);
     renderUserBtn();
     return qishuiLoginStatus;
   }

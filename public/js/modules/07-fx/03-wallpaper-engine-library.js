@@ -42,6 +42,7 @@ var wallpaperEnginePointerActivityHasPoint = false;
 var wallpaperEngineRenderLimit = 240;
 var wallpaperEngineRuntimeError = '';
 var wallpaperEngineProjectDetailsId = '';
+var wallpaperEngineVisualSettingsTimer = 0;
 var WALLPAPER_ENGINE_SWITCH_FADE_MS = 440;
 var WALLPAPER_ENGINE_RENDER_BATCH = 240;
 var WALLPAPER_ENGINE_PREPARED_STREAM_TTL_MS = 12000;
@@ -154,6 +155,10 @@ function normalizeWallpaperEngineSelection(value) {
     projectType: String(value.projectType || 'unknown').slice(0, 32),
     hasPreview: value.hasPreview === true,
     previewAnimated: value.previewAnimated === true,
+    visualOpacity: Math.max(0.15, Math.min(1, Number(value.visualOpacity) || 1)),
+    visualPositionX: Math.max(-0.5, Math.min(0.5, Number(value.visualPositionX) || 0)),
+    visualPositionY: Math.max(-0.5, Math.min(0.5, Number(value.visualPositionY) || 0)),
+    visualScale: Math.max(1, Math.min(1.6, Number(value.visualScale) || 1.08)),
     updatedAt: Math.max(0, Number(value.updatedAt) || 0)
   };
 }
@@ -164,6 +169,69 @@ function readWallpaperEngineSelection() {
 }
 
 var wallpaperEngineSelection = readWallpaperEngineSelection();
+
+function wallpaperEngineVisualSettings() {
+  return {
+    opacity: Math.max(0.15, Math.min(1, Number(wallpaperEngineSelection.visualOpacity) || 1)),
+    positionX: Math.max(-0.5, Math.min(0.5, Number(wallpaperEngineSelection.visualPositionX) || 0)),
+    positionY: Math.max(-0.5, Math.min(0.5, Number(wallpaperEngineSelection.visualPositionY) || 0)),
+    scale: Math.max(1, Math.min(1.6, Number(wallpaperEngineSelection.visualScale) || 1.08))
+  };
+}
+
+function syncWallpaperEngineVisualControls() {
+  var settings = wallpaperEngineVisualSettings();
+  var controls = [
+    ['wallpaper-engine-opacity', settings.opacity, Math.round(settings.opacity * 100) + '%'],
+    ['wallpaper-engine-position-x', settings.positionX * 100, Math.round(settings.positionX * 100) + '%'],
+    ['wallpaper-engine-position-y', settings.positionY * 100, Math.round(settings.positionY * 100) + '%'],
+    ['wallpaper-engine-scale', settings.scale, settings.scale.toFixed(2) + '×']
+  ];
+  controls.forEach(function (entry) {
+    var input = document.getElementById(entry[0]);
+    if (!input) return;
+    input.value = String(entry[1]);
+    var output = input.parentElement && input.parentElement.querySelector('output');
+    if (output) output.textContent = entry[2];
+  });
+}
+
+function flushWallpaperEngineVisualSettings() {
+  wallpaperEngineVisualSettingsTimer = 0;
+  var api = wallpaperEngineDesktopApi();
+  var sessionId = String(wallpaperEngineNativeSessionId || '');
+  if (!api || typeof api.updateWallpaperEngineVisualSettings !== 'function'
+    || !/^[a-f0-9]{24}$/i.test(sessionId)) return;
+  try { api.updateWallpaperEngineVisualSettings(Object.assign({ sessionId: sessionId }, wallpaperEngineVisualSettings())); }
+  catch (e) { }
+}
+
+function applyWallpaperEngineVisualSettings(immediate) {
+  var settings = wallpaperEngineVisualSettings();
+  var layer = document.getElementById('wallpaper-engine-layer');
+  if (layer) {
+    layer.style.setProperty('--wallpaper-engine-visual-opacity', settings.opacity.toFixed(3));
+    layer.style.setProperty('--wallpaper-engine-visual-position-x', (settings.positionX * 100).toFixed(2) + '%');
+    layer.style.setProperty('--wallpaper-engine-visual-position-y', (settings.positionY * 100).toFixed(2) + '%');
+    layer.style.setProperty('--wallpaper-engine-visual-scale', settings.scale.toFixed(3));
+  }
+  syncWallpaperEngineVisualControls();
+  if (wallpaperEngineVisualSettingsTimer) clearTimeout(wallpaperEngineVisualSettingsTimer);
+  if (immediate === true) flushWallpaperEngineVisualSettings();
+  else wallpaperEngineVisualSettingsTimer = setTimeout(flushWallpaperEngineVisualSettings, 42);
+}
+
+function setWallpaperEngineVisualSetting(name, rawValue) {
+  var value = Number(rawValue);
+  if (!Number.isFinite(value)) return;
+  if (name === 'opacity') wallpaperEngineSelection.visualOpacity = Math.max(0.15, Math.min(1, value));
+  else if (name === 'positionX') wallpaperEngineSelection.visualPositionX = Math.max(-0.5, Math.min(0.5, value / 100));
+  else if (name === 'positionY') wallpaperEngineSelection.visualPositionY = Math.max(-0.5, Math.min(0.5, value / 100));
+  else if (name === 'scale') wallpaperEngineSelection.visualScale = Math.max(1, Math.min(1.6, value));
+  else return;
+  saveWallpaperEngineSelection();
+  applyWallpaperEngineVisualSettings(false);
+}
 
 function saveWallpaperEngineSelection() {
   try { localStorage.setItem(WALLPAPER_ENGINE_SELECTION_STORE_KEY, JSON.stringify(normalizeWallpaperEngineSelection(wallpaperEngineSelection))); }
@@ -599,6 +667,7 @@ async function openWallpaperEngineCaptureStream(sessionId, fps, sourceId, option
     attempts: [],
     selectedPath: '',
     purpose: options.purpose === 'dwm-glass' ? 'dwm-glass' : 'scene',
+    sourceIdOnly: options.sourceIdOnly === true,
     trustedCursorFreeSurface: options.trustedCursorFreeSurface === true
   };
   try {
@@ -660,6 +729,10 @@ async function openWallpaperEngineCaptureStream(sessionId, fps, sourceId, option
     }
   }
   var displayError = null;
+  if (options.sourceIdOnly === true) {
+    displayError = new Error('DISPLAY_MEDIA_FALLBACK_DISABLED');
+    recordAttempt('display-media-disabled', null, displayError);
+  }
   // Electron still grants only the exact WE source here. On current Chromium,
   // getDisplayMedia can report cursor: always even when never was requested;
   // retain it as the visual compatibility fallback and record that fact rather
@@ -694,7 +767,10 @@ window.__mineradioPrepareWallpaperEngineCapture = async function (sessionId, fps
   sessionId = String(sessionId || '');
   if (!/^[a-f0-9]{24}$/i.test(sessionId)) return { ok: false, error: 'WALLPAPER_ENGINE_SESSION_INVALID' };
   try {
-    var stream = await openWallpaperEngineCaptureStream(sessionId, fps, sourceId);
+    var stream = await openWallpaperEngineCaptureStream(sessionId, fps, sourceId, {
+      sourceIdOnly: true,
+      purpose: 'scene'
+    });
     storeWallpaperEnginePreparedCaptureStream(sessionId, stream);
     return { ok: true };
   } catch (error) {
@@ -711,6 +787,7 @@ window.__mineradioPrepareWallpaperEngineGlassCapture = async function (sessionId
   if (!/^[a-f0-9]{24}$/i.test(sessionId)) return { ok: false, error: 'WALLPAPER_ENGINE_SESSION_INVALID' };
   try {
     var stream = await openWallpaperEngineCaptureStream(sessionId, fps, sourceId, {
+      sourceIdOnly: true,
       purpose: 'dwm-glass',
       // The exact granted source is the helper's own DWM thumbnail surface.
       // It has no cursor-rendering path, so a Chromium track reporting
@@ -1257,6 +1334,7 @@ async function startWallpaperEngineNativeBackground(item, token) {
     stopWallpaperEngineCaptureStream(false);
     wallpaperEngineCaptureMode = 'dwm-thumbnail';
     wallpaperEngineNativeSessionId = sessionId;
+    applyWallpaperEngineVisualSettings(true);
     var dwmAcknowledgement = await reportWallpaperEngineCaptureResult(sessionId, true);
     if (!wallpaperEngineNativeStartIsCurrent(item, token)
       || wallpaperEngineNativeSessionId !== sessionId) return;
@@ -1457,6 +1535,7 @@ function wallpaperEngineLayerReady(kind, token) {
     if (kind === 'video' && wallpaperEngineSelection.kind === 'engine') queueWallpaperEnginePointerActivity();
   }
   document.body.classList.add('wallpaper-engine-active');
+  applyWallpaperEngineVisualSettings(true);
   if (kind === 'dwm' && typeof animateWallpaperEngineControlGlassSurface === 'function') {
     animateWallpaperEngineControlGlassSurface(560);
   }
@@ -1604,6 +1683,10 @@ function activateWallpaperEngineItem(id) {
     projectType: item.projectType,
     hasPreview: item.hasPreview,
     previewAnimated: item.previewAnimated,
+    visualOpacity: wallpaperEngineSelection.visualOpacity,
+    visualPositionX: wallpaperEngineSelection.visualPositionX,
+    visualPositionY: wallpaperEngineSelection.visualPositionY,
+    visualScale: wallpaperEngineSelection.visualScale,
     updatedAt: item.updatedAt
   });
   wallpaperEngineDesktopPreviewActive = false;
@@ -1671,6 +1754,28 @@ function restartWallpaperEngineAfterHostBoundsChange() {
 
 function handleWallpaperEngineHostBoundsChange(payload) {
   var phase = String(payload && payload.phase || 'restart');
+  if (phase === 'resident') {
+    var residentSessionId = String(payload && payload.sessionId || '');
+    if (!wallpaperEngineSelection.active
+      || wallpaperEngineSelection.kind !== 'engine'
+      || wallpaperEngineCaptureMode !== 'dwm-thumbnail'
+      || residentSessionId !== String(wallpaperEngineNativeSessionId || '')) return;
+    // Minimize no longer destroys the native DWM base. Restore only the
+    // renderer-side visual state and, if Chromium ended it in the background,
+    // reacquire the narrow glass sampler without restarting the Scene.
+    wallpaperEngineHostBoundsPreparing = false;
+    wallpaperEngineDesktopPreviewActive = false;
+    wallpaperEngineDesktopPreviewUsesAsset = false;
+    applyWallpaperEngineVisualSettings(true);
+    clearWallpaperEngineFreezeFrame(false);
+    if (!wallpaperEngineCaptureStream
+      || !wallpaperEngineCaptureStream.getVideoTracks
+      || !wallpaperEngineCaptureStream.getVideoTracks().some(function (track) { return track && track.readyState === 'live'; })) {
+      scheduleWallpaperEngineGlassSamplerCapture(residentSessionId, wallpaperEngineLayerToken, 0);
+    }
+    updateWallpaperEngineEntryUi();
+    return;
+  }
   if (phase === 'restart') {
     if (!wallpaperEngineHostBoundsPreparing && !wallpaperEngineDesktopPreviewActive) return;
     // BrowserWindow.show()/restore can fire before Chromium has published the
@@ -2302,6 +2407,7 @@ function bindWallpaperEngineLibraryEvents() {
 
 function initializeWallpaperEngineLibrary() {
   bindWallpaperEngineLibraryEvents();
+  applyWallpaperEngineVisualSettings(false);
   updateWallpaperEngineEntryUi();
   if (!wallpaperEngineSelection.active) return;
   setTimeout(function () {

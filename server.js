@@ -111,23 +111,7 @@ const {
   handleQishuiSongUrl,
 } = require('./qishui-api');
 const qishuiQrLogin = require('./qishui-qr-login');
-const {
-  getSpotifyConfig,
-  clearSpotifyToken,
-  saveSpotifyConfig,
-  handleSpotifyStatus,
-  handleSpotifySearch,
-  handleSpotifyRecommendations,
-  handleSpotifyUserPlaylists,
-  handleSpotifyPlaylistTracks,
-  handleSpotifyAlbumDetail,
-  handleSpotifyLibraryCheck,
-  handleSpotifyLibrarySet,
-  handleSpotifyPlaylistAddSong,
-  handleSpotifyCreatePlaylist,
-  handleSpotifySongUrl,
-  handleSpotifyLyric,
-} = require('./spotify-api');
+const { clearSpotifyToken } = require('./spotify-api');
 const {
   appendCuefieldFeedback,
   readCuefieldFeedbackStats,
@@ -147,7 +131,6 @@ const LOGIN_EASTER_EGG_PROTECTED_ROUTES = new Set([
   '/api/kugou/login/cookie',
   '/api/qishui/login/qrcode',
   '/api/qishui/login/check',
-  '/api/spotify/config',
 ]);
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const DEFAULT_COOKIE_FILE = path.join(__dirname, '.cookie');
@@ -159,15 +142,15 @@ const CUEFIELD_FEEDBACK_FILE = process.env.CUEFIELD_FEEDBACK_FILE || path.join(_
 const LISTEN_SYNC_JOURNAL_FILE = process.env.MINERADIO_LISTEN_SYNC_FILE || path.join(__dirname, 'data', 'listen-sync-journal.json');
 const LISTEN_SYNC_JOURNAL_LIMIT = 600;
 const APP_PACKAGE = readPackageInfo();
-const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.1.0';
+const APP_VERSION = process.env.MINERADIO_VERSION || APP_PACKAGE.version || '2.2.0';
 const UPDATE_CONFIG = readUpdateConfig(APP_PACKAGE);
 const qishuiAudioDecryptor = new TrackDecryptor();
 const qishuiAudioDecryptCache = new Map();
 const QISHUI_AUDIO_DECRYPT_CACHE_MAX_BYTES = 96 * 1024 * 1024;
 let qishuiAudioDecryptCacheBytes = 0;
 const UPDATE_FALLBACK_NOTES = [
-  '修复多行歌词与 3D 歌单架的显示层级',
-  '优化更新入口与安装包获取流程',
+  '本次下载入口已更换，请使用公告中的新网盘链接，并更新旧收藏。',
+  '修复音乐接口的登录、账号识别与播放稳定性问题。',
 ];
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_METEO_GEOCODE_URL = 'https://geocoding-api.open-meteo.com/v1/search';
@@ -404,12 +387,11 @@ function clearAllRuntimeLoginCredentials(reason) {
   clearQQLikedPlaylistCoverCache();
   clearKugouSessionCaches();
   const qishui = clearQishuiAccessToken();
-  const spotify = clearSpotifyToken();
+  clearSpotifyToken();
   return {
     ok: true,
     reason: String(reason || 'login-reset'),
     qishui: !qishui || qishui.ok !== false,
-    spotify: !spotify || spotify.ok !== false,
   };
 }
 
@@ -585,7 +567,7 @@ function extractReleaseNotes(body) {
     if (/<!--[\s\S]*?-->/i.test(line)) return;
     const text = cleanReleaseLine(line);
     if (!text) return;
-    if (/^(what'?s changed|changes|changelog|full changelog|更新日志)$/i.test(text)) return;
+    if (/^(what'?s changed|changes|changelog|full changelog|更新日志|更新内容)$/i.test(text)) return;
     if (/https?:\/\//i.test(text)) return;
     if (/^(下载|网盘|夸克盘|百度(?:云|网盘)|蓝奏(?:云|网盘)|安装包)/i.test(text)) return;
     if (text.length > 72) return;
@@ -666,14 +648,14 @@ function normalizeManifestUpdateInfo(data) {
     || data.downloadUrl
     || ''
   );
-  const downloadPages = normalizeUpdateDownloadPages(
-    release.downloadPages || data.downloadPages || [],
-    '网盘下载'
-  );
-  if (legacyExternalUrl && !downloadPages.some(page => page.url === legacyExternalUrl)) {
+  const explicitPages = Array.isArray(release.downloadPages)
+    ? release.downloadPages
+    : (Array.isArray(data.downloadPages) ? data.downloadPages : null);
+  const downloadPages = normalizeUpdateDownloadPages(explicitPages || [], '网盘下载');
+  if (explicitPages === null && legacyExternalUrl) {
     downloadPages.unshift({ label: '网盘下载', url: legacyExternalUrl });
   }
-  const externalUrl = downloadPages.length ? downloadPages[0].url : legacyExternalUrl;
+  const externalUrl = downloadPages.length ? downloadPages[0].url : '';
   const downloadPageUrl = externalUrl || htmlUrl;
   const notes = Array.isArray(release.notes) && release.notes.length
     ? release.notes.slice(0, 4).map(cleanReleaseLine).filter(Boolean)
@@ -4655,6 +4637,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost:' + PORT);
   const pn = url.pathname;
 
+  if (pn === '/api/spotify' || pn.indexOf('/api/spotify/') === 0) {
+    sendJSON(res, { ok: false, error: 'PROVIDER_REMOVED', message: '该平台接口已从 Mineradio 移除。' }, 404);
+    return;
+  }
+
   if (LOGIN_EASTER_EGG_PROTECTED_ROUTES.has(pn) && !loginEasterEggGateUnlocked()) {
     sendJSON(res, {
       ok: false,
@@ -4683,7 +4670,6 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pn === '/api/platform/capabilities') {
-    const spotifyStatus = await handleSpotifyStatus().catch(() => ({ loggedIn: false, capabilities: {} }));
     sendJSON(res, {
       netease: {
         playlists: true, likeRead: true, likeWrite: true, albumRead: true,
@@ -4705,15 +4691,6 @@ const server = http.createServer(async (req, res) => {
         albumRead: false, albumCollect: qishuiCookieHasLogin(qishuiCookie),
         commentsRead: qishuiCookieHasLogin(qishuiCookie), commentsWrite: qishuiCookieHasLogin(qishuiCookie),
         recentPlayReport: qishuiCookieHasLogin(qishuiCookie), listenReport: false,
-      },
-      spotify: {
-        playlists: true, likeRead: true,
-        likeWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
-        playlistWrite: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.playlistWrite),
-        albumRead: true,
-        albumCollect: !!(spotifyStatus.capabilities && spotifyStatus.capabilities.likeWrite),
-        commentsRead: false, commentsWrite: false, listenReport: false,
-        missingWriteScopes: spotifyStatus.missingWriteScopes || [],
       },
     });
     return;
@@ -4817,6 +4794,12 @@ const server = http.createServer(async (req, res) => {
         toLrc: body.toLrc,
         exitBias: body.exitBias || 'late',
         maxEntryTime: Math.max(8, Math.min(32, Number(body.maxEntryTime) || 32)),
+        recentRecipes: Array.isArray(body.recentRecipes) ? body.recentRecipes.slice(-2) : [],
+        minimumListenUntil: body.minimumListenUntil,
+        enableLiveEndCrossfadeFallback: body.enableLiveEndCrossfadeFallback === true,
+        enableCadenceFallback: body.enableCadenceFallback === true,
+        boundaryEvidence: body.boundaryEvidence,
+        tailEvidence: body.tailEvidence,
         readBeatMapCache,
       });
       sendJSON(res, plan);
@@ -5000,6 +4983,23 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pn === '/api/spotify/setup/diagnostics') {
+    try {
+      sendJSON(res, await handleSpotifySetupDiagnostics());
+    } catch (err) {
+      console.error('[SpotifySetupDiagnostics]', err);
+      sendJSON(res, {
+        provider: 'spotify',
+        ok: false,
+        ready: false,
+        error: err.code || err.message,
+        message: err.message || 'Spotify 接口体检失败',
+        checks: [],
+      }, Number(err.statusCode) || 500);
+    }
+    return;
+  }
+
   if (pn === '/api/spotify/config') {
     try {
       if (req.method !== 'POST') {
@@ -5028,9 +5028,13 @@ const server = http.createServer(async (req, res) => {
         error: err.code || err.message,
         message: err.code === 'SPOTIFY_CLIENT_ID_REQUIRED' || err.message === 'SPOTIFY_CLIENT_ID_REQUIRED'
           ? '请先粘贴 Spotify Client ID。'
-          : err.message,
+          : (err.code === 'SPOTIFY_CLIENT_ID_INVALID'
+            ? 'Client ID 格式不正确，请只复制 Spotify Dashboard 中的 Client ID。'
+            : (err.code === 'SPOTIFY_REDIRECT_URI_INVALID'
+              ? '回调地址无效，请使用 Mineradio 显示的 127.0.0.1 回调地址。'
+              : err.message)),
         missing,
-      }, err && err.code === 'SPOTIFY_CLIENT_ID_REQUIRED' ? 400 : 500);
+      }, err && /^SPOTIFY_(?:CLIENT_ID|REDIRECT_URI)_/.test(String(err.code || '')) ? 400 : 500);
     }
     return;
   }
@@ -5301,11 +5305,19 @@ const server = http.createServer(async (req, res) => {
       const data = result && result.data || {};
       const errorCode = Number(data.error_code || 0);
       const bridgeStatus = qishuiQrLogin.getStatus();
-      if (bridgeStatus.loggedIn) {
+      if (data.confirmed === true && errorCode === 0 && bridgeStatus.loggedIn) {
         const cookie = qishuiQrLogin.getCookie();
         if (!qishuiCookieHasLogin(cookie)) throw new Error('QISHUI_QR_SESSION_COOKIE_MISSING');
+        const status = await handleQishuiStatus(cookie);
+        if (status.reauthRequired) {
+          sendJSON(res, { ...status, ok: false, status: 'reauth_required' });
+          return;
+        }
+        if (status.loggedIn !== true) {
+          sendJSON(res, { ...status, ok: false, status: 'verifying' });
+          return;
+        }
         saveQishuiCookie(cookie);
-        const status = await handleQishuiStatus(qishuiCookie);
         sendJSON(res, {
           ...status,
           provider: 'qishui',

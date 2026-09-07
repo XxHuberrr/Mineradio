@@ -14,6 +14,7 @@ const {
   LocalMusicLibrary,
   registerLocalMusicScheme,
 } = require('./local-music-library');
+const { BuiltInPlaylistLibrary } = require('./built-in-playlist-library');
 const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
 const {
@@ -23,12 +24,7 @@ const {
 } = require('./login-easter-egg-gate');
 const { extractKugouAuth } = require('../kugou-api');
 const { qishuiCookieHasLogin } = require('../qishui-api');
-const {
-  getSpotifyOAuthConfig,
-  buildSpotifyOAuthAuthorizeUrl,
-  exchangeSpotifyOAuthCode,
-  clearSpotifyToken,
-} = require('../spotify-api');
+const { clearSpotifyToken } = require('../spotify-api');
 
 registerWallpaperEngineScheme(protocol);
 registerLocalMusicScheme(protocol);
@@ -48,6 +44,7 @@ let desktopLyricsHotBounds = null;
 let desktopLyricsLastMiddleAt = 0;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
+let windowFullscreenDisplayId = null;
 let mainWindowStateTimer = null;
 let appMemoryTrimTimer = null;
 let appMemoryTrimInFlight = false;
@@ -79,7 +76,9 @@ let localServerStartPromise = null;
 let mainWindowCreatePromise = null;
 let mainWindowRendererRecoveryPromise = null;
 let mainWindowRendererRecoveryAttempts = [];
+let mainWindowVisibilityTimer = null;
 let mainWindowFullscreenVisibilityTimer = null;
+let mainWindowMinimizeRecoveryTimer = null;
 let startupState = { pid: process.pid, startedAt: Date.now(), phase: 'module-loaded', events: [] };
 const registeredGlobalHotkeys = new Map();
 let fullDesktopEscapeRegistered = false;
@@ -114,7 +113,13 @@ const STARTUP_NAVIGATION_TIMEOUT_MS = 15000;
 const STARTUP_SHOW_WATCHDOG_MS = 3500;
 const RENDERER_RECOVERY_WINDOW_MS = 2 * 60 * 1000;
 const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
+const MAIN_WINDOW_VISIBILITY_CHECK_MS = 5000;
+const MAIN_WINDOW_HIDE_RECOVERY_DELAY_MS = 900;
+const MAIN_WINDOW_MINIMIZE_RECOVERY_DELAY_MS = 1200;
+const MAIN_WINDOW_MINIMIZE_INTENT_TTL_MS = 3000;
 const FULLSCREEN_VISIBILITY_CHECK_MS = 5000;
+const WINDOWS_WM_SYSCOMMAND = 0x0112;
+const WINDOWS_SC_MINIMIZE = 0xF020;
 const CACHE_SETTINGS_FILE = 'cache-settings.json';
 const LYRIC_CACHE_VERSION = 1;
 const LYRIC_CACHE_MAX_BYTES = 96 * 1024 * 1024;
@@ -128,6 +133,7 @@ const KUGOU_LOGIN_PARTITION = 'persist:mineradio-kugou-login';
 const KUGOU_LOGIN_URL = 'https://www.kugou.com/';
 const KUGOU_LOGIN_WARMUP_URL = 'https://www.kugou.com/newuc/user/uc/type=edit';
 const SPOTIFY_LOGIN_PARTITION = 'persist:mineradio-spotify-login';
+const SPOTIFY_OAUTH_TIMEOUT_MS = 3 * 60 * 1000;
 
 // Keep app-owned settings and provider credentials independent from the
 // user-selectable Chromium cache. app.setName() must run before the first
@@ -155,6 +161,7 @@ fs.mkdirSync(NATIVE_HELPER_TEMP_PATH, { recursive: true });
 process.env.MINERADIO_NATIVE_TEMP_DIR = NATIVE_HELPER_TEMP_PATH;
 systemMemory.setNativeTempPath(NATIVE_HELPER_TEMP_PATH);
 const localMusicLibrary = new LocalMusicLibrary({ userDataPath: STABLE_USER_DATA_PATH });
+const builtInPlaylistLibrary = new BuiltInPlaylistLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const localMusicImportCapabilities = new Map();
 const wallpaperEngineLibrary = new WallpaperEngineLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const wallpaperEngineRuntime = new WallpaperEngineRuntime({
@@ -174,6 +181,7 @@ const fullDesktopModeRuntime = new FullDesktopModeRuntime({
 });
 let wallpaperEngineCaptureSourceId = '';
 let wallpaperEngineCaptureGrant = null;
+let gestureCameraPermissionGrant = null;
 let wallpaperEngineCaptureOperation = 0;
 let wallpaperEngineCapturePreparationOperation = 0;
 let wallpaperEngineGlassCaptureOperation = 0;
@@ -187,6 +195,7 @@ let wallpaperEngineHostVisibilityResumePending = false;
 let wallpaperEngineHostVisibilityResumeTimer = null;
 let wallpaperEngineHostVisibilityOperation = 0;
 let wallpaperEngineHostVisibilityStopPromise = null;
+let wallpaperEngineHostVisibilityResidentMinimized = false;
 let fullDesktopModeHostVisibilityTransitionDepth = 0;
 let wallpaperEngineDesktopIconLayeringQueue = Promise.resolve(true);
 const WALLPAPER_ENGINE_CAPTURE_GRANT_MS = 12000;
@@ -197,6 +206,7 @@ const WALLPAPER_ENGINE_CAPTURE_PREPARE_TIMEOUT_MS = 9000;
 const WALLPAPER_ENGINE_CAPTURE_RETRY_DELAY_MS = 720;
 const WALLPAPER_ENGINE_MAX_CAPTURE_FPS = 240;
 const WALLPAPER_ENGINE_HOST_RESUME_TIMEOUT_MS = 30000;
+const GESTURE_CAMERA_PERMISSION_GRANT_MS = 45000;
 const MAIN_WINDOW_BACKGROUND_THROTTLING = process.env.MINERADIO_KEEP_BACKGROUND_RENDERING === '1' ? false : true;
 
 function wallpaperEngineTargetFps(display, requestedFps) {
@@ -757,6 +767,45 @@ function isTrustedMainWindowIpc(event) {
   }
 }
 
+function clearGestureCameraPermissionGrant() {
+  gestureCameraPermissionGrant = null;
+}
+
+function createGestureCameraPermissionGrant(event) {
+  if (!isTrustedMainWindowIpc(event)) return null;
+  const sourceUrl = event.senderFrame && event.senderFrame.url || event.sender.getURL();
+  gestureCameraPermissionGrant = {
+    webContentsId: event.sender.id,
+    origin: sourceUrl,
+    expiresAt: Date.now() + GESTURE_CAMERA_PERMISSION_GRANT_MS,
+  };
+  return gestureCameraPermissionGrant;
+}
+
+function isTrustedGestureCameraMediaPermission(webContents, origin, details) {
+  const grant = gestureCameraPermissionGrant;
+  if (!grant || Date.now() > grant.expiresAt) {
+    clearGestureCameraPermissionGrant();
+    return false;
+  }
+  try {
+    if (!webContents || webContents.isDestroyed() || webContents.id !== grant.webContentsId) return false;
+    if (!mainWindow || mainWindow.isDestroyed() || webContents !== mainWindow.webContents) return false;
+    if (!isTrustedMainDocumentUrl(origin) || !isTrustedMainDocumentUrl(grant.origin)) return false;
+    if (details && details.isMainFrame === false) return false;
+    const mediaType = String(details && details.mediaType || '').toLowerCase();
+    const mediaTypes = details && Array.isArray(details.mediaTypes)
+      ? details.mediaTypes.map((value) => String(value || '').toLowerCase()).filter(Boolean)
+      : [];
+    if (mediaType.includes('audio') || mediaTypes.some((value) => value.includes('audio'))) return false;
+    if (mediaType && !mediaType.includes('video')) return false;
+    if (mediaTypes.length && !mediaTypes.every((value) => value.includes('video'))) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function isTrustedWallpaperEngineIpc(event) {
   return isTrustedMainWindowIpc(event);
 }
@@ -1156,6 +1205,27 @@ function finishWallpaperEngineVisibleHostResume(win) {
 
 function suspendWallpaperEngineForHiddenHost(win, reason = 'hidden') {
   if (!win || win.isDestroyed()) return Promise.resolve({ ok: true, stopped: false });
+  const normalizedReason = String(reason || 'hidden').toLowerCase();
+  const runtimeStatus = wallpaperEngineRuntime.getStatus();
+  if (/^minimi[sz]e(?:d)?$/.test(normalizedReason)
+    && runtimeStatus
+    && runtimeStatus.active === true
+    && runtimeStatus.captureMode === 'dwm-thumbnail'
+    && runtimeStatus.dwmSurfaceReady === true) {
+    // The DWM helper is an independent native surface and can remain resident
+    // while Chromium is minimized. Stopping it here discards Scene state and
+    // forces a visible reload on restore.
+    wallpaperEngineHostVisibilityResidentMinimized = true;
+    finishWallpaperEngineVisibleHostResume(win);
+    cancelWallpaperEngineHostBoundsRestart();
+    return Promise.resolve({
+      ok: true,
+      stopped: false,
+      preserved: true,
+      sessionId: String(runtimeStatus.sessionId || ''),
+    });
+  }
+  wallpaperEngineHostVisibilityResidentMinimized = false;
   if (wallpaperEngineHostVisibilitySuspended) {
     return wallpaperEngineHostVisibilityStopPromise || Promise.resolve({ ok: true, stopped: true });
   }
@@ -1177,7 +1247,29 @@ function resumeWallpaperEngineForVisibleHost(win, reason = 'visible') {
   const desktopMode = fullDesktopModeRuntime.getStatus('wallpaper-engine-visible-host');
   if (appQuitting || (desktopMode.enabled === true
     && (desktopMode.interactive !== true || desktopMode.phase !== 'interactive'))) return;
-  if (!wallpaperEngineHostVisibilitySuspended) return;
+  if (!wallpaperEngineHostVisibilitySuspended) {
+    if (!wallpaperEngineHostVisibilityResidentMinimized) return;
+    wallpaperEngineHostVisibilityResidentMinimized = false;
+    const residentStatus = wallpaperEngineRuntime.getStatus();
+    if (!residentStatus || residentStatus.active !== true || residentStatus.captureMode !== 'dwm-thumbnail') return;
+    setMainWindowBackgroundThrottling(win, false);
+    syncWallpaperEngineDesktopIconLayering(`resident-${reason || 'visible'}`).catch(() => false);
+    const notifyResident = () => {
+      if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+      try {
+        win.webContents.send('mineradio-wallpaper-engine-host-bounds-changed', {
+          phase: 'resident',
+          reason: String(reason || 'visible'),
+          sessionId: String(residentStatus.sessionId || ''),
+          forceVisibleHost: true,
+        });
+      } catch (_) { }
+    };
+    setTimeout(notifyResident, 80);
+    setTimeout(notifyResident, 420);
+    setTimeout(() => finishWallpaperEngineVisibleHostResume(win), 900);
+    return;
+  }
   wallpaperEngineHostVisibilitySuspended = false;
   wallpaperEngineHostVisibilityResumePending = true;
   const visibilityOperation = ++wallpaperEngineHostVisibilityOperation;
@@ -1566,7 +1658,8 @@ function configureLocalAppPermissions() {
   ses.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     const origin = requestingOrigin || (details && details.requestingUrl) || (webContents && webContents.getURL && webContents.getURL()) || '';
     if (permission === 'display-capture') return isTrustedWallpaperEngineDisplayCapturePermission(webContents, origin, details);
-    if (permission === 'media') return isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details);
+    if (permission === 'media') return isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
+      || isTrustedGestureCameraMediaPermission(webContents, origin, details);
     return LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin);
   });
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -1576,7 +1669,8 @@ function configureLocalAppPermissions() {
       return;
     }
     if (permission === 'media') {
-      callback(isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details));
+      callback(isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
+        || isTrustedGestureCameraMediaPermission(webContents, origin, details));
       return;
     }
     callback(LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin));
@@ -1996,6 +2090,7 @@ function isZoomShortcutInput(input) {
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   mainWindow.__mineradioIntentionalHide = false;
+  markMainWindowExpectedVisible(mainWindow, true, 'focus-main-window');
   const desktopMode = fullDesktopModeRuntime.getStatus('focus-main-window');
   if (desktopMode.enabled === true) {
     setFullDesktopModeInteractive(true, 'focus-main-window').catch((error) => {
@@ -2768,8 +2863,16 @@ async function clearQQMusicLoginSession() {
   return { ok: true };
 }
 
-async function openKugouMusicLoginWindow(owner) {
+async function openKugouMusicLoginWindow(owner, options) {
+  options = options && typeof options === 'object' ? options : {};
   const cookieSession = session.fromPartition(KUGOU_LOGIN_PARTITION);
+  // Explicit re-login must discard the revoked session before considering reuse.
+  // Cookie presence alone cannot establish whether the server still accepts it.
+  if (options.forceReauth === true) {
+    await cookieSession.clearStorageData({
+      storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage'],
+    });
+  }
   const initialCookie = await readKugouLoginCookieHeader(cookieSession);
   if (kugouCookieHasPlayback(initialCookie)) return { ok: true, cookie: initialCookie, reused: true };
 
@@ -2955,7 +3058,8 @@ function startSpotifyOAuthCallbackServer(redirectUri, onCallback) {
       reject(Object.assign(new Error('SPOTIFY_REDIRECT_URI_INVALID'), { code: 'SPOTIFY_REDIRECT_URI_INVALID' }));
       return;
     }
-    if (redirect.protocol !== 'http:') {
+    const redirectHost = String(redirect.hostname || '').toLowerCase();
+    if (redirect.protocol !== 'http:' || (redirectHost !== '127.0.0.1' && redirectHost !== '::1' && redirectHost !== '[::1]')) {
       reject(Object.assign(new Error('SPOTIFY_REDIRECT_URI_MUST_BE_HTTP_LOCALHOST'), { code: 'SPOTIFY_REDIRECT_URI_MUST_BE_HTTP_LOCALHOST' }));
       return;
     }
@@ -3002,6 +3106,51 @@ function startSpotifyOAuthCallbackServer(redirectUri, onCallback) {
   });
 }
 
+async function verifySpotifyOAuthCallbackEndpoint() {
+  const config = getSpotifyOAuthConfig();
+  if (!config.configured) {
+    return {
+      ok: false,
+      provider: 'spotify',
+      error: 'SPOTIFY_OAUTH_NOT_CONFIGURED',
+      missing: config.missing || [],
+      redirectUri: config.redirectUri,
+      message: !config.clientIdValid
+        ? 'Client ID 格式不正确，请重新复制。'
+        : '请先保存 Spotify Client ID。',
+    };
+  }
+  let callbackServer = null;
+  try {
+    callbackServer = await startSpotifyOAuthCallbackServer(config.redirectUri, async () => ({
+      ok: false,
+      error: 'SPOTIFY_PREFLIGHT_ONLY',
+      message: '当前仅执行本机回调检测。',
+    }));
+    return {
+      ok: true,
+      provider: 'spotify',
+      redirectUri: config.redirectUri,
+      callbackReady: true,
+      message: '本机回调端口可用。请确认 Spotify Dashboard 中保存了完全相同的地址。',
+    };
+  } catch (error) {
+    const code = error && (error.code || error.message) || 'SPOTIFY_CALLBACK_SERVER_FAILED';
+    return {
+      ok: false,
+      provider: 'spotify',
+      error: code,
+      redirectUri: config.redirectUri,
+      callbackReady: false,
+      message: code === 'SPOTIFY_CALLBACK_PORT_BUSY'
+        ? '本机 43879 端口被其他程序占用，请关闭占用程序后重试。'
+        : '本机回调检测失败：' + code,
+    };
+  } finally {
+    if (callbackServer && typeof callbackServer.close === 'function') callbackServer.close();
+  }
+}
+
 async function openSpotifyMusicLoginWindow(owner) {
   const config = getSpotifyOAuthConfig();
   if (!config.configured) {
@@ -3039,13 +3188,13 @@ async function openSpotifyMusicLoginWindow(owner) {
     let settled = false;
     let exchangeStarted = false;
     let callbackServer = null;
-    let loginWindow = null;
+    let oauthTimeout = null;
 
     const finish = (result) => {
       if (settled) return result;
       settled = true;
+      if (oauthTimeout) clearTimeout(oauthTimeout);
       if (callbackServer && typeof callbackServer.close === 'function') callbackServer.close();
-      if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close();
       resolve(result);
       return result;
     };
@@ -3113,50 +3262,27 @@ async function openSpotifyMusicLoginWindow(owner) {
       return;
     }
 
-    loginWindow = new BrowserWindow({
-      width: 900,
-      height: 760,
-      minWidth: 720,
-      minHeight: 560,
-      parent: owner && !owner.isDestroyed() ? owner : undefined,
-      modal: false,
-      show: false,
-      autoHideMenuBar: true,
-      title: 'Spotify 授权',
-      backgroundColor: '#101414',
-      icon: APP_ICON_ICO,
-      webPreferences: {
-        partition: SPOTIFY_LOGIN_PARTITION,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-
-    const handleMaybeRedirect = (targetUrl, event) => {
-      if (!spotifyOAuthRedirectMatches(targetUrl, config.redirectUri)) return false;
-      exchangeFromRedirect(targetUrl, event).catch((e) => {
-        finish({ ok: false, provider: 'spotify', error: e.message || 'SPOTIFY_OAUTH_EXCHANGE_FAILED' });
+    oauthTimeout = setTimeout(() => {
+      finish({
+        ok: false,
+        provider: 'spotify',
+        error: 'SPOTIFY_OAUTH_TIMEOUT',
+        redirectUri: config.redirectUri,
+        message: '三分钟内没有收到 Spotify 回调。请确认 Dashboard 回调地址完全一致、App 所有者为 Premium，且当前账号已加入 Users Management。',
       });
-      return true;
-    };
+    }, SPOTIFY_OAUTH_TIMEOUT_MS);
 
-    loginWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (handleMaybeRedirect(url)) return { action: 'deny' };
-      if (/^https?:\/\//i.test(url)) {
-        loginWindow.loadURL(url).catch((e) => console.warn('Spotify login popup navigation failed:', e.message));
-      } else {
-        shell.openExternal(url).catch(() => {});
-      }
-      return { action: 'deny' };
-    });
-    loginWindow.webContents.on('will-redirect', (event, url) => handleMaybeRedirect(url, event));
-    loginWindow.webContents.on('will-navigate', (event, url) => handleMaybeRedirect(url, event));
-    loginWindow.on('ready-to-show', () => loginWindow.show());
-    loginWindow.on('closed', () => {
-      if (!settled) finish({ ok: false, provider: 'spotify', cancelled: true, message: 'Spotify 授权窗口已关闭。' });
-    });
-    loginWindow.loadURL(authUrl).catch((e) => finish({ ok: false, provider: 'spotify', error: e.message || 'Spotify 授权页打开失败' }));
+    try {
+      await shell.openExternal(authUrl);
+    } catch (error) {
+      finish({
+        ok: false,
+        provider: 'spotify',
+        error: error && error.message || 'SPOTIFY_AUTH_BROWSER_OPEN_FAILED',
+        redirectUri: config.redirectUri,
+        message: '无法打开系统浏览器，请检查 Windows 默认浏览器设置。',
+      });
+    }
   });
 }
 
@@ -3212,12 +3338,25 @@ async function clearAllProviderLoginState(reason) {
 function getWindowDisplay(win) {
   if (win && !win.isDestroyed()) {
     try {
-      return screen.getDisplayMatching(win.getBounds());
+      const bounds = win.getBounds();
+      if (screen && typeof screen.getDisplayNearestPoint === 'function') {
+        return screen.getDisplayNearestPoint({
+          x: Math.round(bounds.x + bounds.width / 2),
+          y: Math.round(bounds.y + bounds.height / 2),
+        });
+      }
+      return screen.getDisplayMatching(bounds);
     } catch (e) {
       return screen.getPrimaryDisplay();
     }
   }
   return screen.getPrimaryDisplay();
+}
+
+function getFullscreenTargetDisplay(win) {
+  const displays = screen.getAllDisplays();
+  const remembered = displays.find((display) => String(display.id) === String(windowFullscreenDisplayId));
+  return remembered || getWindowDisplay(win);
 }
 
 function getDisplayArea(display) {
@@ -3273,8 +3412,8 @@ function ensureMainWindowInsideDisplay(win) {
   }
 }
 
-function getWindowedBounds(win) {
-  const display = getWindowDisplay(win);
+function getWindowedBounds(win, displayOverride = null) {
+  const display = displayOverride || getWindowDisplay(win);
   const area = getDisplayArea(display);
   const basis = display.bounds || area;
   const portrait = isPortraitDisplayArea(area);
@@ -3334,12 +3473,12 @@ function getWindowedBounds(win) {
   };
 }
 
-function applyWindowedBounds(win) {
+function applyWindowedBounds(win, displayOverride = null) {
   if (!win || win.isDestroyed()) return;
   setMainWindowFullscreenResizeGuard(win, false);
   if (win.isMaximized()) win.unmaximize();
   updateMainWindowMinimumSize(win);
-  win.setBounds(getWindowedBounds(win), false);
+  win.setBounds(getWindowedBounds(win, displayOverride), false);
   sendWindowState(win);
 }
 
@@ -3365,8 +3504,21 @@ function toggleFullscreen(win) {
     exitFullscreenToWindow(win);
     return;
   }
+  const display = getWindowDisplay(win);
+  const targetBounds = display && display.bounds;
+  windowFullscreenDisplayId = display ? display.id : null;
   windowFullscreenActive = true;
-  ensureMainWindowInsideDisplay(win);
+  updateMainWindowMinimumSize(win);
+  if (targetBounds && targetBounds.width > 0 && targetBounds.height > 0) {
+    win.setBounds({
+      x: Math.round(targetBounds.x),
+      y: Math.round(targetBounds.y),
+      width: Math.round(targetBounds.width),
+      height: Math.round(targetBounds.height),
+    }, false);
+  } else {
+    ensureMainWindowInsideDisplay(win);
+  }
   setMainWindowFullscreenResizeGuard(win, true);
   win.setFullScreen(true);
   sendWindowState(win);
@@ -3694,6 +3846,51 @@ public static class MineradioShellMessage {
   });
 }
 
+function windowMessageUnsignedValue(value) {
+  if (typeof value === 'number') return value >>> 0;
+  if (!Buffer.isBuffer(value) || value.length < 4) return 0;
+  try { return value.readUInt32LE(0); } catch (_) { return 0; }
+}
+
+function armMainWindowMinimizeIntent(win, reason) {
+  if (!win || win.isDestroyed()) return;
+  win.__mineradioMinimizeIntentUntil = Date.now() + MAIN_WINDOW_MINIMIZE_INTENT_TTL_MS;
+  win.__mineradioMinimizeIntentReason = String(reason || 'user');
+}
+
+function consumeMainWindowMinimizeIntent(win) {
+  if (!win || win.isDestroyed()) return { intentional: false, reason: '' };
+  const intentional = Number(win.__mineradioMinimizeIntentUntil || 0) >= Date.now();
+  const reason = intentional ? String(win.__mineradioMinimizeIntentReason || 'user') : '';
+  win.__mineradioMinimizeIntentUntil = 0;
+  win.__mineradioMinimizeIntentReason = '';
+  win.__mineradioIntentionalMinimize = intentional;
+  win.__mineradioIntentionalMinimizeReason = reason;
+  return { intentional, reason };
+}
+
+function clearMainWindowMinimizeIntent(win) {
+  if (!win || win.isDestroyed()) return;
+  win.__mineradioMinimizeIntentUntil = 0;
+  win.__mineradioMinimizeIntentReason = '';
+  win.__mineradioIntentionalMinimize = false;
+  win.__mineradioIntentionalMinimizeReason = '';
+}
+
+function hookMainWindowMinimizeIntent(win) {
+  if (process.platform !== 'win32' || !win || win.isDestroyed() || typeof win.hookWindowMessage !== 'function') return;
+  if (win.__mineradioSystemCommandIntentHooked) return;
+  try {
+    win.hookWindowMessage(WINDOWS_WM_SYSCOMMAND, (wParam) => {
+      const command = windowMessageUnsignedValue(wParam) & 0xFFF0;
+      if (command === WINDOWS_SC_MINIMIZE) armMainWindowMinimizeIntent(win, 'native-system-command');
+    });
+    win.__mineradioSystemCommandIntentHooked = true;
+  } catch (error) {
+    console.warn('[WindowMinimize] native intent hook unavailable:', error && error.message || error);
+  }
+}
+
 function positionWallpaperWindow(reason = 'display-change') {
   reconcileFullDesktopMode(reason).catch((error) => {
     console.warn('[FullDesktopMode] display reconcile failed:', error && error.message || error);
@@ -3733,6 +3930,7 @@ ipcMain.handle('desktop-window-minimize', async (event) => {
   if (win === mainWindow && fullDesktopModeRuntime.getStatus('window-minimize').enabled === true) {
     return setFullDesktopModeInteractive(false, 'window-minimize');
   }
+  if (win === mainWindow) armMainWindowMinimizeIntent(win, 'renderer-window-control');
   win?.minimize();
   return getWindowState(win);
 });
@@ -3740,6 +3938,7 @@ ipcMain.handle('desktop-window-minimize', async (event) => {
 ipcMain.handle('desktop-window-restore', async (event) => {
   const win = getSenderWindow(event);
   if (!win || win.isDestroyed()) return null;
+  if (win === mainWindow) clearMainWindowMinimizeIntent(win);
   if (win === mainWindow && fullDesktopModeRuntime.getStatus('window-restore').enabled === true) {
     await setFullDesktopModeInteractive(true, 'window-restore');
     return getWindowState(win);
@@ -4298,6 +4497,18 @@ ipcMain.on('mineradio-wallpaper-engine-glass-surface', (event, payload = {}) => 
   try { wallpaperEngineRuntime.updateGlassSurface(sessionId, payload); } catch (_) { }
 });
 
+ipcMain.on('mineradio-wallpaper-engine-visual-settings', (event, payload = {}) => {
+  if (!isTrustedWallpaperEngineIpc(event) || typeof wallpaperEngineRuntime.updateDwmVisualSettings !== 'function') return;
+  const sessionId = String(payload && payload.sessionId || '');
+  if (!/^[a-f0-9]{24}$/i.test(sessionId)) return;
+  const opacity = Number(payload.opacity);
+  const positionX = Number(payload.positionX);
+  const positionY = Number(payload.positionY);
+  const scale = Number(payload.scale);
+  if (![opacity, positionX, positionY, scale].every(Number.isFinite)) return;
+  wallpaperEngineRuntime.updateDwmVisualSettings(sessionId, { opacity, positionX, positionY, scale });
+});
+
 ipcMain.on('mineradio-wallpaper-engine-pointer-activity', (event, payload = {}) => {
   if (!isTrustedWallpaperEngineIpc(event)
     || !mainWindow
@@ -4356,6 +4567,50 @@ ipcMain.handle('mineradio-local-library-list', async (event) => {
   } catch (error) {
     return { ok: false, count: 0, tracks: [], error: error.message || 'LOCAL_LIBRARY_READ_FAILED' };
   }
+});
+
+ipcMain.handle('mineradio-built-in-playlists-list', async (event) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, count: 0, playlists: [], error: 'UNTRUSTED_SENDER' };
+  return builtInPlaylistLibrary.listSync();
+});
+
+ipcMain.handle('mineradio-built-in-playlist-page', async (event, id, options = {}) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, playlist: null, tracks: [], error: 'UNTRUSTED_SENDER' };
+  return builtInPlaylistLibrary.page(id, options);
+});
+
+function builtInPlaylistMutationError(error) {
+  return { ok: false, error: error && (error.code || error.message) || 'BUILT_IN_PLAYLIST_MUTATION_FAILED' };
+}
+
+ipcMain.handle('mineradio-built-in-playlist-create', async (event, name) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.create(name); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-rename', async (event, id, name) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.rename(id, name); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-delete', async (event, id) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.delete(id); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-add-track', async (event, id, track) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.addTrack(id, track); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-remove-track', async (event, id, index) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.removeTrack(id, index); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-reorder-track', async (event, id, fromIndex, toIndex) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.reorderTrack(id, fromIndex, toIndex); } catch (error) { return builtInPlaylistMutationError(error); }
 });
 
 ipcMain.handle('mineradio-local-library-lyric', async (event, localFileId) => {
@@ -4596,9 +4851,9 @@ ipcMain.handle('qq-music-clear-login', async () => {
   return clearQQMusicLoginSession();
 });
 
-ipcMain.handle('kugou-music-open-login', async (event) => {
+ipcMain.handle('kugou-music-open-login', async (event, options) => {
   if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
-  return openKugouMusicLoginWindow(getSenderWindow(event));
+  return openKugouMusicLoginWindow(getSenderWindow(event), options || {});
 });
 
 ipcMain.handle('kugou-music-clear-login', async () => {
@@ -4607,15 +4862,6 @@ ipcMain.handle('kugou-music-clear-login', async () => {
 
 ipcMain.handle('qishui-music-clear-login', async () => {
   return clearQishuiMusicLoginSession();
-});
-
-ipcMain.handle('spotify-music-open-login', async (event) => {
-  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
-  return openSpotifyMusicLoginWindow(getSenderWindow(event));
-});
-
-ipcMain.handle('spotify-music-clear-login', async () => {
-  return clearSpotifyMusicLoginSession();
 });
 
 ipcMain.handle('mineradio-open-update-page', async (event, value) => {
@@ -4738,6 +4984,12 @@ ipcMain.handle('mineradio-wallpaper-set-enabled', async (event, enabled, payload
   } catch (e) {
     return { ok: false, enabled: false, error: e.message || 'WALLPAPER_FAILED', status: fullDesktopModeRuntime.getStatus('ipc-failed') };
   }
+});
+
+ipcMain.handle('mineradio-gesture-camera-request-permission', async (event) => {
+  const grant = createGestureCameraPermissionGrant(event);
+  if (!grant) return { ok: false, error: 'GESTURE_CAMERA_UNTRUSTED_SENDER' };
+  return { ok: true, expiresAt: grant.expiresAt };
 });
 
 ipcMain.handle('mineradio-wallpaper-update', async (event) => {
@@ -5020,6 +5272,7 @@ function showMainWindowSafely(win, reason) {
   // in the tray. Runtime recovery must never turn that reload into a surprise
   // foreground window.
   if (startupCompleted && win.__mineradioIntentionalHide === true) return false;
+  markMainWindowExpectedVisible(win, true, reason || 'show-safe');
   if (win.__mineradioStartupShowTimer) {
     clearTimeout(win.__mineradioStartupShowTimer);
     win.__mineradioStartupShowTimer = null;
@@ -5036,9 +5289,38 @@ function showMainWindowSafely(win, reason) {
   return true;
 }
 
+function markMainWindowExpectedVisible(win, expected, reason) {
+  if (!win || win.isDestroyed()) return;
+  win.__mineradioExpectedVisible = expected === true;
+  win.__mineradioExpectedVisibleReason = String(reason || '');
+}
+
+function clearMainWindowVisibilityGuard() {
+  if (mainWindowVisibilityTimer) clearInterval(mainWindowVisibilityTimer);
+  mainWindowVisibilityTimer = null;
+  if (mainWindowMinimizeRecoveryTimer) clearTimeout(mainWindowMinimizeRecoveryTimer);
+  mainWindowMinimizeRecoveryTimer = null;
+}
+
 function clearMainWindowFullscreenVisibilityGuard() {
   if (mainWindowFullscreenVisibilityTimer) clearInterval(mainWindowFullscreenVisibilityTimer);
   mainWindowFullscreenVisibilityTimer = null;
+}
+
+function shouldRestoreUnexpectedMainWindowVisibility(win) {
+  if (!win || win.isDestroyed() || appQuitting || !startupCompleted) return false;
+  if (win.__mineradioIntentionalHide === true || win.__mineradioExpectedVisible === false) return false;
+  if (fullDesktopModeHostVisibilityTransitionDepth > 0 || fullDesktopModeRuntime.getStatus('main-window-visibility-guard').enabled === true) return false;
+  if (win.isMinimized() || win.isVisible()) return false;
+  return true;
+}
+
+function shouldRestoreUnexpectedMainWindowMinimize(win) {
+  if (!win || win.isDestroyed() || appQuitting || !startupCompleted) return false;
+  if (win.__mineradioIntentionalHide === true || win.__mineradioExpectedVisible === false) return false;
+  if (win.__mineradioIntentionalMinimize === true) return false;
+  if (fullDesktopModeHostVisibilityTransitionDepth > 0 || fullDesktopModeRuntime.getStatus('main-window-minimize-guard').enabled === true) return false;
+  return win.isMinimized();
 }
 
 function shouldRestoreUnexpectedFullscreenVisibility(win) {
@@ -5048,12 +5330,66 @@ function shouldRestoreUnexpectedFullscreenVisibility(win) {
   return true;
 }
 
-function restoreUnexpectedFullscreenVisibility(win, reason = 'fullscreen-visibility-guard') {
-  if (!shouldRestoreUnexpectedFullscreenVisibility(win)) return false;
-  console.warn('[WindowRecovery] restoring unexpectedly hidden fullscreen window:', reason);
+function restoreHiddenMainWindow(win, reason, scope) {
+  console.warn(`[WindowRecovery] restoring unexpectedly hidden ${scope} window:`, reason);
+  markMainWindowExpectedVisible(win, true, `visibility-recovered-${reason}`);
+  win.__mineradioIntentionalHide = false;
+  ensureMainWindowInsideDisplay(win);
   try { win.showInactive(); } catch (_) { try { win.show(); } catch (_) { } }
+  resetMainWindowZoom(win);
+  if (fullDesktopModeHostVisibilityTransitionDepth <= 0) {
+    resumeWallpaperEngineForVisibleHost(win, `visibility-recovered-${reason}`);
+  }
   sendWindowState(win);
   return true;
+}
+
+function restoreUnexpectedMainWindowMinimize(win, reason = 'minimize-visibility-guard') {
+  if (!shouldRestoreUnexpectedMainWindowMinimize(win)) return false;
+  console.warn('[WindowRecovery] restoring unexpectedly minimized main window:', reason);
+  clearMainWindowMinimizeIntent(win);
+  markMainWindowExpectedVisible(win, true, `minimize-recovered-${reason}`);
+  win.__mineradioIntentionalHide = false;
+  writeStartupState('window-minimize-recovered', {
+    minimizeRecoveryAt: Date.now(),
+    minimizeRecoveryReason: String(reason || ''),
+  });
+  ensureMainWindowInsideDisplay(win);
+  try { win.restore(); } catch (_) { }
+  if (!win.isVisible()) {
+    try { win.showInactive(); } catch (_) { try { win.show(); } catch (_) { } }
+  }
+  resetMainWindowZoom(win);
+  if (fullDesktopModeHostVisibilityTransitionDepth <= 0) {
+    resumeWallpaperEngineForVisibleHost(win, `minimize-recovered-${reason}`);
+  }
+  sendWindowState(win);
+  return true;
+}
+
+function restoreUnexpectedFullscreenVisibility(win, reason = 'fullscreen-visibility-guard') {
+  if (!shouldRestoreUnexpectedFullscreenVisibility(win)) return false;
+  return restoreHiddenMainWindow(win, reason, 'fullscreen');
+}
+
+function restoreUnexpectedMainWindowVisibility(win, reason = 'main-window-visibility-guard') {
+  if (shouldRestoreUnexpectedMainWindowMinimize(win)) {
+    return restoreUnexpectedMainWindowMinimize(win, reason);
+  }
+  if (shouldRestoreUnexpectedFullscreenVisibility(win)) {
+    return restoreUnexpectedFullscreenVisibility(win, reason);
+  }
+  if (!shouldRestoreUnexpectedMainWindowVisibility(win)) return false;
+  return restoreHiddenMainWindow(win, reason, 'main');
+}
+
+function startMainWindowVisibilityGuard(win) {
+  clearMainWindowVisibilityGuard();
+  if (!win || win.isDestroyed()) return;
+  mainWindowVisibilityTimer = setInterval(() => {
+    restoreUnexpectedMainWindowVisibility(win, 'visibility-watchdog');
+  }, MAIN_WINDOW_VISIBILITY_CHECK_MS);
+  if (typeof mainWindowVisibilityTimer.unref === 'function') mainWindowVisibilityTimer.unref();
 }
 
 function startMainWindowFullscreenVisibilityGuard(win) {
@@ -5285,6 +5621,7 @@ async function createWindowOnce() {
   });
   mainWindow = win;
   hookExplorerRestartForFullDesktop(win);
+  hookMainWindowMinimizeIntent(win);
   writeStartupState('window-created', { windowCreatedAt: Date.now() });
 
   win.__mineradioStartupShowTimer = setTimeout(() => {
@@ -5363,17 +5700,36 @@ async function createWindowOnce() {
   win.on('maximize', () => sendWindowState(win));
   win.on('unmaximize', () => sendWindowState(win));
   win.on('minimize', () => {
+    const minimizeIntent = consumeMainWindowMinimizeIntent(win);
+    writeStartupState('window-minimized', {
+      windowMinimizedAt: Date.now(),
+      windowMinimizeIntentional: minimizeIntent.intentional,
+      windowMinimizeReason: minimizeIntent.reason || 'unexpected',
+    });
     sendWindowState(win);
     if (fullDesktopModeHostVisibilityTransitionDepth <= 0) suspendWallpaperEngineForHiddenHost(win, 'minimize');
-    scheduleAppMemoryTrim('minimize', 1600);
+    if (minimizeIntent.intentional) {
+      scheduleAppMemoryTrim('minimize', 1600);
+      return;
+    }
+    if (mainWindowMinimizeRecoveryTimer) clearTimeout(mainWindowMinimizeRecoveryTimer);
+    mainWindowMinimizeRecoveryTimer = setTimeout(() => {
+      mainWindowMinimizeRecoveryTimer = null;
+      restoreUnexpectedMainWindowMinimize(win, 'minimize-event');
+    }, MAIN_WINDOW_MINIMIZE_RECOVERY_DELAY_MS);
   });
   win.on('restore', () => {
+    if (mainWindowMinimizeRecoveryTimer) clearTimeout(mainWindowMinimizeRecoveryTimer);
+    mainWindowMinimizeRecoveryTimer = null;
+    clearMainWindowMinimizeIntent(win);
     win.__mineradioIntentionalHide = false;
+    markMainWindowExpectedVisible(win, true, 'restore');
     sendWindowState(win);
     if (fullDesktopModeHostVisibilityTransitionDepth <= 0) resumeWallpaperEngineForVisibleHost(win, 'restore');
   });
   win.on('show', () => {
     win.__mineradioIntentionalHide = false;
+    markMainWindowExpectedVisible(win, true, 'show');
     if (fullDesktopModeHostVisibilityTransitionDepth > 0) return;
     sendWindowState(win);
     resumeWallpaperEngineForVisibleHost(win, 'show');
@@ -5382,6 +5738,9 @@ async function createWindowOnce() {
     if (fullDesktopModeHostVisibilityTransitionDepth > 0) return;
     sendWindowState(win);
     suspendWallpaperEngineForHiddenHost(win, 'hide');
+    if (win.__mineradioIntentionalHide !== true && win.__mineradioExpectedVisible !== false && !win.isMinimized()) {
+      setTimeout(() => restoreUnexpectedMainWindowVisibility(win, 'hide-event'), MAIN_WINDOW_HIDE_RECOVERY_DELAY_MS);
+    }
     scheduleAppMemoryTrim('hide', 2200);
   });
   win.on('focus', () => sendWindowState(win));
@@ -5431,6 +5790,7 @@ async function createWindowOnce() {
       win.__mineradioDesktopModeCloseArmed = false;
       createOrUpdateTray();
       win.__mineradioIntentionalHide = true;
+      markMainWindowExpectedVisible(win, false, 'tray-hide');
       flushMainWindowFxAutosave('tray-hide').finally(() => {
         if (win.isDestroyed()) return;
         win.hide();
@@ -5450,6 +5810,7 @@ async function createWindowOnce() {
   });
   win.on('closed', () => {
     mainWindowCloseFlushArmed = false;
+    clearMainWindowVisibilityGuard();
     clearMainWindowFullscreenVisibilityGuard();
     mainWindowRendererRecoveryPromise = null;
     mainWindowRendererRecoveryAttempts = [];
@@ -5491,7 +5852,9 @@ async function createWindowOnce() {
     setMainWindowFullscreenResizeGuard(win, false);
     clearMainWindowFullscreenVisibilityGuard();
     setTimeout(() => {
-      applyWindowedBounds(win);
+      const targetDisplay = getFullscreenTargetDisplay(win);
+      applyWindowedBounds(win, targetDisplay);
+      windowFullscreenDisplayId = null;
       scheduleWallpaperEngineHostBoundsRestart(win, 'leave-full-screen');
     }, 50);
   });
@@ -5523,6 +5886,7 @@ async function createWindowOnce() {
   await loadMainWindowWithRetry(win);
   if (win.isDestroyed()) throw new Error('Main BrowserWindow was destroyed after navigation');
   startupCompleted = true;
+  startMainWindowVisibilityGuard(win);
   showMainWindowSafely(win, 'navigation-complete');
   writeStartupState('ready', { readyAt: Date.now(), port: mainServerPort || Number(process.env.PORT) || 3000 });
   const qaExitMs = Math.max(0, Math.min(10000, Number(process.env.MINERADIO_STARTUP_QA_EXIT_MS) || 0));
@@ -5539,6 +5903,7 @@ function createWindow() {
   if (mainWindowCreatePromise) return mainWindowCreatePromise;
   if (mainWindow && !mainWindow.isDestroyed()) {
     showMainWindowSafely(mainWindow, startupCompleted ? 'reuse' : 'startup-in-progress');
+    if (startupCompleted) startMainWindowVisibilityGuard(mainWindow);
     return Promise.resolve(mainWindow);
   }
   mainWindowCreatePromise = createWindowOnce().finally(() => {
@@ -5591,8 +5956,8 @@ if (!gotSingleInstanceLock) {
     screen.on('display-metrics-changed', handleDisplayLayoutChanged);
     screen.on('display-added', handleDisplayLayoutChanged);
     screen.on('display-removed', handleDisplayLayoutChanged);
-    powerMonitor.on('resume', () => restoreUnexpectedFullscreenVisibility(mainWindow, 'system-resume'));
-    powerMonitor.on('unlock-screen', () => restoreUnexpectedFullscreenVisibility(mainWindow, 'screen-unlock'));
+    powerMonitor.on('resume', () => restoreUnexpectedMainWindowVisibility(mainWindow, 'system-resume'));
+    powerMonitor.on('unlock-screen', () => restoreUnexpectedMainWindowVisibility(mainWindow, 'screen-unlock'));
     await createWindow();
   }).catch((e) => reportWindowCreationFailure('Main', e));
 

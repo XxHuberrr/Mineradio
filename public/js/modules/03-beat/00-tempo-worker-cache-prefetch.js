@@ -203,16 +203,30 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song) {
   cancelBeatAnalysisTimer();
   beatAnalysisStartedAt = 0;
   hideBeatChip();
-  beatAnalysisTimer = setTimeout(function waitForQuietStart() {
+  var analysisAttempts = 0;
+  function queueCurrentTrackAnalysis(delay) {
+    if (token !== beatMapToken || beatMapCache[songId]) return;
+    if (beatAnalysisTimer) clearTimeout(beatAnalysisTimer);
+    beatAnalysisTimer = setTimeout(waitForQuietStart, Math.max(120, Number(delay) || 0));
+  }
+  function waitForQuietStart() {
     beatAnalysisTimer = null;
-    if (token !== beatMapToken || !audio || audio.paused) return;
+    if (token !== beatMapToken || beatMapCache[songId]) return;
+    if (!audio || audio.paused) {
+      queueCurrentTrackAnalysis(620);
+      return;
+    }
     var current = audio.currentTime || 0;
     if (current < beatAnalysisConfig.minPlaybackSec) {
-      beatAnalysisTimer = setTimeout(waitForQuietStart, Math.max(500, (beatAnalysisConfig.minPlaybackSec - current) * 1000));
+      queueCurrentTrackAnalysis(Math.max(500, (beatAnalysisConfig.minPlaybackSec - current) * 1000));
       return;
     }
     var startAnalysis = async function () {
-      if (token !== beatMapToken || !audio || audio.paused || beatMapCache[songId]) return;
+      if (token !== beatMapToken || beatMapCache[songId]) return;
+      if (!audio || audio.paused) {
+        queueCurrentTrackAnalysis(620);
+        return;
+      }
       var diskMap = await readBeatDiskCache(songId);
       if (diskMap) {
         applyBeatMapCacheForCurrent(songId, diskMap, token, 'D盘节拍缓存命中:');
@@ -220,27 +234,31 @@ function scheduleBeatAnalysis(songId, audioUrl, token, song) {
       }
       if (token !== beatMapToken || !audio || audio.paused || beatMapCache[songId]) return;
       if (beatMapBusy) {
-        beatAnalysisTimer = setTimeout(function () {
-          beatAnalysisTimer = null;
-          scheduleAnalysisTask(startAnalysis, 260);
-        }, 420);
+        queueCurrentTrackAnalysis(420);
         return;
       }
+      analysisAttempts++;
       beatAnalysisStartedAt = performance.now();
       analyzeAudioBeats(audioUrl, null, token, {
         skipMusicTempo: beatAnalysisConfig.skipMusicTempoWhilePlaying && !audio.paused,
         background: true,
         song: song || null
       }).then(function (map) {
-        if (token !== beatMapToken || !map) return;
+        if (token !== beatMapToken) return;
+        if (!map) {
+          if (analysisAttempts < 3) queueCurrentTrackAnalysis(1200 + analysisAttempts * 600);
+          return;
+        }
         smoothBeatMapHandoff(songId, map, token, song || null);
       }).catch(function (err) {
         console.warn('scheduled beat analysis failed:', err);
         hideBeatChip();
+        if (token === beatMapToken && analysisAttempts < 3) queueCurrentTrackAnalysis(1200 + analysisAttempts * 600);
       });
     };
     scheduleAnalysisTask(startAnalysis, beatAnalysisConfig.idleTimeout);
-  }, beatAnalysisConfig.delayMs);
+  }
+  queueCurrentTrackAnalysis(beatAnalysisConfig.delayMs);
 }
 
 function beatMapSongKey(song) {

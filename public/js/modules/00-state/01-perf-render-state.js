@@ -58,8 +58,8 @@ var updatePreviewState = {
   open: false,
   status: 'idle',
   progress: 0,
-  currentVersion: '2.1.0',
-  version: '2.1.0',
+  currentVersion: '2.2.0',
+  version: '2.2.0',
   configured: false,
   preview: false,
   updateAvailable: false,
@@ -72,7 +72,7 @@ var updatePreviewState = {
   message: '',
   hero: '当前版本已是最新。',
   notes: [
-    '修复多行歌词与 3D 歌单架的显示层级',
-    '优化更新入口与安装包获取流程'
+    '请以本次发布公告中的最新网盘链接为准',
+    '改善音乐接口、歌单加载和连续播放体验'
   ]
 };

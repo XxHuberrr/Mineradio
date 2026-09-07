@@ -1,5 +1,26 @@
 # Third-party ports
 
+## Cuefield AutoMix transition planner/runtime
+
+- Upstream: `SLYysl/cuefield-mineradio`
+- Reference revision: `c16f05a0bc731a49da7d42c135337fcac58f6dba`
+- License: GNU GPL v3 (`GPL-3.0`)
+- Port refresh date: 2026-08-01
+
+Mineradio integrates the upstream cache-only transition planner, structure and
+boundary evidence, recipe routing, preparation de-duplication, bounded bridge
+and source-loop helpers, and advanced B-deck timeline actions. The runtime is
+adapted to Mineradio's modular script loader, provider-aware beat-map cache,
+existing AudioContext ownership transfer, finite source fallback, and the
+already approved album-gapless crossmix path.
+
+AutoMix remains opt-in and stops while disabled, paused, manually seeking, or
+when album-gapless owns the next deck. Unsupported WebAudio actions degrade to
+the volume-only/equal-power path instead of blocking normal queue advance. The
+upstream optional remote-feedback service, monolithic Mineradio UI, private
+audio URLs, account credentials, and raw local beat-map data are not included
+or transmitted; ratings remain in the current user's local data directory.
+
 ## Mineradio-LX-Music desktop/home reference
 
 - Upstream: `ww085213/Mineradio-LX-Music`

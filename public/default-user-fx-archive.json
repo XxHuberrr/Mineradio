@@ -54,6 +54,10 @@
     "lyricLineHeight": 1,
     "lyricWeight": 750,
     "lyricTextureClarity": 1,
+    "lyricLiveViewportFit": true,
+    "lyricContextHighQuality": true,
+    "lyricBackdropAdapt": true,
+    "coverBackdropAdapt": true,
     "visualTintMode": "auto",
     "visualTintColor": "#9db8cf",
     "uiAccentColor": "#ffffff",
@@ -200,6 +204,9 @@
     "memorySystemMask": 29,
     "memorySafetyRevision": 3,
     "liveBackgroundKeep": false,
-    "cam": "off"
+    "cam": "off",
+    "gesturePlayerActions": true,
+    "gestureHandOverlay": true,
+    "gestureSensitivity": "balanced"
   }
 }

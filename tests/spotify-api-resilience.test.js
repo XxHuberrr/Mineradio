@@ -44,16 +44,26 @@ async function run() {
   const tokenFile = path.join(root, '.spotify-token.json');
   process.env.SPOTIFY_CONFIG_FILE = configFile;
   process.env.SPOTIFY_TOKEN_FILE = tokenFile;
-  process.env.SPOTIFY_CLIENT_ID = 'spotify-test-client';
+  const validClientId = '0123456789abcdef0123456789abcdef';
+  process.env.SPOTIFY_CLIENT_ID = validClientId;
   delete process.env.SPOTIFY_CLIENT_SECRET;
 
   const spotify = require('../spotify-api');
   const runtime = spotify._test;
   try {
-    spotify.saveSpotifyConfig({ clientId: 'spotify-test-client', clientSecret: 'must-not-be-stored' });
+    assert.throws(
+      () => spotify.saveSpotifyConfig({ clientId: 'not a client id' }),
+      error => error && error.code === 'SPOTIFY_CLIENT_ID_INVALID'
+    );
+    assert.throws(
+      () => spotify.saveSpotifyConfig({ clientId: validClientId, redirectUri: 'https://localhost/callback' }),
+      error => error && error.code === 'SPOTIFY_REDIRECT_URI_INVALID'
+    );
+    spotify.saveSpotifyConfig({ clientId: validClientId, clientSecret: 'must-not-be-stored' });
     const savedConfig = JSON.parse(fs.readFileSync(configFile, 'utf8')).spotify;
-    assert.strictEqual(savedConfig.clientId, 'spotify-test-client');
+    assert.strictEqual(savedConfig.clientId, validClientId);
     assert.strictEqual(Object.prototype.hasOwnProperty.call(savedConfig, 'clientSecret'), false, 'desktop PKCE config must not persist a Client Secret');
+    assert(savedConfig.scopes.includes('user-read-private'), 'desktop PKCE must request the profile scope used for product/account verification');
 
     runtime.resetSpotifyRuntimeStateForTests();
     spotify.saveSpotifyOAuthToken({
@@ -121,6 +131,27 @@ async function run() {
       return { body: { id: 'ok' } };
     }, () => runtime.spotifyGet('/me', {}, { preferUser: true }));
     assert.strictEqual(transientCalls, 2, 'temporary 5xx failures must receive a bounded retry');
+
+    runtime.resetSpotifyRuntimeStateForTests();
+    spotify.saveSpotifyOAuthToken({
+      access_token: 'diagnostic-access',
+      expires_in: 3600,
+      scope: 'user-read-private user-library-read playlist-read-private',
+      newAuthorization: true,
+    });
+    await withHttpsMock(({ url }) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith('/me')) return { body: { id: 'diagnostic-user', display_name: 'Diagnostic User', product: 'premium' } };
+      if (parsed.pathname.endsWith('/me/tracks')) return { body: { items: [], total: 0 } };
+      if (parsed.pathname.endsWith('/me/playlists')) return { body: { items: [], total: 0 } };
+      throw new Error('Unexpected Spotify diagnostics URL: ' + url);
+    }, async () => {
+      const diagnostics = await spotify.handleSpotifySetupDiagnostics();
+      assert.strictEqual(diagnostics.ready, true);
+      assert.strictEqual(diagnostics.nickname, 'Diagnostic User');
+      assert.strictEqual(diagnostics.product, 'premium');
+      assert(diagnostics.checks.every(check => check.ok), 'all setup diagnostics should pass with profile, scopes, library, and playlists available');
+    });
 
     runtime.resetSpotifyRuntimeStateForTests();
     spotify.saveSpotifyOAuthToken({

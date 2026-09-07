@@ -93,7 +93,7 @@ async function run() {
     const main = fs.readFileSync(path.join(__dirname, '..', 'desktop', 'main.js'), 'utf8');
     assert(main.indexOf('migrateLegacyAuthStorage();') < main.indexOf('await initializeLoginEasterEggGate();'));
     assert(main.indexOf('await initializeLoginEasterEggGate();') < main.indexOf("localServer = require(serverModulePath)"));
-    ['netease', 'qq', 'kugou', 'spotify'].forEach((provider) => {
+    ['netease', 'qq', 'kugou'].forEach((provider) => {
       const marker = `ipcMain.handle('${provider}-music-open-login'`;
       const start = main.indexOf(marker);
       assert(start >= 0, `${provider} login IPC missing`);
@@ -109,7 +109,7 @@ async function run() {
     assert(preload.includes("resetLoginEasterEgg: () => ipcRenderer.invoke('mineradio-login-easter-egg-reset')"));
 
     const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/qrcode', '/api/qishui/login/check', '/api/spotify/config']
+    ['/api/login/cookie', '/api/login/qr/key', '/api/qq/login/cookie', '/api/kugou/login/cookie', '/api/qishui/login/qrcode', '/api/qishui/login/check']
       .forEach((route) => assert(server.includes(`'${route}'`), `${route} gate missing`));
     assert(!server.includes("pn === '/api/qishui/login/token'"), 'legacy Qishui token-login route must stay removed');
     assert(!server.includes("pn === '/api/qishui/login/cookie'"), 'legacy Qishui cookie-login route must stay removed');
@@ -141,15 +141,12 @@ async function run() {
         qq: { label: 'QQ 音乐', short: 'QQ' },
         kugou: { label: '酷狗音乐', short: 'KG' },
         qishui: { label: '汽水音乐', short: 'QS' },
-        spotify: { label: 'Spotify', short: 'SP' },
       }[provider] || { label: provider, short: provider }),
     };
     vm.runInNewContext(accountUtils.slice(identityStart, identityEnd) + '\nthis.providerAccountIdentity = providerAccountIdentity;', identitySandbox);
     assert.strictEqual(identitySandbox.providerAccountIdentity('netease', { nickname: '平台昵称', userId: '280213969' }), '平台昵称');
     assert.strictEqual(identitySandbox.providerAccountIdentity('qq', { nickname: 'QQ 123456789', userId: '123456789' }), 'QQ 音乐');
     assert.strictEqual(identitySandbox.providerAccountIdentity('kugou', { nickname: '酷狗 99887766', userId: '99887766' }), '酷狗音乐');
-    assert.strictEqual(identitySandbox.providerAccountIdentity('spotify', { displayName: 'Alice', userId: 'alice_123' }), 'Alice');
-    assert.strictEqual(identitySandbox.providerAccountIdentity('spotify', { userId: 'alice_123' }), 'Spotify');
 
     const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'index.css'), 'utf8');
     assert(/#user-btn\.login-eye-avatar[\s\S]{0,180}width:\s*48px[\s\S]{0,180}border-radius:\s*50%/.test(css));
@@ -202,7 +199,7 @@ async function run() {
 
     const logoutRenderer = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'modules', '08-account', '04-user-modal-logout.js'), 'utf8');
     assert(logoutRenderer.includes('function logoutAllAccountsAndResetEasterEgg()'));
-    assert(logoutRenderer.includes("apiJson('/api/spotify/logout')"));
+    assert(!logoutRenderer.includes("apiJson('/api/spotify/logout')"));
     assert(logoutRenderer.includes('resetAllProviderRendererLoginState()'));
     assert(logoutRenderer.includes('resetLoginEasterEggUiForReplay()'));
     assert(logoutRenderer.includes('armLogoutAllAccountsResetConfirmation()'));

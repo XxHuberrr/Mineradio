@@ -105,6 +105,21 @@ function runPlaybackSourceFallbackTransactionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runPlaybackSingleRepeatLoopRegressionCheck() {
+  logStep('Playback single-repeat loop regression');
+  const testFile = path.join(appRoot, 'tests', 'playback-single-repeat-loop.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`playback single-repeat loop regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 function runLocalMusicLibraryRegressionCheck() {
   logStep('Persistent local FLAC library regression');
   const testFile = path.join(appRoot, 'tests', 'local-music-library-persistence.test.js');
@@ -116,6 +131,21 @@ function runLocalMusicLibraryRegressionCheck() {
     process.stdout.write(result.stdout || '');
     process.stderr.write(result.stderr || '');
     fail(`persistent local FLAC library regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runBuiltInPlaylistRegressionCheck() {
+  logStep('Persistent cross-provider built-in playlist regression');
+  const testFile = path.join(appRoot, 'tests', 'built-in-playlist-library.test.js');
+  const result = spawnSync(process.execPath, ['--test', testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`built-in playlist regression failed: ${rel(testFile)}`);
   }
   process.stdout.write(result.stdout || '');
 }
@@ -135,11 +165,110 @@ function runWallpaperEngineIdleDisposeRegressionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runWallpaperEngineMinimizeResidentRegressionCheck() {
+  logStep('Wallpaper Engine minimize resident regression');
+  const testFile = path.join(appRoot, 'tests', 'wallpaper-engine-minimize-resident.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`Wallpaper Engine minimize resident regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runWallpaperEngineWin10YellowBorderRegressionCheck() {
+  logStep('Wallpaper Engine Win10 yellow-border regression');
+  const testFile = path.join(appRoot, 'tests', 'wallpaper-engine-win10-yellow-border.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`Wallpaper Engine Win10 yellow-border regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runGestureCameraPermissionRegressionCheck() {
+  logStep('Gesture camera permission regression');
+  const testFile = path.join(appRoot, 'tests', 'gesture-camera-permission.test.js');
+  const result = spawnSync(process.execPath, [testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`gesture camera permission regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runGesturePlayerActionsRegressionCheck() {
+  logStep('Gesture player actions regression');
+  const testFile = path.join(appRoot, 'tests', 'gesture-player-actions.test.js');
+  const result = spawnSync(process.execPath, [testFile], { cwd: appRoot, encoding: 'utf8' });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`gesture player actions regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runGestureRuntimeLifecycleRegressionCheck() {
+  logStep('Gesture camera runtime lifecycle regression');
+  const testFile = path.join(appRoot, 'tests', 'gesture-runtime-lifecycle.test.js');
+  const result = spawnSync(process.execPath, [testFile], { cwd: appRoot, encoding: 'utf8' });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`gesture camera runtime lifecycle regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runCuratedVisualPresetsRegressionCheck() {
+  logStep('Curated visual presets regression');
+  const testFile = path.join(appRoot, 'tests', 'curated-visual-presets.test.js');
+  const result = spawnSync(process.execPath, [testFile], { cwd: appRoot, encoding: 'utf8' });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`curated visual presets regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runVisualClarityAndPortraitFullscreenRegressionCheck() {
+  logStep('Lyric clarity, WE visual controls, and portrait fullscreen regression');
+  const testFile = path.join(appRoot, 'tests', 'visual-clarity-and-portrait-fullscreen.test.js');
+  const result = spawnSync(process.execPath, ['--test', testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`visual clarity and portrait fullscreen regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 function runQQVipEntitlementRegressionCheck() {
   logStep('QQ/Kugou provider entitlement regression');
   const testFiles = [
     path.join(appRoot, 'tests', 'qq-vip-entitlement.test.js'),
     path.join(appRoot, 'tests', 'kugou-vip-hardening.test.js'),
+    path.join(appRoot, 'tests', 'kugou-login-bridge.test.js'),
+    path.join(appRoot, 'tests', 'kugou-api-resilience.test.js'),
+    path.join(appRoot, 'tests', 'provider-login-state-recovery.test.js'),
     path.join(appRoot, 'tests', 'provider-entitlement-boundary.test.js'),
   ];
   const result = spawnSync(process.execPath, ['--test'].concat(testFiles), {
@@ -187,6 +316,36 @@ function runSpotifyApiResilienceRegressionCheck() {
   process.stdout.write(result.stdout || '');
 }
 
+function runProviderRemovalDiyCinemaRegressionCheck() {
+  logStep('Provider removal, fullscreen DIY, and cinematic preload regression');
+  const testFile = path.join(appRoot, 'tests', 'provider-removal-diy-cinema-preload.test.js');
+  const result = spawnSync(process.execPath, ['--test', testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`provider removal/DIY/cinematic regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
+function runVisualPerformanceControlsRegressionCheck() {
+  logStep('Visual performance controls regression');
+  const testFile = path.join(appRoot, 'tests', 'visual-performance-controls.test.js');
+  const result = spawnSync(process.execPath, ['--test', testFile], {
+    cwd: appRoot,
+    encoding: 'utf8'
+  });
+  if (result.status !== 0) {
+    process.stdout.write(result.stdout || '');
+    process.stderr.write(result.stderr || '');
+    fail(`visual performance controls regression failed: ${rel(testFile)}`);
+  }
+  process.stdout.write(result.stdout || '');
+}
+
 function runPlatformAccountSyncGuardCheck() {
   logStep('Platform account action and listen-sync guard');
   const testFile = path.join(appRoot, 'tests', 'platform-account-sync-guard.test.js');
@@ -225,6 +384,7 @@ function runQishuiProviderDistributionRegressionCheck() {
   const testFiles = [
     path.join(appRoot, 'tests', 'qishui-provider-distribution.test.js'),
     path.join(appRoot, 'tests', 'qishui-passport-qr-login.test.js'),
+    path.join(appRoot, 'tests', 'qishui-session-recovery.test.js'),
     path.join(appRoot, 'tests', 'qishui-entitlement-cache.test.js'),
     path.join(appRoot, 'tests', 'qishui-tier-rights.test.js'),
   ];
@@ -850,8 +1010,10 @@ function checkDesktopWindowAdaptationGuard() {
   if (!/function getAdaptiveWindowMinimumSize/.test(mainText) || !/function isPortraitDisplayArea/.test(mainText)) {
     fail('main window must adapt minimum size and windowed bounds for portrait displays');
   }
-  if (!/ensureMainWindowInsideDisplay\(win\);\s*setMainWindowFullscreenResizeGuard\(win,\s*true\);\s*win\.setFullScreen\(true\)/.test(mainText)) {
-    fail('desktop fullscreen must normalize the window onto the current display before entering fullscreen');
+  if (!/screen\.getDisplayNearestPoint\(\{/.test(mainText)
+    || !/windowFullscreenDisplayId = display \? display\.id : null/.test(mainText)
+    || !/win\.setBounds\(\{[\s\S]{0,260}targetBounds\.height[\s\S]{0,180}win\.setFullScreen\(true\)/.test(mainText)) {
+    fail('desktop fullscreen must target the display under the window center before entering fullscreen');
   }
   if (!/screen\.on\('display-metrics-changed', handleDisplayLayoutChanged\)/.test(mainText) || !/screen\.on\('display-removed', handleDisplayLayoutChanged\)/.test(mainText)) {
     fail('desktop window must react to display metric and monitor topology changes');
@@ -1068,8 +1230,8 @@ function checkLyricScrollPerformanceGuard() {
   if (!/function lyricCoverLooksMonochrome/.test(paletteText) || !/avgChroma/.test(paletteText) || !/colorfulRatio/.test(paletteText) || !/best\.chroma/.test(paletteText) || /lyricTextPaletteFromHsl\(hsl, avgL, Math\.max\(0, best\.score\)\)/.test(paletteText)) {
     fail('monochrome cover lyric sampling must use real chroma statistics instead of boosting brightness scores into vivid colors');
   }
-  if (!/function lyricSonicBackdropAdaptActive\(\)\s*\{[\s\S]{0,90}return lyricBackgroundAdaptStrengthValue\(\) > 0\.001;/.test(rowText) || /preset === 7 \|\| preset === 8/.test(rowText) || !/setFxPanelControlsHidden\(\['fx-lyricbgadapt-row', 'fx-lyricbgadapt'\], false\)/.test(fxPanelText)) {
-    fail('lyric bright-backdrop avoidance must be global instead of being limited to Sonic presets');
+  if (!/function lyricBackdropAdaptActive\(\)\s*\{[\s\S]{0,180}fx\.lyricBackdropAdapt !== false[\s\S]{0,90}lyricBackgroundAdaptStrengthValue\(\) > 0\.001;/.test(rowText) || /preset === 7 \|\| preset === 8/.test(rowText) || !/setFxPanelControlsHidden\(\['fx-lyricbgadapt-row', 'fx-lyricbgadapt'\], false\)/.test(fxPanelText)) {
+    fail('lyric bright-backdrop avoidance must stay global while honoring its performance toggle');
   }
   if (!/color: lyricBeatGlowThreeColor\(pal/.test(meshText) || !/color: lyricStageGlowThreeColor\(pal/.test(meshText) || !/uColor: \{ value: lyricBeatGlowThreeColor\(pal/.test(meshText)) {
     fail('lyric sun, texture glow, and beat particles must initialize from the glow palette instead of the text highlight color');
@@ -1282,6 +1444,9 @@ function checkLyricScrollPerformanceGuard() {
   if (!/mask\.logicalFontSize/.test(maskText) || !/mask\.logicalWidth/.test(maskText) || !/function lyricRowLogicalWorldWidth/.test(rowText) || !/baseMask\.logicalFontSize \|\| baseMask\.fontSize/.test(rowText) || !/layoutMask\.logicalFontSize/.test(stageText) || !/var scaleDistance = motionAnchor \? 0 : visibilityAbs/.test(rowText) || !/stableMotionIndex/.test(rowText)) {
     fail('resident lyric raster compaction and wide canvases must preserve a stable logical font size and active-row scale');
   }
+  if (!/function lyricViewportFitRatio/.test(rowText) || !/function lyricRowLiveViewportScale/.test(rowText) || !/Math\.min\(leftSpace, rightSpace\) \* 2/.test(rowText) || !/row\.mesh\.localToWorld\(lyricViewportFitLeft\)/.test(rowText) || !/lyricViewportFitLeft\.project\(camera\)/.test(rowText) || !/renderWindowActive && \(!fx \|\| fx\.lyricLiveViewportFit !== false\)/.test(rowText) || !/baseScale \*= lyricRowLiveViewportScale\(row, baseScale\)/.test(rowText) || /lyricLongLineDefaultScale|longLineScale|1380\s*\//.test(rowText)) {
+    fail('when enabled, original and translated long lyrics must fit the live left/right viewport space without fixed-width hard compression');
+  }
   if (!/var frameScale =/.test(rowText) || !/1 - Math\.pow\(1 - baseTrackEase, frameScale\)/.test(rowText) || !/deltaTime: dt/.test(stageText)) {
     fail('lyric scroll easing must keep the same timing across display frame rates');
   }
@@ -1378,6 +1543,16 @@ function checkPersistentCacheStorageGuard() {
 
 function checkExternalUpdatePageBridgeGuard() {
   logStep('External update page bridge guard');
+  const regression = spawnSync(process.execPath, ['--test',
+    path.join(appRoot, 'tests', 'update-external-only.test.js'),
+    path.join(appRoot, 'tests', 'update-download-link-rotation.test.js')
+  ], { cwd: appRoot, encoding: 'utf8' });
+  if (regression.status !== 0) {
+    process.stdout.write(regression.stdout || '');
+    process.stderr.write(regression.stderr || '');
+    fail('external update link rotation regression failed');
+  }
+  process.stdout.write(regression.stdout || '');
   const mainText = fs.readFileSync(path.join(appRoot, 'desktop', 'main.js'), 'utf8');
   const preloadText = fs.readFileSync(path.join(appRoot, 'desktop', 'preload.js'), 'utf8');
   const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
@@ -1566,7 +1741,7 @@ function checkQishuiProviderGuard() {
   if (!/\/api\/qishui\/user\/playlists/.test(serverText) || !/\/api\/qishui\/playlist\/tracks/.test(serverText)) {
     fail('server.js must route Qishui user playlists and playlist track detail endpoints');
   }
-  if (!/qishuiPlaylists/.test(coreStoreText) || !/if \(provider === 'qishui'\) return '\/api\/qishui\/user\/playlists'/.test(playlistShellText) || !/neteasePlaylists\.concat\(qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists\)/.test(playlistShellText)) {
+  if (!/qishuiPlaylists/.test(coreStoreText) || !/if \(provider === 'qishui'\) return '\/api\/qishui\/user\/playlists'/.test(playlistShellText) || !/builtInPlaylists\.concat\(neteasePlaylists, qqPlaylists, kugouPlaylists, qishuiPlaylists, spotifyPlaylists\)/.test(playlistShellText)) {
     fail('playlist panel refresh must merge Qishui playlists with the other providers');
   }
   if (!/normalizePlaylistProvider/.test(playlistDetailText) || !/\/api\/qishui\/playlist\/tracks/.test(playlistDetailText) || !/qishui:' \+ id/.test(playlistDetailText) || !/汽水音乐歌单/.test(playlistDetailText)) {
@@ -1621,8 +1796,8 @@ async function checkSpotifyProviderGuard() {
   if (!/playbackMode:\s*'recommend-match'/.test(spotifyText) || !/provider_limited/.test(spotifyText) || !/handleSpotifySongUrl/.test(spotifyText) || !/handleSpotifyLyric/.test(spotifyText)) {
     fail('Spotify must stay a metadata/search match source, not a fake direct audio provider');
   }
-  if (!/require\('\.\/spotify-api'\)/.test(serverText) || !/\/api\/spotify\/status/.test(serverText) || !/\/api\/spotify\/config/.test(serverText) || !/\/api\/spotify\/search/.test(serverText) || !/\/api\/spotify\/song\/url/.test(serverText) || !/\/api\/spotify\/lyric/.test(serverText)) {
-    fail('server.js must route Spotify status/search/song-url/lyric through the backend bridge');
+  if (!/require\('\.\/spotify-api'\)/.test(serverText) || !/\/api\/spotify\/status/.test(serverText) || !/\/api\/spotify\/config/.test(serverText) || !/\/api\/spotify\/setup\/diagnostics/.test(serverText) || !/\/api\/spotify\/search/.test(serverText) || !/\/api\/spotify\/song\/url/.test(serverText) || !/\/api\/spotify\/lyric/.test(serverText)) {
+    fail('server.js must route Spotify status/config/setup diagnostics/search/song-url/lyric through the backend bridge');
   }
   if (!/search-mode-spotify/.test(indexText) || !/tag-source\.spotify/.test(cssText) || !/spotify-source/.test(cssText)) {
     fail('Spotify search tab and source badges must be visible in the UI');
@@ -1648,7 +1823,7 @@ async function checkSpotifyProviderGuard() {
   if (!/getSpotifyOAuthConfig/.test(spotifyText) || !/saveSpotifyConfig/.test(spotifyText) || !/buildSpotifyOAuthAuthorizeUrl/.test(spotifyText) || !/exchangeSpotifyOAuthCode/.test(spotifyText) || !/handleSpotifyStatus/.test(spotifyText) || !/handleSpotifyUserPlaylists/.test(spotifyText) || !/handleSpotifyPlaylistTracks/.test(spotifyText)) {
     fail('Spotify bridge must expose OAuth status plus playlist and liked-track handlers');
   }
-  if (!/user-library-read/.test(spotifyText) || !/playlist-read-private/.test(spotifyText) || !/SPOTIFY_LIKED_PLAYLIST_ID/.test(spotifyText) || !/\/me\/tracks/.test(spotifyText) || !/\/me\/playlists/.test(spotifyText) || !/\/me/.test(spotifyText)) {
+  if (!/user-read-private/.test(spotifyText) || !/user-library-read/.test(spotifyText) || !/playlist-read-private/.test(spotifyText) || !/SPOTIFY_LIKED_PLAYLIST_ID/.test(spotifyText) || !/\/me\/tracks/.test(spotifyText) || !/\/me\/playlists/.test(spotifyText) || !/\/me/.test(spotifyText)) {
     fail('Spotify OAuth must request profile, private playlists, and Liked Songs scopes/endpoints');
   }
   if (!/Number\(item\.items && item\.items\.total\) \|\| Number\(item\.tracks && item\.tracks\.total\)/.test(spotifyText) || !/\/playlists\/['"]? \+ encodeURIComponent\(playlistId\) \+ ['"]?\/items/.test(spotifyText) || !/entry && \(entry\.item \|\| entry\.track\)/.test(spotifyText) || !/item\.type !== 'track'/.test(spotifyText) || !/Math\.min\(SPOTIFY_PLAYLIST_PAGE_LIMIT, Number\(opts\.limit\)/.test(spotifyText) || !/SPOTIFY_PLAYLIST_ITEMS_RESTRICTED/.test(spotifyText) || !/SPOTIFY_PLAYLIST_SCOPE_REQUIRED/.test(spotifyText)) {
@@ -1713,11 +1888,11 @@ async function checkSpotifyProviderGuard() {
   if (!/\/api\/spotify\/logout/.test(serverText) || !/\/api\/spotify\/user\/playlists/.test(serverText) || !/\/api\/spotify\/playlist\/tracks/.test(serverText)) {
     fail('server.js must route Spotify logout, user playlists, and playlist track detail endpoints');
   }
-  if (!/SPOTIFY_LOGIN_PARTITION/.test(desktopMainText) || !/openSpotifyMusicLoginWindow/.test(desktopMainText) || !/spotify-music-open-login/.test(desktopMainText) || !/SPOTIFY_TOKEN_FILE/.test(desktopMainText) || !/127\.0\.0\.1:43879\/callback/.test(spotifyText + desktopMainText)) {
-    fail('desktop main must provide a local Spotify OAuth callback/login bridge and userData token storage');
+  if (!/SPOTIFY_LOGIN_PARTITION/.test(desktopMainText) || !/openSpotifyMusicLoginWindow/.test(desktopMainText) || !/verifySpotifyOAuthCallbackEndpoint/.test(desktopMainText) || !/spotify-music-open-login/.test(desktopMainText) || !/spotify-music-verify-setup/.test(desktopMainText) || !/shell\.openExternal\(authUrl\)/.test(desktopMainText) || !/SPOTIFY_OAUTH_TIMEOUT_MS/.test(desktopMainText) || !/SPOTIFY_TOKEN_FILE/.test(desktopMainText) || !/127\.0\.0\.1:43879\/callback/.test(spotifyText + desktopMainText)) {
+    fail('desktop main must provide system-browser PKCE, a verified loopback callback, bounded timeout, and userData token storage');
   }
-  if (!/openSpotifyMusicLogin/.test(desktopPreloadText) || !/clearSpotifyMusicLogin/.test(desktopPreloadText)) {
-    fail('desktop preload must expose Spotify login and clear-login IPC bridges');
+  if (!/openSpotifyMusicLogin/.test(desktopPreloadText) || !/verifySpotifyMusicSetup/.test(desktopPreloadText) || !/clearSpotifyMusicLogin/.test(desktopPreloadText)) {
+    fail('desktop preload must expose Spotify login, callback verification, and clear-login IPC bridges');
   }
   if (!/login-provider-spotify/.test(indexText) || !/user-provider-spotify/.test(indexText) || !/account-add-spotify/.test(indexText) || !/account-source-dot\.spotify/.test(cssText) || !/account-provider-chip\.spotify/.test(cssText)) {
     fail('Spotify login and account tabs must be visible in the UI');
@@ -1728,11 +1903,11 @@ async function checkSpotifyProviderGuard() {
   if (!/tokenFileExists/.test(spotifyText) || !/credentialsFileExists/.test(spotifyText) || !/localConfigMissing/.test(spotifyText) || !/fs\.existsSync/.test(spotifyText)) {
     fail('Spotify status must distinguish configured paths from real local token/credential files');
   }
-  if (!/localConfigMissing/.test(loginStatusText) || !/tokenFileExists/.test(loginStatusText) || !/credentialsFileExists/.test(loginStatusText) || !/submitSpotifyConfigLogin/.test(loginFlowText) || !/\/api\/spotify\/config/.test(loginFlowText) || !/粘贴 Spotify Client ID/.test(loginFlowText) || !/保存并授权/.test(loginFlowText)) {
-    fail('Spotify frontend status must surface missing local OAuth config/token and provide simple Client ID save + OAuth flow');
+  if (!/localConfigMissing/.test(loginStatusText) || !/tokenFileExists/.test(loginStatusText) || !/credentialsFileExists/.test(loginStatusText) || !/submitSpotifyConfigLogin/.test(loginFlowText) || !/saveSpotifySetupClientId/.test(loginFlowText) || !/\/api\/spotify\/config/.test(loginFlowText)) {
+    fail('Spotify frontend status must surface missing local OAuth config/token and provide validated Client ID save + OAuth flow');
   }
-  if (!/SPOTIFY_DEVELOPER_DASHBOARD_URL/.test(loginFlowText) || !/openSpotifyDeveloperDashboard/.test(loginFlowText) || !/copySpotifyRedirectUri/.test(loginFlowText) || !/Spotify 玩家接入三步/.test(loginFlowText) || !/不用填 Client Secret/.test(loginFlowText) || !/spotify-guide-panel/.test(cssText)) {
-    fail('Spotify player onboarding must stay as a short three-step guide with dashboard and redirect-copy actions');
+  if (!/SPOTIFY_DEVELOPER_DASHBOARD_URL/.test(loginFlowText) || !/openSpotifyDeveloperDashboard/.test(loginFlowText) || !/copySpotifyRedirectUri/.test(loginFlowText) || !/verifySpotifySetupCallback/.test(loginFlowText) || !/runSpotifySetupDiagnostics/.test(loginFlowText) || !/spotify-setup-step-1/.test(indexText) || !/spotify-setup-step-4/.test(indexText) || !/spotify-setup-wizard/.test(cssText) || !/spotify-setup-steps/.test(cssText)) {
+    fail('Spotify onboarding must provide a spacious four-step wizard with per-step local and API verification');
   }
   if (!/loginRefreshRequestSeq/.test(loginFlowText) || !/isLoginRefreshCurrent/.test(loginFlowText)) {
     fail('login modal provider switching must guard stale async status and QR writes');
@@ -1756,6 +1931,33 @@ async function checkSpotifyProviderGuard() {
     fail('Spotify local credential files must stay ignored by git');
   }
   console.log('[OK] Spotify Web API match source is guarded across backend, UI, playback fallback, lyrics, and packaging.');
+}
+
+function checkSpotifyRemovalGuard() {
+  logStep('Removed provider surface guard');
+  const indexText = fs.readFileSync(path.join(appRoot, 'public', 'index.html'), 'utf8');
+  const searchText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '05-playback', '07-search.js'), 'utf8');
+  const accountText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '08-account', '01-login-modal-utils.js'), 'utf8');
+  const startupText = fs.readFileSync(path.join(appRoot, 'public', 'js', 'modules', '10-shell', '05-startup-bindings.js'), 'utf8');
+  const serverText = fs.readFileSync(path.join(appRoot, 'server.js'), 'utf8');
+  const mainText = fs.readFileSync(path.join(appRoot, 'desktop', 'main.js'), 'utf8');
+  const preloadText = fs.readFileSync(path.join(appRoot, 'desktop', 'preload.js'), 'utf8');
+  if (/search-mode-spotify|login-provider-spotify|user-provider-spotify|account-add-spotify|spotify-setup-wizard/.test(indexText)) {
+    fail('removed provider must not expose search, login, account, or setup UI');
+  }
+  if (/MUSIC_SEARCH_PROVIDER_ORDER\s*=\s*\[[^\]]*spotify/.test(searchText) || /ACCOUNT_PROVIDER_KEYS\s*=\s*\[[^\]]*spotify/.test(accountText)) {
+    fail('removed provider must not participate in search or account capsule ordering');
+  }
+  if (/refreshSpotifyLoginStatus\(\)|startSpotifyLoginStatusAutoRefresh\(\)/.test(startupText)) {
+    fail('startup must not request removed provider status');
+  }
+  if (!/PROVIDER_REMOVED/.test(serverText) || !/pn\.indexOf\('\/api\/spotify\/'\) === 0/.test(serverText)) {
+    fail('removed provider HTTP routes must terminate with an explicit 404 guard');
+  }
+  if (/spotify-music-(?:open-login|verify-setup|clear-login)/.test(mainText + '\n' + preloadText)) {
+    fail('desktop bridge must not expose removed provider login IPC');
+  }
+  console.log('[OK] Removed provider has no searchable, login, account-capsule, startup, HTTP, or desktop IPC surface.');
 }
 
 function checkPlaybackControlBadgesGuard() {
@@ -1873,7 +2075,7 @@ async function checkProviderFallbackTerminalStateGuard() {
   if (!/function sourceFallbackProviderReady/.test(fallbackText) || !/status\.playbackKeyReady === true/.test(fallbackText) || !/function alternatePlaybackProviders/.test(fallbackText) || /if \(provider === 'netease'\) return 'qq'/.test(fallbackText)) {
     fail('automatic fallback must only select logged-in direct providers with complete playback authorization');
   }
-  if (!/SOURCE_FALLBACK_SEARCH_TIMEOUT_MS\s*=\s*6500/.test(fallbackText) || !/apiJson\(url, \{ timeoutMs: SOURCE_FALLBACK_SEARCH_TIMEOUT_MS \}\)/.test(fallbackText) || !/SOURCE_FALLBACK_RECOVERY_TIMEOUT_MS\s*=\s*20000/.test(fallbackText) || !/function awaitSourceFallbackBudget/.test(fallbackText) || (playbackText.match(/timeoutMs:\s*9000/g) || []).length < 6 || (playbackText.match(/timeoutMs:\s*14000/g) || []).length < 2 || (playbackText.match(/timeoutMs:\s*15000/g) || []).length < 2) {
+  if (!/SOURCE_FALLBACK_SEARCH_TIMEOUT_MS\s*=\s*6500/.test(fallbackText) || !/apiJson\(url, \{ timeoutMs: SOURCE_FALLBACK_SEARCH_TIMEOUT_MS \}\)/.test(fallbackText) || !/SOURCE_FALLBACK_RECOVERY_TIMEOUT_MS\s*=\s*20000/.test(fallbackText) || !/function awaitSourceFallbackBudget/.test(fallbackText) || (playbackText.match(/timeoutMs:\s*9000/g) || []).length < 2 || (playbackText.match(/timeoutMs:\s*14000/g) || []).length < 2 || (playbackText.match(/timeoutMs:\s*15000/g) || []).length < 4 || (playbackText.match(/timeoutMs:\s*20000/g) || []).length < 2) {
     fail('fallback search, normal source resolution, and gapless source resolution must all be time-bounded');
   }
   if (!/alternateData[\s\S]{0,220}!alternateData\.url[\s\S]{0,320}playQueue\[idx\] = committedCandidate/.test(fallbackText) || !/fallbackStarted === true[\s\S]{0,180}已自动切换音源/.test(fallbackText) || !/function restoreSourceFallbackQueueItem/.test(fallbackText)) {
@@ -2476,7 +2678,7 @@ function checkQQVipStatusSyncGuard() {
       /qqNeedsAuthRefresh \|\| qqNeedsMembershipSync/.test(loginFlowText)) {
     fail('QQ login panel must reauthorize only missing playback credentials and use the forceVip status probe for membership sync');
   }
-  if (!/pendingQQSync/.test(accountUtilsText) || !/待同步/.test(accountUtilsText) || !/\.top-account-vip\.pending/.test(cssText)) {
+  if (!/pendingSync = providerMembershipNeedsSync\(provider, status\)/.test(accountUtilsText) || !/qqMembershipNeedsSync\(status\)/.test(accountUtilsText) || !/待同步/.test(accountUtilsText) || !/\.top-account-vip\.pending/.test(cssText)) {
     fail('QQ top account badge must show pending sync instead of ordinary account when membership auth is stale');
   }
   if (!/refreshQQLoginStatus\(\{ forceVip: true, reason: 'startup' \}\)/.test(startupText)) {
@@ -2819,11 +3021,11 @@ function checkCuefieldAutoMixGuard() {
   if (!/MINERADIO_BEAT_COMBOS/.test(adapterText) || !/raw\[7\]/.test(adapterText) || !/flags & 1/.test(adapterText) || !/flags & 2/.test(adapterText) || !/flags & 4/.test(adapterText) || /raw\[8\][^\n]{0,80}downbeat|raw\[8\][^\n]{0,80}>=\s*7/.test(adapterText)) {
     fail('Cuefield must decode packed comboIdx and flags independently so ordinary camera/pulse flags cannot become false downbeats');
   }
-  if (!/function normalizedTempoPair/.test(recipeText) || !/\[0\.5, 1, 2\]/.test(recipeText) || !/function nearestDownbeat/.test(recipeText) || !/anchor-aligned-beatmix/.test(recipeText) || !/simple-crossfade/.test(recipeText) || /const needsSafetyFallback/.test(recipeText) || !/maxEntryTime/.test(bridgeText)) {
-    fail('Cuefield must use per-track downbeat confidence, half/double-tempo normalization, bounded entry jumps, and a simple-fade fallback instead of forced safety blends');
+  if (!/chooseTransitionWindow/.test(bridgeText) || !/buildStructureMap/.test(bridgeText) || !/normalizeRecentRecipes/.test(bridgeText) || !/resolveListeningFloor/.test(bridgeText) || !/safety-long-blend/.test(recipeText) || !/end-of-track-crossfade/.test(bridgeText)) {
+    fail('Cuefield must keep structure-aware window selection, recipe cooldown, listening floors, and bounded safety/end-of-track fallbacks');
   }
-  if (!/cuefieldLyricTextForSong/.test(integrationText) || !/fromLrc:\s*lyricPair\[0\]/.test(integrationText) || !/toLrc:\s*lyricPair\[1\]/.test(integrationText) || !/allowWeak:\s*false/.test(integrationText) || !/allowSafetyFallback:\s*false/.test(integrationText)) {
-    fail('Cuefield must consume the existing lyric cache as weak structure evidence and refuse weak/rejected forced beatmix plans');
+  if (!/cuefieldLyricTextForSong/.test(integrationText) || !/fromLrc:\s*lyricPair\[0\]/.test(integrationText) || !/toLrc:\s*lyricPair\[1\]/.test(integrationText) || !/allowWeak:\s*false/.test(integrationText) || !/allowSafetyFallback:\s*true/.test(integrationText) || !/allowLiveEndCrossfadeFallback:\s*true/.test(integrationText)) {
+    fail('Cuefield must consume the existing lyric cache, reject weak beatmixes, and retain explicit bounded safety fallbacks');
   }
   if (!/var provider = songProviderKey\(song\)/.test(beatPrefetchText) || !/return provider \+ ':' \+ id/.test(beatPrefetchText) || !/resolveAlbumGaplessPlaybackData\(song\)/.test(beatPrefetchText)) {
     fail('Cuefield beatmaps must use provider-aware keys and resolve the same provider playback path as the real player');
@@ -2837,11 +3039,11 @@ function checkCuefieldAutoMixGuard() {
   if (!/function claimCuefieldPreparedAudioForPlayback/.test(integrationText) || !/media === audio[\s\S]{0,100}claimCuefieldPreparedAudioForPlayback\(media\);[\s\S]{0,40}return;/.test(integrationText) || !/audio = opts\.preloadedAudio;[\s\S]{0,180}claimCuefieldPreparedAudioForPlayback\(audio\)/.test(playbackText) || !/preserveExecution:\s*!!opts\.cuefieldAutoMix/.test(playbackText)) {
     fail('Cuefield must transfer preloaded B-deck ownership before preparing another track so it cannot pause active playback');
   }
-  if (!/function cuefieldRunEqualPowerCrossfade\(pending, nextMedia, durationMs, context\)/.test(integrationText) || !/var theta = eased \* Math\.PI \* 0\.5/.test(integrationText) || !/overlapHeadroom/.test(integrationText) || !/cuefieldWriteIncomingGain\(nextMedia, incoming\)/.test(integrationText) || !/shared-context-gain/.test(integrationText)) {
-    fail('Cuefield must apply one headroom-protected equal-power envelope to the shared-context A/B deck gains');
+  if (!/function buildEqualPowerCurve/.test(timelineText) || !/function cuefieldVolumeCurveValue/.test(integrationText) || !/equal-power-in/.test(integrationText) || !/equal-power-out/.test(integrationText) || !/function cuefieldApplyGraphEcho/.test(integrationText) || !/function cuefieldApplyGraphDuck/.test(integrationText) || !/function cuefieldApplyTimelineAction/.test(integrationText) || !/volume-only-fallback/.test(integrationText)) {
+    fail('Cuefield must execute equal-power A/B volume curves and safely downgrade advanced graph actions');
   }
-  if (!/var completed = await cuefieldRunEqualPowerCrossfade\(pending, nextMedia, fadeMs, context\);[\s\S]{0,150}if \(!completed \|\| !cuefieldTransitionStillCurrent\(pending, context\)\) return false;/.test(integrationText) || !/var handoffReady = await runCuefieldTimeline\(pending, nextMedia, transitionContext\);[\s\S]{0,150}if \(!handoffReady \|\| !cuefieldTransitionStillCurrent\(pending, transitionContext\)\)/.test(integrationText)) {
-    fail('Cuefield ownership handoff must be driven by the completed equal-power fade state, not an elapsed timer');
+  if (!/await cuefieldApplyTimelineAction\(action, pending, nextMedia, context\)/.test(integrationText) || !/handoffDelayMs > elapsedMs[\s\S]{0,120}await cuefieldDelay/.test(integrationText) || !/nextMedia\.paused \|\| nextMedia\.ended/.test(integrationText) || !/var handoffReady = await runCuefieldTimeline\(pending, nextMedia, transitionContext\);[\s\S]{0,150}if \(!handoffReady \|\| !cuefieldTransitionStillCurrent\(pending, transitionContext\)\)/.test(integrationText)) {
+    fail('Cuefield ownership handoff must await the cancellable action timeline and a live incoming deck');
   }
   if (!/var cuefieldTransitionGeneration = 0/.test(integrationText) || !/cuefieldTransitionGeneration\+\+;[\s\S]{0,120}clearCuefieldTimelineTimers\(\)/.test(integrationText) || !/function cuefieldDelay\(delayMs, generation\)/.test(integrationText) || !/context\.generation !== cuefieldTransitionGeneration/.test(integrationText) || !/audio !== context\.outgoingMedia/.test(integrationText)) {
     fail('Cuefield reset, seek, and pause must invalidate delayed transitions before they can wake and rewrite current audio gain');
@@ -3141,10 +3343,10 @@ function checkSonicTopographyPresetGuard() {
   if (!/function deriveGroundLayoutSettings/.test(sonicText) || !/sonicGroundRange/.test(sonicText) || !/state\.root\.rotation\.x\s*=\s*state\.boundRotX/.test(sonicText) || !/state\.root\.position\.set\(0,\s*layout\.y,\s*layout\.z\)/.test(sonicText) || !/state\.root\.scale\.setScalar\(layout\.scale\)/.test(sonicText)) {
     fail('Sonic Topography must expose a wide, lyric-safe horizontal platter layout inside Mineradio camera space');
   }
-  if (!/MAX_VISUAL_PRESET_INDEX = 8/.test(coreText) || !/SONIC_PRESET_INDEX = 7/.test(coreText) || !/SONIC_WORKSHOP_PRESET_INDEX = 8/.test(coreText) || !/MAX_VISUAL_PRESET_INDEX/.test(runtimeText + persistenceText)) {
+  if (!/MAX_VISUAL_PRESET_INDEX = 12/.test(coreText) || !/SONIC_PRESET_INDEX = 7/.test(coreText) || !/SONIC_WORKSHOP_PRESET_INDEX = 8/.test(coreText) || !/MAX_VISUAL_PRESET_INDEX/.test(runtimeText + persistenceText)) {
     fail('Sonic preset 7 and Workshop derivative preset 8 must survive autosave and startup restore clamps');
   }
-  if (!/音域回响/.test(archiveText) || !/presetDisplayOrder = \[0, 6, 7, 8/.test(archiveText) || /音域回响[\s\S]{0,120}disabled:\s*true/.test(archiveText)) {
+  if (!/音域回响/.test(archiveText) || !/presetDisplayOrder = \[0, 9, 10, 11, 12, 6, 7, 8/.test(archiveText) || /音域回响[\s\S]{0,120}disabled:\s*true/.test(archiveText)) {
     fail('Sonic Topography must be exposed as the selectable 音域回响 preset');
   }
   if (!archiveText.includes('音域回响 <span class="pc-name-en">Sonic-Topography</span>')
@@ -4073,7 +4275,10 @@ app.whenReady().then(async () => {
             relativeGlowMetricDrift(longGlowRaster.padToGlyph, shortGlowRaster.padToGlyph) <= 0.22
           );
           return {
-            ok: maxSameTrackOutgoing === 0 && maxUploadConsumed <= 1 && maxIndexLag === 0 && wholeSongResident && maxResidentPrimary === window.lyricsLines.length && maxLogicalRowWidth > 2048 && maxGlyphWorldDrift <= 0.035 && minActiveScale >= 0.97 && minimumForwardRunway >= 20 && adjacentTargetsReady >= 3 && glowRasterPairOk,
+            // Long active/translation rows now fit the real left/right screen
+            // corridor. Continuity QA must allow that intentional shrink while
+            // still rejecting unreadable collapse below half scale.
+            ok: maxSameTrackOutgoing === 0 && maxUploadConsumed <= 1 && maxIndexLag === 0 && wholeSongResident && maxResidentPrimary === window.lyricsLines.length && maxLogicalRowWidth > 2048 && maxGlyphWorldDrift <= 0.035 && minActiveScale >= 0.50 && minimumForwardRunway >= 20 && adjacentTargetsReady >= 3 && glowRasterPairOk,
             rootId,
             maxSameTrackOutgoing,
             maxUploadConsumed,
@@ -5185,6 +5390,7 @@ async function checkLargePlaylistVirtualizationGuard() {
     PLAYLIST_DETAIL_INITIAL_RENDER: 96,
     window: { innerHeight: 900 },
     songCoverSrc: () => '',
+    normalizePlaylistProvider: provider => provider === 'mineradio' ? 'mineradio' : (['qq', 'kugou', 'qishui', 'spotify'].includes(provider) ? provider : 'netease'),
     escHtml: value => String(value == null ? '' : value),
     Math,
     Number,
@@ -5245,6 +5451,9 @@ async function checkLargePlaylistVirtualizationGuard() {
         hasMore: offset + count < 10000
       };
     },
+    fetchPlaylistTracksPage: async (provider, id, params) => hydrateSandbox.apiJson(
+      hydrateSandbox.playlistTracksEndpoint(provider, id, params)
+    ),
     cloneSong: song => Object.assign({}, song),
     markSongsLiked: () => {},
     syncLikeStatusForSongs: () => {},
@@ -5342,7 +5551,7 @@ function checkFxConsoleWorkspaceGuard() {
   const clarityButtonsReady = ['1', '2', '3', '4'].every(value => html.includes(`data-lyric-texture-clarity="${value}"`));
   const clarityLabelsReady = ['1×', '2×', '3×', '4×', '标清', '高清', '超清', '极致'].every(label => html.includes(label));
   const packagedDefaultsUseRuntimeDefaults = /PACKAGED_DEFAULT_FX_SNAPSHOT\s*=\s*Object\.freeze\(Object\.assign\(\{[\s\S]{0,180}visualPresetSchema:\s*VISUAL_PRESET_SCHEMA[\s\S]{0,120}\},\s*fxDefaults\)\)/.test(packagedDefaults);
-  if (!/id="lyric-texture-quality-seg"/.test(html) || !clarityButtonsReady || !clarityLabelsReady || /data-lyric-texture-clarity="1\.(?:25|5)"/.test(html) || !/lyricTextureClarity:\s*1/.test(defaults) || !packagedDefaultsUseRuntimeDefaults || !defaultArchive.snapshot || defaultArchive.snapshot.lyricTextureClarity !== 1 || !/normalizeLyricTextureClarity/.test(persistence + archive + panel) || !/invalidateLyricQualityTextures\('texture-clarity-change'/.test(panel) || /scheduleStageLyricFullTrackWarmup\('texture-clarity-change'/.test(panel) || !/function lyricQualityPoolBudgetBytes/.test(maskTexture) || !/function makeLyricQualityTexture/.test(maskTexture) || !/function queueLyricRowQuality/.test(rowLayers) || !/qualityHotUntil/.test(rowLayers) || !/backgroundStarRiver'\s*,\s*'lyricTextureClarity'\s*\]/.test(archive)) fail('1x-4x visible-row lyric quality, persistence, cache budget, or append-only MR2 archive wiring is incomplete');
+  if (!/id="lyric-texture-quality-seg"/.test(html) || !clarityButtonsReady || !clarityLabelsReady || /data-lyric-texture-clarity="1\.(?:25|5)"/.test(html) || !/lyricTextureClarity:\s*1/.test(defaults) || !packagedDefaultsUseRuntimeDefaults || !defaultArchive.snapshot || defaultArchive.snapshot.lyricTextureClarity !== 1 || !/normalizeLyricTextureClarity/.test(persistence + archive + panel) || !/invalidateLyricQualityTextures\('texture-clarity-change'/.test(panel) || /scheduleStageLyricFullTrackWarmup\('texture-clarity-change'/.test(panel) || !/function lyricQualityPoolBudgetBytes/.test(maskTexture) || !/function makeLyricQualityTexture/.test(maskTexture) || !/function queueLyricRowQuality/.test(rowLayers) || !/qualityHotUntil/.test(rowLayers) || !/backgroundStarRiver'\s*,\s*'lyricTextureClarity'\s*,\s*\/\/ Append-only:[\s\S]{0,120}'lyricLiveViewportFit'/.test(archive)) fail('1x-4x visible-row lyric quality, persistence, cache budget, or append-only MR2 archive wiring is incomplete');
   if (!/function finalizeLyricQualitySelectionFrame/.test(rowLayers) || !/frameCandidates/.test(rowLayers) || !/function lyricQualityEffectiveBudgetBytes/.test(rowLayers) || !/qualityFallbackUntil/.test(rowLayers) || !/function pruneLyricQualityQueue/.test(rowLayers) || !/row\.qualityWanted !== true/.test(rowLayers) || !/lyricQualityEnsureCapacity\(job\.bytes[\s\S]{0,900}makeLyricQualityTexture/.test(rowLayers) || !/qualityRootPriority:\s*isCurrent \? 0 : 1000/.test(stageLyrics) || /qualityRetryAfter/.test(rowLayers) || !/fallbackHotUntil/.test(rowLayers) || !/release:\s*next <= 1/.test(panel)) fail('lyric quality global byte-aware selection, stale-job pruning, pre-render capacity check, or no-flash tier handoff is incomplete');
   const qualityCommitBody = rowLayers.slice(rowLayers.indexOf('function commitLyricRowQuality'), rowLayers.indexOf('function beginLyricQualitySelectionFrame'));
   if (!/frameCommits:\s*\[\]/.test(rowLayers) || !/function commitDeferredLyricQualityRows/.test(rowLayers) || !/lyricQualityState\.deferFinalize \|\| row\.qualityWanted !== true/.test(qualityCommitBody) || /discardLyricRowPendingQuality/.test(qualityCommitBody) || !/commitDeferredLyricQualityRows\(\)/.test(rowLayers) || !/function disposeLyricQualityOwner/.test(rowLayers) || !/__mineradioLyricQualityDisposed/.test(rowLayers) || !/disposeLyricQualityOwner\(lyricData\)/.test(starRiver) || !/qualityProjectedPoolBytes/.test(rowLayers) || !/function lyricQualityHasPendingTexture/.test(rowLayers)) fail('lyric quality deferred commit, disposed-owner cancellation, or bounded atomic tier replacement guard is incomplete');
@@ -5419,12 +5628,22 @@ async function main() {
   runNodeSyntaxCheck(jsCheckFiles());
   runPlaybackAudioGraphRegressionCheck();
   runPlaybackSourceFallbackTransactionCheck();
+  runPlaybackSingleRepeatLoopRegressionCheck();
   runLocalMusicLibraryRegressionCheck();
+  runBuiltInPlaylistRegressionCheck();
   runWallpaperEngineIdleDisposeRegressionCheck();
+  runWallpaperEngineMinimizeResidentRegressionCheck();
+  runWallpaperEngineWin10YellowBorderRegressionCheck();
+  runGestureCameraPermissionRegressionCheck();
+  runGesturePlayerActionsRegressionCheck();
+  runGestureRuntimeLifecycleRegressionCheck();
+  runCuratedVisualPresetsRegressionCheck();
+  runVisualClarityAndPortraitFullscreenRegressionCheck();
   runQQVipEntitlementRegressionCheck();
   runLoginEasterEggGateRegressionCheck();
   runQishuiProviderDistributionRegressionCheck();
-  runSpotifyApiResilienceRegressionCheck();
+  runProviderRemovalDiyCinemaRegressionCheck();
+  runVisualPerformanceControlsRegressionCheck();
   runPlatformAccountSyncGuardCheck();
   runHomeDailyRecommendationRegressionCheck();
   parseCombinedIndexModules();
@@ -5444,7 +5663,7 @@ async function main() {
   checkLyricTranslationCompletenessGuard();
   checkLyricVerticalFloatToggleGuard();
   checkQishuiProviderGuard();
-  await checkSpotifyProviderGuard();
+  checkSpotifyRemovalGuard();
   checkPlaybackControlBadgesGuard();
   await checkProviderFallbackTerminalStateGuard();
   checkSearchGlassEntranceGuard();
