@@ -8,7 +8,7 @@
 - 安装包：`Mineradio-2.2.0-Setup.exe`
 - 仅从当前可信源码完整构建，不复用旧安装包或旧 `dist/`。
 - 正式 Release 不混入 Mineradio_Beat 产物。
-- GitHub Release 仅附带完整安装包 `Mineradio-2.2.0-Setup.exe`，供用户手动下载；不上传 `latest.yml`、blockmap 或补丁。
+- GitHub Release 附带完整安装包 `Mineradio-2.2.0-Setup.exe` 和最小版本说明 `latest.yml`。后者供旧版主检测失败时的备用线路使用；不上传 blockmap 或补丁。
 - `2.0.3+` 客户端不得从 Release assets 识别或下载安装包，软件内更新仍只读取正文中的网盘线路。
 - Release 正文使用两条 `mineradio-download-page` 隐藏标记提供本次下载入口，保留百度云链接中的提取码参数。
 
@@ -31,7 +31,9 @@
 
 ## 发布资产
 
-GitHub Release 仅上传 `dist/Mineradio-2.2.0-Setup.exe`。构建生成的 blockmap、`latest.yml` 与校验记录只用于本地验收，不作为 Release 资产发布。
+GitHub Release 上传 `dist/Mineradio-2.2.0-Setup.exe` 和 `docs/update/latest.yml`。版本说明仅包含 `version/releaseDate`，不得使用带安装包下载字段的构建工具清单。构建生成的 blockmap、安装清单与校验记录仍只用于本地验收。
+
+2.1.0 的备用检测和入口限制见 [更新公告与旧版兼容](docs/UPDATE_DELIVERY.md)。每次发布都要同步版本说明；缺失会使主接口访问失败的旧客户端无法发现更新。
 
 安装包 SHA-256：`8fd318283bab2fe98190f7b879ede423dd8274a0aeec8d321570b8d022d4f989`。
 
