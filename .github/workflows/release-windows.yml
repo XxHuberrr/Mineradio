@@ -36,7 +36,7 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npm run build:win
+        run: npm run build:win -- --publish never
 
       - name: Generate SHA-256 checksums
         shell: pwsh
