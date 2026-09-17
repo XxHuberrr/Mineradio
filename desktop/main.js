@@ -103,6 +103,10 @@ const APP_METADATA = APP_PACKAGE_INFO.mineradio || {};
 const APP_NAME = process.env.MINERADIO_RUNTIME_NAME || APP_METADATA.runtimeName || APP_PACKAGE_INFO.productName || 'Mineradio';
 const APP_USER_MODEL_ID = process.env.MINERADIO_APP_USER_MODEL_ID || APP_METADATA.appUserModelId || (APP_PACKAGE_INFO.build && APP_PACKAGE_INFO.build.appId) || 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+// Electron cannot decode .ico on Linux, so tray and window icons fall back to
+// the PNG shipped in build/ there.
+const APP_ICON_PNG = path.join(__dirname, '..', 'build', 'icon.png');
+const APP_ICON = process.platform === 'linux' && fs.existsSync(APP_ICON_PNG) ? APP_ICON_PNG : APP_ICON_ICO;
 const CURRENT_FX_AUTOSAVE_FILE = 'current-fx-autosave.json';
 const CURRENT_FX_AUTOSAVE_MAX_BYTES = 12 * 1024 * 1024;
 const STARTUP_ERROR_LOG_FILE = 'startup-error.log';
@@ -481,7 +485,7 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['use-angle', 'd3d11'],
+  ['use-angle', process.platform === 'win32' ? 'd3d11' : 'gl'],
 ];
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
@@ -1934,7 +1938,7 @@ async function getGpuDiagnostics() {
       ignoreGpuBlocklist: process.env.MINERADIO_IGNORE_GPU_BLOCKLIST === '1',
       forceHighPerformanceGpu: process.env.MINERADIO_FORCE_HIGH_PERFORMANCE_GPU === '1',
       keepBackgroundRendering: process.env.MINERADIO_KEEP_BACKGROUND_RENDERING === '1',
-      angle: 'd3d11',
+      angle: process.platform === 'win32' ? 'd3d11' : 'gl',
     },
   };
 }
@@ -2110,7 +2114,7 @@ function createOrUpdateTray() {
   if (process.platform !== 'win32' && process.platform !== 'linux') return;
   if (!tray) {
     try {
-      tray = new Tray(APP_ICON_ICO);
+      tray = new Tray(APP_ICON);
       tray.setToolTip(APP_NAME);
       tray.on('click', () => focusMainWindow());
       tray.on('double-click', () => focusMainWindow());
@@ -2549,7 +2553,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
@@ -2663,7 +2667,7 @@ async function openQQMusicLoginWindow(owner, options) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
@@ -2739,7 +2743,7 @@ async function openQQMusicLoginWindow(owner, options) {
           show: false,
           autoHideMenuBar: true,
           backgroundColor: '#111111',
-          icon: APP_ICON_ICO,
+          icon: APP_ICON,
           webPreferences: {
             partition: QQ_LOGIN_PARTITION,
             contextIsolation: true,
@@ -2793,7 +2797,7 @@ async function openQQMusicLoginWindow(owner, options) {
               show: true,
               autoHideMenuBar: true,
               backgroundColor: '#111111',
-              icon: APP_ICON_ICO,
+              icon: APP_ICON,
               webPreferences: {
                 partition: QQ_LOGIN_PARTITION,
                 contextIsolation: true,
@@ -2892,7 +2896,7 @@ async function openKugouMusicLoginWindow(owner, options) {
       autoHideMenuBar: true,
       title: '酷狗音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON,
       webPreferences: {
         partition: KUGOU_LOGIN_PARTITION,
         contextIsolation: true,
@@ -5610,7 +5614,7 @@ async function createWindowOnce() {
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

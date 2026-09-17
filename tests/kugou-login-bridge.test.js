@@ -55,7 +55,7 @@ function loginHarness(initialCookie) {
     KUGOU_LOGIN_PARTITION: 'synthetic-kugou-partition',
     KUGOU_LOGIN_URL: 'https://www.kugou.com/',
     KUGOU_LOGIN_WARMUP_URL: 'https://www.kugou.com/newuc/user/uc/type=edit',
-    APP_ICON_ICO: '',
+    APP_ICON: '',
     console,
     setInterval: (callback) => { state.intervals.add(callback); return callback; },
     clearInterval: (callback) => state.intervals.delete(callback),
