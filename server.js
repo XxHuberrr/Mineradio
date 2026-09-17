@@ -415,36 +415,46 @@ async function claimKugouDailyVip(options) {
   const today = localDayKey();
   const state = readKugouRewardState();
   const cached = state.dailyVip;
-  if (!opts.force && cached && cached.day === today && (cached.ok || cached.already)) {
+  const uid = String(extractKugouAuth(kugouCookie).userid || '');
+  const sameDaySameUser = !!(cached && cached.day === today && String(cached.userid || '') === uid);
+  if (!opts.force && sameDaySameUser && (cached.ok || cached.already)) {
     return { ok: true, already: !!cached.already, cached: true, day: today, message: cached.message || '' };
   }
   // 自动触发时的节流：同一天最多 4 次、两次之间至少隔 10 分钟（避免每次切歌都打接口）
-  const attempts = (!opts.force && cached && cached.day === today) ? Number(cached.attempts || 0) : 0;
+  const attempts = (!opts.force && sameDaySameUser) ? Number(cached.attempts || 0) : 0;
   if (!opts.force && attempts >= 4) return { ok: false, skipped: 'DAILY_LIMIT', attempts, day: today };
-  if (!opts.force && cached && cached.day === today && cached.at && (Date.now() - Number(cached.at) < 10 * 60 * 1000)) {
+  if (!opts.force && sameDaySameUser && cached.at && (Date.now() - Number(cached.at) < 10 * 60 * 1000)) {
     return { ok: false, skipped: 'THROTTLED', day: today };
   }
   if (dailyVipClaimPromise) return dailyVipClaimPromise;
   dailyVipClaimPromise = (async () => {
     try {
-      const outcome = await kugouLite.liteDailyVipClaim(kugouCookie);
+      const outcome = await kugouLite.liteDailyVipClaim(kugouCookie, today);
+      let monthRecord = null;
+      try {
+        const record = await kugouLite.liteMonthVipRecord(kugouCookie);
+        monthRecord = record && (record.data || null);
+      } catch (recordErr) {
+        console.warn('[KugouDailyVip] month record failed:', recordErr && recordErr.message);
+      }
       const entry = {
         day: today,
+        userid: uid,
         ok: !!outcome.ok,
         already: !!outcome.already,
         code: outcome.code || 0,
-        message: outcome.message || '',
+        message: outcome.message || (outcome.already ? '今日已领取' : ''),
         sourceId: outcome.sourceId || 0,
         attempts: attempts + 1,
         at: Date.now(),
       };
       writeKugouRewardState(Object.assign({}, readKugouRewardState(), { dailyVip: entry }));
-      console.log('[KugouDailyVip]', reason, JSON.stringify({ ok: entry.ok, already: entry.already, code: entry.code, message: entry.message }));
+      console.log('[KugouDailyVip]', reason, JSON.stringify({ day: today, ok: entry.ok, already: entry.already, code: entry.code, message: entry.message, monthRecord }));
       if (entry.ok || entry.already) clearKugouSessionCaches(); // 让 VIP 状态立即可见
-      return Object.assign({ day: today, cached: false }, outcome);
+      return Object.assign({ day: today, cached: false, monthRecord }, outcome, { message: entry.message });
     } catch (e) {
-      console.warn('[KugouDailyVip] failed:', e && e.message);
-      return { ok: false, error: (e && e.message) || 'DAILY_VIP_FAILED' };
+      console.warn('[KugouDailyVip] failed:', (e && (e.body ? JSON.stringify(e.body) : e.message)) || e);
+      return { ok: false, day: today, error: (e && e.message) || 'DAILY_VIP_FAILED', raw: e && e.body ? e.body : null };
     } finally {
       dailyVipClaimPromise = null;
     }
@@ -460,11 +470,13 @@ async function reportKugouListenReward(mixsongid, options) {
   const id = Number(mixsongid);
   if (!id || !Number.isFinite(id)) return { ok: false, skipped: 'MIXSONGID_REQUIRED', message: '缺少 mixSongId' };
   const today = localDayKey();
+  const uid = String(extractKugouAuth(kugouCookie).userid || '');
   const cached = readKugouRewardState().listenReport;
-  if (!opts.force && cached && cached.day === today && (cached.ok || cached.already)) {
+  const sameDaySameUser = !!(cached && cached.day === today && String(cached.userid || '') === uid);
+  if (!opts.force && sameDaySameUser && (cached.ok || cached.already)) {
     return { ok: true, already: !!cached.already, cached: true, day: today };
   }
-  const attempts = (!opts.force && cached && cached.day === today) ? Number(cached.attempts || 0) : 0;
+  const attempts = (!opts.force && sameDaySameUser) ? Number(cached.attempts || 0) : 0;
   if (!opts.force && attempts >= 8) return { ok: false, skipped: 'DAILY_LIMIT', attempts, day: today };
   if (listenRewardPromise) return listenRewardPromise;
   listenRewardPromise = (async () => {
@@ -472,6 +484,7 @@ async function reportKugouListenReward(mixsongid, options) {
       const outcome = await kugouLite.liteListenSongReport(id, kugouCookie);
       const entry = {
         day: today,
+        userid: uid,
         ok: !!outcome.ok,
         already: !!outcome.already,
         code: outcome.code || 0,

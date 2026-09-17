@@ -504,44 +504,98 @@ async function liteQrCheck(key) {
 // ====================================================================
 //  概念版 VIP 奖励（每日领取一天 VIP / 听歌奖励上报 / 到期查询）
 // ====================================================================
-// 服务端「今日已领取」错误码（对照 echomusic-kugou-reward 插件）
+// 服务端业务码（实测 + 对照 echomusic-kugou-reward 插件）：
+//   130012 听歌奖励「今日已领取」
+//   131001 每日 VIP「今日已领取」（无 error_msg）
+//   304001 receive_day 日期格式错误；304003 日期不能小于今天
+//   20006  err signature（receive_day 缺失时出现）
 const VIP_ALREADY_CODE = 130012;
+const VIP_DAILY_ALREADY_CODES = [130012, 131001];
+const VIP_CODE_TEXT = {
+  130012: '今日已领取',
+  131001: '今日已领取',
+  20006: '签名校验失败（receive_day 等必选参数缺失）',
+  304001: '日期格式错误（应为 YYYY-MM-DD）',
+  304003: '日期不能小于今天',
+};
 
-function vipRewardOutcome(res, extra) {
-  const body = (res && res.body) || {};
+function vipRewardOutcome(res, extra, alreadyCodes) {
+  // createRequest 对非 2xx 会 reject，抛出对象形如 { status: 502, body: {...业务码...} }，
+  // 所以这里既接受成功响应，也接受抛出的错误对象（业务码都在 body 里）
+  const body = (res && res.body) || (res && (res.error_code !== undefined || res.status) ? res : {}) || {};
   const code = Number(body.error_code || body.err_code || body.code || 0);
   const status = Number(body.status);
-  const already = code === VIP_ALREADY_CODE;
-  const message = String(body.error_msg || body.error_message || body.msg || body.message || '');
+  const codes = Array.isArray(alreadyCodes) ? alreadyCodes : [VIP_ALREADY_CODE];
+  const already = codes.indexOf(code) >= 0;
+  const message = String(body.error_msg || body.error_message || body.msg || body.message || VIP_CODE_TEXT[code] || '');
   const ok = already || status === 1 || (code === 0 && !!body.data);
   return Object.assign({ ok, already, code, status, message, data: body.data || null, raw: body }, extra || {});
 }
 
-// 每日奖励：领取一天概念版 VIP（POST /youth/v1/recharge/receive_vip_listen_song）
-// source_id 走 90139（KuGouMusicApi 内置值），失败再试 90137（奖励插件使用的值）
-async function liteDailyVipClaim(kugouCookie) {
+function localDateKey(ts) {
+  const d = ts ? new Date(ts) : new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+// 每日奖励：领取一天概念版 VIP
+// POST /youth/v1/recharge/receive_vip_listen_song
+// ⚠️ receive_day 是**必选**参数且必须是 `YYYY-MM-DD` 本地日期：
+//    缺参数 → 20006 err signature；格式不对 → 304001 日期格式错误；
+//    领过当天 → 131001（无 error_msg）；日期早于今天 → 304003。
+async function liteDailyVipClaim(kugouCookie, receiveDay) {
+  const day = String(receiveDay || '').trim() || localDateKey();
   let last = null;
   for (const sourceId of [90139, 90137]) {
-    const res = await liteCall('youth_day_vip', { source_id: sourceId }, kugouCookie);
-    const outcome = vipRewardOutcome(res, { sourceId });
+    let res = null;
+    let err = null;
+    try {
+      res = await liteCall('youth_day_vip', { source_id: sourceId, receive_day: day }, kugouCookie);
+    } catch (e) {
+      err = e;
+    }
+    const outcome = vipRewardOutcome(err || res, { sourceId, receiveDay: day }, VIP_DAILY_ALREADY_CODES);
     if (outcome.ok || outcome.already) return outcome;
     last = outcome;
   }
   return last || { ok: false, already: false, message: 'DAILY_VIP_CLAIM_FAILED' };
 }
 
+// 当月已领取 VIP 天数（GET /youth/month/vip/record）
+async function liteMonthVipRecord(kugouCookie) {
+  try {
+    const res = await liteCall('youth_month_vip_record', {}, kugouCookie);
+    const body = (res && res.body) || {};
+    return { ok: Number(body.status) === 1 || !!body.data, data: body.data || null, code: Number(body.error_code || 0), message: body.error_msg || '' };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'MONTH_VIP_RECORD_FAILED' };
+  }
+}
+
 // 听歌奖励：上报一首歌（POST /youth/v2/report/listen_song），必须传真实 mixsongid
 async function liteListenSongReport(mixsongid, kugouCookie) {
   const id = Number(mixsongid);
   if (!id || !Number.isFinite(id)) return { ok: false, already: false, message: 'MIXSONGID_REQUIRED' };
-  const res = await liteCall('youth_listen_song', { mixsongid: id }, kugouCookie);
-  return vipRewardOutcome(res, { mixsongid: id });
+  let res = null;
+  let err = null;
+  try {
+    res = await liteCall('youth_listen_song', { mixsongid: id }, kugouCookie);
+  } catch (e) {
+    err = e;
+  }
+  return vipRewardOutcome(err || res, { mixsongid: id });
 }
 
 // 升级每日概念会员（POST /youth/v1/listen_song/upgrade_vip_reward）
 async function liteDailyVipUpgrade(kugouCookie) {
-  const res = await liteCall('youth_day_vip_upgrade', {}, kugouCookie);
-  return vipRewardOutcome(res);
+  let res = null;
+  let err = null;
+  try {
+    res = await liteCall('youth_day_vip_upgrade', {}, kugouCookie);
+  } catch (e) {
+    err = e;
+  }
+  return vipRewardOutcome(err || res);
 }
 
 // 概念版 VIP 到期时间（GET https://kugouvip.kugou.com/v1/get_union_vip）
@@ -586,6 +640,7 @@ module.exports = {
   liteListenSongReport,
   liteDailyVipUpgrade,
   liteUnionVip,
+  liteMonthVipRecord,
   resetDevice,
   _test: { buildLiteCookie, deviceCookie, ensureDfid },
 };
