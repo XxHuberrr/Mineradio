@@ -33,18 +33,80 @@ function loadModule(name) {
   return mod;
 }
 
-// ---------- 设备状态 ----------
-// 与 EchoMusic src/main/server.ts 一致：guid/mid/dev/mac/webgl 进程内生成一次
+// ---------- 设备状态（持久化，参照 EchoMusic server.ts 的 deviceStore）----------
+// 关键：设备身份（guid/mid/dev/mac/webgl/dfid）必须跨启动稳定，否则 dfid 反复注册、
+// 酷狗侧设备列表漂移（也会影响扫码/风控）。EchoMusic 会把 guid/mac 落盘并复用真实网卡 MAC。
 let _device = null;
+let _deviceStore = null;
+
+function deviceStoreFile() {
+  if (process.env.MINERADIO_KUGOU_DEVICE_STORE) return process.env.MINERADIO_KUGOU_DEVICE_STORE;
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getPath === 'function') {
+      return path.join(app.getPath('userData'), 'kugou-device.json');
+    }
+  } catch (_) { /* 非 Electron 环境（如独立 node 调用）走下面的兜底路径 */ }
+  const base = process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config');
+  return path.join(base, 'Mineradio', 'kugou-device.json');
+}
+
+function loadDeviceStore() {
+  if (_deviceStore) return _deviceStore;
+  _deviceStore = {};
+  try {
+    const file = deviceStoreFile();
+    if (fs.existsSync(file)) {
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (raw && typeof raw === 'object') _deviceStore = raw;
+    }
+  } catch (e) {
+    console.warn('[KugouLite] device store read failed:', e && e.message);
+  }
+  return _deviceStore;
+}
+
+function saveDeviceStore() {
+  try {
+    const file = deviceStoreFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(_deviceStore, null, 2), { mode: 0o600 });
+  } catch (e) {
+    console.warn('[KugouLite] device store write failed:', e && e.message);
+  }
+}
+
+// 取真实网卡 MAC（EchoMusic getRealMacAddress 同思路），失败退回固定占位
+function realMacAddress() {
+  try {
+    const nets = require('os').networkInterfaces();
+    const names = Object.keys(nets).sort();
+    for (const name of names) {
+      for (const entry of nets[name] || []) {
+        if (!entry || entry.internal) continue;
+        const mac = String(entry.mac || '').trim().toUpperCase();
+        if (/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(mac) && mac !== '00:00:00:00:00:00') return mac;
+      }
+    }
+  } catch (_) {}
+  return '02:00:00:00:00:00';
+}
 
 function deviceState() {
   if (_device) return _device;
   loadCore();
-  const guid = cryptoRandomGuid();
-  const mid = _util.calculateMid(guid);
-  const dev = _util.randomString(10).toUpperCase();
-  const webgl = _util.generateWebGLHash();
-  _device = { guid, mid, dev, mac: '02:00:00:00:00:00', webgl };
+  const store = loadDeviceStore();
+  const guid = typeof store.guid === 'string' && /^[a-f0-9]{32}$/.test(store.guid) ? store.guid : cryptoRandomGuid();
+  const mid = typeof store.mid === 'string' && store.mid ? store.mid : _util.calculateMid(guid);
+  const dev = typeof store.dev === 'string' && store.dev ? store.dev : _util.randomString(10).toUpperCase();
+  const mac = typeof store.mac === 'string' && store.mac ? store.mac : realMacAddress();
+  const webgl = typeof store.webgl === 'string' && store.webgl ? store.webgl : _util.generateWebGLHash();
+  _device = { guid, mid, dev, mac, webgl };
+  const changed = store.guid !== guid || store.mid !== mid || store.dev !== dev || store.mac !== mac || store.webgl !== webgl;
+  if (changed) {
+    Object.assign(store, _device);
+    saveDeviceStore();
+  }
   return _device;
 }
 
@@ -64,18 +126,25 @@ function deviceCookie(extra) {
   }, extra || {});
 }
 
-// ---------- dfid 注册（带缓存） ----------
+// ---------- dfid 注册（落盘缓存，避免每次启动重新注册） ----------
 let _dfid = null;
 let _dfidPromise = null;
 
 function ensureDfid() {
   if (_dfid) return Promise.resolve(_dfid);
+  const store = loadDeviceStore();
+  if (typeof store.dfid === 'string' && store.dfid) {
+    _dfid = store.dfid;
+    return Promise.resolve(_dfid);
+  }
   if (_dfidPromise) return _dfidPromise;
   _dfidPromise = (async () => {
     const res = await callModule('register_dev', {}, deviceCookie());
     const dfid = res && res.body && res.body.data && res.body.data.dfid;
     if (!dfid) throw new Error('register_dev failed: no dfid');
     _dfid = dfid;
+    store.dfid = dfid;
+    saveDeviceStore();
     return dfid;
   })().catch((e) => {
     _dfidPromise = null;
@@ -406,12 +475,46 @@ async function litePlaylistTracks(playlistId, kugouCookie) {
   }
 }
 
-// 重置设备（登出时调用）
+// ====================================================================
+//  扫码登录（概念版 QR，进程内调用；不再依赖 :9488 子进程）
+// ====================================================================
+// login_qr_key 走 web 加密，不需要 dfid；用设备 cookie 即可（与原先经 HTTP 服务调用一致）
+function qrCookie() {
+  return Object.assign({}, deviceCookie(), { userid: '0', token: '' });
+}
+
+// 官方二维码 key：/v2/qrcode → body.data.{qrcode, qrcode_img, url}
+async function liteQrKey() {
+  const res = await callModule('login_qr_key', { type: 'android' }, qrCookie());
+  return (res && res.body && res.body.data) || {};
+}
+
+// 自拼 URL 二维码（官方 qrcode_img 缺失时的兜底；注意此码 App 可能识别不了）
+async function liteQrCreate(key) {
+  const res = await callModule('login_qr_create', { key: String(key || ''), qrimg: '1' }, qrCookie());
+  return (res && res.body && res.body.data) || {};
+}
+
+// 扫码状态：body.data.{status,token,userid,nickname}，status 0过期/1待扫/2待确认/4成功
+async function liteQrCheck(key) {
+  const res = await callModule('login_qr_check', { key: String(key || '') }, qrCookie());
+  return (res && res.body && res.body.data) || {};
+}
+
+// 重置设备身份（显式动作，非登出）：清内存与落盘，下次启动重新生成 guid/mid/dev/mac/webgl
+// 注意：退出登录/会话过期不应调用它 —— 设备身份要保持稳定（EchoMusic 同策略）
 function resetDevice() {
   _dfid = null;
   _dfidPromise = null;
   _device = null;
   _cachedModules = Object.create(null);
+  try {
+    const file = deviceStoreFile();
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  } catch (e) {
+    console.warn('[KugouLite] device store clear failed:', e && e.message);
+  }
+  _deviceStore = null;
 }
 
 module.exports = {
@@ -422,6 +525,9 @@ module.exports = {
   liteVipDetail,
   liteUserPlaylists,
   litePlaylistTracks,
+  liteQrKey,
+  liteQrCreate,
+  liteQrCheck,
   resetDevice,
   _test: { buildLiteCookie, deviceCookie, ensureDfid },
 };
