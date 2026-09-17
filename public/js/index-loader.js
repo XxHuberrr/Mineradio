@@ -1,6 +1,10 @@
 'use strict';
 
 (function loadMineradioIndexModules() {
+  // 禁用鼠标侧键（后退/前进），防止误触导致页面重载
+  window.addEventListener('mouseup', function (e) {
+    if (e.button === 3 || e.button === 4) { e.preventDefault(); }
+  }, true);
   const moduleCacheBust = String(Date.now());
   const modulePaths = [
     'js/modules/00-state/00-core-stores.js',

@@ -89,6 +89,7 @@ const {
   extractKugouAuth,
   kugouAudioReferer,
 } = require('./kugou-api');
+const kugouLite = require('./kugou-lite');
 const {
   getQishuiStatus,
   handleQishuiStatus,
@@ -4953,7 +4954,15 @@ const server = http.createServer(async (req, res) => {
       const kw = url.searchParams.get('keywords') || '';
       const limit = Math.max(4, Math.min(20, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
       const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      const songs = await handleKugouSearch(kw, limit, kugouCookie, offset);
+      let songs = [];
+      try {
+        // 概念版优先（酷狗 2026-04 起搜索强制 cookie 认证，概念版签名可过）
+        songs = await kugouLite.liteSearch(kw, limit, kugouCookie, offset);
+        if (!songs.length) songs = await handleKugouSearch(kw, limit, kugouCookie, offset);
+      } catch (liteErr) {
+        console.warn('[KugouSearch] lite failed, fallback standard:', liteErr.message);
+        songs = await handleKugouSearch(kw, limit, kugouCookie, offset);
+      }
       sendJSON(res, { provider: 'kugou', songs, offset, limit, nextOffset: offset + songs.length, hasMore: songs.length >= limit });
     } catch (err) {
       console.error('[KugouSearch]', err);
@@ -5560,7 +5569,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/kugou/song/url') {
     try {
-      const info = await handleKugouSongUrl({
+      const songUrlParams = {
         hash: url.searchParams.get('hash') || url.searchParams.get('id') || '',
         albumId: url.searchParams.get('albumId') || url.searchParams.get('album_id') || '',
         albumAudioId: url.searchParams.get('albumAudioId') || url.searchParams.get('album_audio_id') || url.searchParams.get('mixSongId') || '',
@@ -5574,7 +5583,23 @@ const server = http.createServer(async (req, res) => {
         onlyVipPlayable: url.searchParams.get('onlyVipPlayable') || url.searchParams.get('only_vip_playable') || '',
         privilege: url.searchParams.get('privilege') || url.searchParams.get('mediaPrivilege') || url.searchParams.get('media_privilege') || '',
         fee: url.searchParams.get('fee') || '',
-      }, kugouCookie);
+      };
+      let info = null;
+      try {
+        // 概念版签名音源优先（登录态下才能拿到 url）
+        const liteUrl = await kugouLite.liteSongUrl(songUrlParams, kugouCookie);
+        if (liteUrl && liteUrl.url && liteUrl.playable) {
+          info = liteUrl;
+        } else if (liteUrl && liteUrl.reason === 'vip_required') {
+          // 概念版明确返回会员受限：直接返回，不回退标准版（标准版同样拿不到）
+          info = liteUrl;
+        }
+      } catch (liteErr) {
+        console.warn('[KugouSongUrl] lite failed, fallback standard:', liteErr.message);
+      }
+      if (!info) {
+        info = await handleKugouSongUrl(songUrlParams, kugouCookie);
+      }
       sendJSON(res, info);
     } catch (err) {
       console.error('[KugouSongUrl]', err);
@@ -5589,7 +5614,15 @@ const server = http.createServer(async (req, res) => {
       const albumAudioId = url.searchParams.get('albumAudioId') || url.searchParams.get('album_audio_id') || '';
       const duration = url.searchParams.get('duration') || '';
       if (!hash) { sendJSON(res, { provider: 'kugou', error: 'Missing Kugou hash', lyric: '' }, 400); return; }
-      const data = await handleKugouLyric(hash, albumAudioId, duration);
+      let data = null;
+      try {
+        // 概念版歌词优先
+        data = await kugouLite.liteLyric(hash, albumAudioId, duration, kugouCookie);
+        if (!data || !data.lyric) data = await handleKugouLyric(hash, albumAudioId, duration);
+      } catch (liteErr) {
+        console.warn('[KugouLyric] lite failed, fallback standard:', liteErr.message);
+        data = await handleKugouLyric(hash, albumAudioId, duration);
+      }
       sendJSON(res, data);
     } catch (err) {
       console.error('[KugouLyric]', err);
@@ -5600,7 +5633,39 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/kugou/login/status') {
     try {
-      sendJSON(res, await getKugouLoginInfo(kugouCookie));
+      const auth = extractKugouAuth(kugouCookie);
+      let info = await getKugouLoginInfo(kugouCookie);
+      // 概念版登录态增强：用 lite user/detail + vip/detail 补齐昵称/头像/VIP
+      if (auth && auth.userid && auth.userid !== '0' && auth.token) {
+        try {
+          const [profile, vip] = await Promise.all([
+            kugouLite.liteUserDetail(kugouCookie),
+            kugouLite.liteVipDetail(kugouCookie),
+          ]);
+          if (profile && profile.ok) {
+            info = Object.assign({}, info, {
+              nickname: profile.nickname || info.nickname,
+              avatar: profile.avatar || info.avatar,
+              userId: profile.userid || info.userId,
+            });
+          }
+          if (vip && vip.ok) {
+            info = Object.assign({}, info, {
+              vipType: vip.isSvip ? 2 : (vip.isVip ? 1 : 0),
+              svipType: vip.isSvip ? 1 : 0,
+              vipLevel: vip.vipLevel,
+              isVip: vip.isVip,
+              isSvip: vip.isSvip,
+              vipLabel: vip.vipLevel === 'svip' ? 'SVIP' : (vip.vipLevel === 'vip' ? 'VIP' : '无VIP'),
+              membershipVerified: true,
+              membershipSource: 'kugou-lite',
+            });
+          }
+        } catch (liteErr) {
+          console.warn('[KugouLoginStatus] lite enhance failed:', liteErr.message);
+        }
+      }
+      sendJSON(res, info);
     } catch (err) {
       console.error('[KugouLoginStatus]', err);
       sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message }, 500);
@@ -5636,7 +5701,23 @@ const server = http.createServer(async (req, res) => {
 
   if (pn === '/api/kugou/user/playlists') {
     try {
-      sendJSON(res, await handleKugouUserPlaylists(kugouCookie));
+      const auth = extractKugouAuth(kugouCookie);
+      let result = null;
+      if (auth && auth.userid && auth.userid !== '0' && auth.token) {
+        // 概念版歌单优先
+        result = await kugouLite.liteUserPlaylists(kugouCookie);
+        if (!result.ok || !result.playlists.length) {
+          result = null;
+        }
+      }
+      if (!result) {
+        result = await handleKugouUserPlaylists(kugouCookie);
+      }
+      sendJSON(res, {
+        provider: 'kugou',
+        loggedIn: true,
+        playlists: result.playlists || (result && result.playlists) || [],
+      });
     } catch (err) {
       console.error('[KugouUserPlaylists]', err);
       sendJSON(res, { provider: 'kugou', loggedIn: false, error: err.message, playlists: [] }, 500);
@@ -5650,7 +5731,21 @@ const server = http.createServer(async (req, res) => {
       const paged = url.searchParams.has('limit') || url.searchParams.has('offset');
       const limit = Math.max(10, Math.min(50, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
       const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
-      sendJSON(res, await handleKugouPlaylistTracks(id, kugouCookie, paged ? { limit, offset, paged: true } : {}));
+      const auth = extractKugouAuth(kugouCookie);
+      let result = null;
+      let liteOk = false;
+      if (auth && auth.userid && auth.userid !== '0' && auth.token) {
+        // 概念版优先；空歌单（0 首）是正常结果，不回退标准版
+        result = await kugouLite.litePlaylistTracks(id, kugouCookie);
+        liteOk = !!(result && result.ok);
+        if (liteOk) {
+          result = { provider: 'kugou', tracks: result.songs || [], total: (result.songs || []).length };
+        }
+      }
+      if (!liteOk) {
+        result = await handleKugouPlaylistTracks(id, kugouCookie, paged ? { limit, offset, paged: true } : {});
+      }
+      sendJSON(res, result);
     } catch (err) {
       console.error('[KugouPlaylistTracks]', err);
       sendJSON(res, { provider: 'kugou', error: err.message, tracks: [] }, 500);
@@ -6713,5 +6808,7 @@ server.listen(PORT, HOST, () => {
 });
 
 server.clearAllLoginCredentials = clearAllRuntimeLoginCredentials;
+server.saveKugouCookie = saveKugouCookie;
+server.getKugouCookie = () => kugouCookie;
 
 module.exports = server;

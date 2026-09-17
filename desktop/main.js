@@ -26,6 +26,62 @@ const { extractKugouAuth } = require('../kugou-api');
 const { qishuiCookieHasLogin } = require('../qishui-api');
 const { clearSpotifyToken } = require('../spotify-api');
 
+// ── 酷狗概念版（lite）API 后端：KuGouMusicApi 子进程（:9488）────────────────
+let kugouServerPort = 0;
+let kugouServerProcess = null;
+
+function startKugouServer() {
+  return new Promise((resolve, reject) => {
+    if (kugouServerProcess) { resolve(kugouServerPort); return; }
+    try {
+      const serverDir = path.join(__dirname, '..', 'kugou-server');
+      if (!fs.existsSync(path.join(serverDir, 'app.js'))) {
+        console.warn('[KugouServer] kugou-server directory not found, skipping');
+        resolve(0); return;
+      }
+      const port = parseInt(process.env.KUGOU_SERVER_PORT || '9488', 10);
+      const env = Object.assign({}, process.env, {
+        platform: 'lite',
+        PORT: String(port),
+        HOST: '127.0.0.1',
+      });
+      kugouServerProcess = spawn('/usr/bin/node', ['app.js'], {
+        cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      kugouServerPort = port;
+
+      let started = false;
+      const onData = (chunk) => {
+        if (!started && chunk.toString().includes('server running')) {
+          started = true;
+          console.log('[KugouServer] started on port', port);
+          resolve(port);
+        }
+      };
+      kugouServerProcess.stdout.on('data', onData);
+      kugouServerProcess.stderr.on('data', onData);
+      kugouServerProcess.on('error', (e) => { console.warn('[KugouServer] error:', e.message); reject(e); });
+      kugouServerProcess.on('exit', (code) => { if (!started) reject(new Error('Kugou server exited with code ' + code)); });
+
+      setTimeout(() => { if (!started) { console.warn('[KugouServer] timeout, assuming running'); resolve(port); } }, 8000);
+    } catch (e) { reject(e); }
+  });
+}
+
+function kugouApi(pathname, params) {
+  const baseUrl = 'http://127.0.0.1:' + kugouServerPort;
+  const url = baseUrl + pathname + '?' + new URLSearchParams(params || {}).toString();
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const lib = u.protocol === 'https:' ? require('https') : require('http');
+    lib.get(u, { headers: { 'User-Agent': 'Mineradio/2.2.0' } }, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
+    }).on('error', reject).setTimeout(15000, () => reject(new Error('timeout')));
+  });
+}
+
 registerWallpaperEngineScheme(protocol);
 registerLocalMusicScheme(protocol);
 
@@ -481,7 +537,7 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['use-angle', 'd3d11'],
+  ['use-angle', 'gl'],
 ];
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
@@ -1934,7 +1990,7 @@ async function getGpuDiagnostics() {
       ignoreGpuBlocklist: process.env.MINERADIO_IGNORE_GPU_BLOCKLIST === '1',
       forceHighPerformanceGpu: process.env.MINERADIO_FORCE_HIGH_PERFORMANCE_GPU === '1',
       keepBackgroundRendering: process.env.MINERADIO_KEEP_BACKGROUND_RENDERING === '1',
-      angle: 'd3d11',
+      angle: 'gl',
     },
   };
 }
@@ -1989,7 +2045,7 @@ async function trimAppMemoryNow(reason) {
 }
 
 function scheduleAppMemoryTrim(reason, delay = 9000) {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' && process.platform !== 'linux') return;
   if (memoryAutoState.appTrimEnabled === false || memoryAutoState.backgroundTrimEnabled === false) return;
   if (Date.now() - lastAppMemoryTrimAt < 120000) return;
   if (appMemoryTrimTimer) clearTimeout(appMemoryTrimTimer);
@@ -4141,6 +4197,55 @@ ipcMain.handle('mineradio-cache-get-settings', async () => {
   }
 });
 
+const LOCAL_LYRIC_AUDIO_EXT_RE = /\.(mp3|flac|wav|ogg|m4a|aac|opus|wma|ape|aiff?)$/i;
+async function readLocalLyricFromFile(filePath) {
+  const target = String(filePath || '').trim();
+  if (!target) return { ok: false, error: 'EMPTY_PATH', lyric: '' };
+  try {
+    // 1) 同目录同名 .lrc 优先
+    if (fs.existsSync(target) && fs.statSync(target).isFile()) {
+      const lrcCandidate = target.replace(LOCAL_LYRIC_AUDIO_EXT_RE, '.lrc');
+      if (lrcCandidate !== target && fs.existsSync(lrcCandidate) && fs.statSync(lrcCandidate).isFile()) {
+        const text = fs.readFileSync(lrcCandidate, 'utf8').replace(/^\uFEFF/, '');
+        if (text && text.trim()) return { ok: true, source: 'lrc', lyric: text };
+      }
+      if (LOCAL_LYRIC_AUDIO_EXT_RE.test(target)) {
+        try {
+          const mm = await import('music-metadata');
+          const meta = await mm.parseFile(target, { duration: false, skipCovers: true });
+          const lyrics = (meta && meta.common && meta.common.lyrics) || [];
+          for (const entry of lyrics) {
+            if (entry && typeof entry.text === 'string' && entry.text.trim()) {
+              return { ok: true, source: 'embedded', lyric: entry.text.replace(/^\uFEFF/, '') };
+            }
+          }
+          if (lyrics.length) {
+            const syncChunks = lyrics
+              .map((entry) => {
+                const arr = (entry && Array.isArray(entry.syncText)) ? entry.syncText : [];
+                return arr.map((t) => (t && t.text ? t.text : '')).filter(Boolean).join('\n');
+              })
+              .filter(Boolean);
+            if (syncChunks.length) return { ok: true, source: 'embedded-sync', lyric: syncChunks.join('\n\n') };
+          }
+        } catch (mmErr) {
+          console.warn('[LocalLyric] music-metadata failed:', mmErr.message);
+        }
+      }
+    }
+    return { ok: false, error: 'NO_LYRIC', lyric: '' };
+  } catch (error) {
+    return { ok: false, error: error.message || 'LOCAL_LYRIC_READ_FAILED', lyric: '' };
+  }
+}
+ipcMain.handle('mineradio-read-local-lyric', async (_event, filePath) => {
+  try {
+    return await readLocalLyricFromFile(filePath);
+  } catch (error) {
+    return { ok: false, error: error.message || 'LOCAL_LYRIC_READ_FAILED', lyric: '' };
+  }
+});
+
 ipcMain.handle('mineradio-cache-choose-directory', async () => {
   const result = await dialog.showOpenDialog({
     title: '选择 Mineradio 缓存目录',
@@ -4858,6 +4963,77 @@ ipcMain.handle('kugou-music-open-login', async (event, options) => {
 
 ipcMain.handle('kugou-music-clear-login', async () => {
   return clearKugouMusicLoginSession();
+});
+
+// ── 酷狗概念版 QR 码登录（经由本地 KuGouMusicApi 服务）──
+ipcMain.handle('kugou-music-qr-create', async () => {
+  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
+  try {
+    const keyResp = await kugouApi('/login/qr/key', { type: 'android' });
+    const keyData = keyResp.data || (keyResp.body && keyResp.body.data) || keyResp;
+    const key = keyData.qrcode || keyData.key;
+    if (!key) throw new Error('no qrcode key');
+
+    // 优先使用官方 /v2/qrcode 返回的标准二维码（App 能识别关联 key）；
+    // 没有时再退回 /login/qr/create 自拼 URL 二维码
+    const officialImg = keyData.qrcode_img || keyData.qr_img || '';
+    if (officialImg) {
+      return {
+        ok: true,
+        key,
+        qrImgUrl: officialImg,
+        qrUrl: keyData.url || '',
+        source: 'official',
+      };
+    }
+
+    const qrResp = await kugouApi('/login/qr/create', { key, qrimg: '1' });
+    const qrData = (qrResp.data || (qrResp.body && qrResp.body.data) || qrResp);
+    return {
+      ok: true,
+      key,
+      qrUrl: qrData.url || '',
+      qrImgUrl: qrData.qrcode_img || qrData.base64 || '',
+      source: 'create',
+    };
+  } catch (e) {
+    return { ok: false, error: e.message || 'QR_CREATE_FAILED' };
+  }
+});
+
+ipcMain.handle('kugou-music-qr-check', async (_event, key) => {
+  if (!loginEasterEggGate.isUnlocked()) return loginEasterEggLockedResult();
+  try {
+    const resp = await kugouApi('/login/qr/check', { key: String(key || '') });
+    const data = resp.data || (resp.body && resp.body.data) || resp;
+    if (data.status === 4) {
+      const token = String(data.token || '');
+      const userid = String(data.userid || '');
+      // 保存概念版登录态到 kugouCookie（供 server.js 登录状态/搜索/歌词/播放使用）
+      try {
+        const cookieText = ['token=' + token, 'userid=' + userid].filter(Boolean).join('; ');
+        if (cookieText && localServer && typeof localServer.saveKugouCookie === 'function') {
+          localServer.saveKugouCookie(cookieText);
+          console.log('[KugouQR] lite session saved, userid=' + userid);
+        } else {
+          console.warn('[KugouQR] localServer not ready, session not persisted');
+        }
+      } catch (saveErr) {
+        console.warn('[KugouQR] save cookie failed:', saveErr.message);
+      }
+      return {
+        ok: true, status: 'confirmed',
+        token,
+        userid,
+        nickname: data.nickname || data.user_name || '',
+      };
+    }
+    if (data.status === 2) return { ok: true, status: 'scanned' };
+    if (data.status === 0) return { ok: true, status: 'expired' };
+    return { ok: true, status: 'waiting' };
+  } catch (e) {
+    return { ok: false, error: e.message || 'QR_CHECK_FAILED' };
+  }
 });
 
 ipcMain.handle('qishui-music-clear-login', async () => {
@@ -5931,6 +6107,8 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(async () => {
+    // 启动酷狗概念版 API 后端服务
+    setTimeout(() => startKugouServer().catch((e) => console.warn('Kugou server start failed:', e.message)), 500);
     try {
       await localMusicLibrary.installProtocol(protocol);
     } catch (error) {
@@ -5974,6 +6152,8 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', (event) => {
     appQuitting = true;
+    // 关闭酷狗 API 后端
+    if (kugouServerProcess) { try { kugouServerProcess.kill(); } catch (e) {} kugouServerProcess = null; }
     if (appQuitCleanupComplete) return;
     event.preventDefault();
     if (appQuitCleanupPromise) return;
