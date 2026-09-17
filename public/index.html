@@ -1485,6 +1485,8 @@
       <div class="modal dual-login-modal">
         <div class="login-panel-head">
           <div><b>登录接入</b><small>拖接口端口到 MR</small></div>
+          <button id="login-status-refresh-btn" class="login-status-refresh-btn" type="button"
+            onclick="refreshAccountLoginStatus()" title="重新拉取登录状态与 VIP（手机上领取 VIP 后可立即同步）">刷新状态</button>
           <button id="login-reset-all-btn" class="login-reset-all-btn" type="button"
             onclick="logoutAllAccountsAndResetEasterEgg()" title="清除所有平台登录并重新锁定彩蛋">退出登录</button>
           <button class="login-panel-close" type="button" onclick="closeLoginModal()">×</button>

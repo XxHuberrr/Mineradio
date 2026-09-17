@@ -8388,6 +8388,34 @@ body.login-guide-active #login-guide-canvas {
   cursor: wait
 }
 
+/* 登录状态刷新（右上角，与「退出登录」并排） */
+.login-status-refresh-btn {
+  min-width: 78px;
+  height: 29px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .045);
+  color: rgba(255, 255, 255, .76);
+  font: 700 11px/1 'Microsoft YaHei', sans-serif;
+  letter-spacing: .05em;
+  cursor: pointer;
+  transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease, opacity .18s ease
+}
+
+.login-status-refresh-btn:hover:not(:disabled),
+.login-status-refresh-btn:focus-visible {
+  border-color: rgba(255, 255, 255, .34);
+  background: rgba(255, 255, 255, .095);
+  color: #fff;
+  transform: translateY(-1px)
+}
+
+.login-status-refresh-btn:disabled {
+  opacity: .56;
+  cursor: wait
+}
+
 .login-node-graph {
   position: relative;
   display: grid;

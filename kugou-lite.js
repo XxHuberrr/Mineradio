@@ -501,6 +501,60 @@ async function liteQrCheck(key) {
   return (res && res.body && res.body.data) || {};
 }
 
+// ====================================================================
+//  概念版 VIP 奖励（每日领取一天 VIP / 听歌奖励上报 / 到期查询）
+// ====================================================================
+// 服务端「今日已领取」错误码（对照 echomusic-kugou-reward 插件）
+const VIP_ALREADY_CODE = 130012;
+
+function vipRewardOutcome(res, extra) {
+  const body = (res && res.body) || {};
+  const code = Number(body.error_code || body.err_code || body.code || 0);
+  const status = Number(body.status);
+  const already = code === VIP_ALREADY_CODE;
+  const message = String(body.error_msg || body.error_message || body.msg || body.message || '');
+  const ok = already || status === 1 || (code === 0 && !!body.data);
+  return Object.assign({ ok, already, code, status, message, data: body.data || null, raw: body }, extra || {});
+}
+
+// 每日奖励：领取一天概念版 VIP（POST /youth/v1/recharge/receive_vip_listen_song）
+// source_id 走 90139（KuGouMusicApi 内置值），失败再试 90137（奖励插件使用的值）
+async function liteDailyVipClaim(kugouCookie) {
+  let last = null;
+  for (const sourceId of [90139, 90137]) {
+    const res = await liteCall('youth_day_vip', { source_id: sourceId }, kugouCookie);
+    const outcome = vipRewardOutcome(res, { sourceId });
+    if (outcome.ok || outcome.already) return outcome;
+    last = outcome;
+  }
+  return last || { ok: false, already: false, message: 'DAILY_VIP_CLAIM_FAILED' };
+}
+
+// 听歌奖励：上报一首歌（POST /youth/v2/report/listen_song），必须传真实 mixsongid
+async function liteListenSongReport(mixsongid, kugouCookie) {
+  const id = Number(mixsongid);
+  if (!id || !Number.isFinite(id)) return { ok: false, already: false, message: 'MIXSONGID_REQUIRED' };
+  const res = await liteCall('youth_listen_song', { mixsongid: id }, kugouCookie);
+  return vipRewardOutcome(res, { mixsongid: id });
+}
+
+// 升级每日概念会员（POST /youth/v1/listen_song/upgrade_vip_reward）
+async function liteDailyVipUpgrade(kugouCookie) {
+  const res = await liteCall('youth_day_vip_upgrade', {}, kugouCookie);
+  return vipRewardOutcome(res);
+}
+
+// 概念版 VIP 到期时间（GET https://kugouvip.kugou.com/v1/get_union_vip）
+async function liteUnionVip(kugouCookie) {
+  try {
+    const res = await liteCall('youth_union_vip', {}, kugouCookie);
+    const body = (res && res.body) || {};
+    return { ok: Number(body.status) === 1 || !!body.data, data: body.data || null, raw: body };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'UNION_VIP_FAILED' };
+  }
+}
+
 // 重置设备身份（显式动作，非登出）：清内存与落盘，下次启动重新生成 guid/mid/dev/mac/webgl
 // 注意：退出登录/会话过期不应调用它 —— 设备身份要保持稳定（EchoMusic 同策略）
 function resetDevice() {
@@ -528,6 +582,10 @@ module.exports = {
   liteQrKey,
   liteQrCreate,
   liteQrCheck,
+  liteDailyVipClaim,
+  liteListenSongReport,
+  liteDailyVipUpgrade,
+  liteUnionVip,
   resetDevice,
   _test: { buildLiteCookie, deviceCookie, ensureDfid },
 };
