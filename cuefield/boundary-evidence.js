@@ -1,5 +1,25 @@
 'use strict';
 
+const { round } = require('./cue-profile');
+
+// ── Named constants (replaces magic numbers) ──────────────────────────
+const BOUNDARY_DISTANCE_LIMIT_SEC = 0.1;
+const MIN_CONFIDENCE = 0.72;
+const SILENCE_AFTER_MS_FLOOR = 120;
+const SILENCE_AFTER_DB_CEILING = -45;
+const LEVEL_DROP_DB_FLOOR = 3;
+const SPECTRAL_CHANGE_FLOOR = 0.65;
+const MAX_REASONS = 8;
+
+const CROSSFADE_FOREGROUND_MIN = 0.8;
+const CROSSFADE_FOREGROUND_MAX = 1.6;
+const CROSSFADE_FOREGROUND_DEFAULT = 0.8;
+const CROSSFADE_BACKGROUND_MIN = 0.8;
+const CROSSFADE_BACKGROUND_MAX = 3;
+const CROSSFADE_BACKGROUND_DEFAULT = 2;
+const MIN_CROSSFADE_SEC = 0.05;
+
+// ── Vocal-state helpers ───────────────────────────────────────────────
 const KNOWN_VOCAL_STATES = new Set(['ended', 'active', 'unknown', 'inactive']);
 
 function finiteOrNull(value) {
@@ -8,19 +28,19 @@ function finiteOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function round(value) {
-  return Math.round((Number(value) + Number.EPSILON) * 1000) / 1000;
-}
+// ── Source-family lookup (Map for O(1) lookup) ────────────────────────
+const SOURCE_FAMILY_MAP = new Map([
+  ['lyric', 'lyric'], ['lyrics', 'lyric'], ['lrc', 'lyric'],
+  ['audio-envelope', 'audio-envelope'], ['rms', 'audio-envelope'], ['level', 'audio-envelope'],
+  ['spectral-change', 'spectral-change'], ['spectrum', 'spectral-change'],
+  ['beat-grid', 'beat-grid'], ['bar', 'beat-grid'], ['downbeat', 'beat-grid'],
+  ['section', 'section'], ['structure', 'section'],
+  ['stem', 'stem'], ['vocal-stem', 'stem'], ['accompaniment-stem', 'stem'],
+]);
 
 function sourceFamily(value) {
   const source = String(value || '').trim().toLowerCase();
-  if (['lyric', 'lyrics', 'lrc'].includes(source)) return 'lyric';
-  if (['audio-envelope', 'rms', 'level'].includes(source)) return 'audio-envelope';
-  if (['spectral-change', 'spectrum'].includes(source)) return 'spectral-change';
-  if (['beat-grid', 'bar', 'downbeat'].includes(source)) return 'beat-grid';
-  if (['section', 'structure'].includes(source)) return 'section';
-  if (['stem', 'vocal-stem', 'accompaniment-stem'].includes(source)) return 'stem';
-  return '';
+  return SOURCE_FAMILY_MAP.get(source) || '';
 }
 
 function evidenceFamilies(value) {
@@ -34,6 +54,7 @@ function normalizedVocalState(value) {
   return KNOWN_VOCAL_STATES.has(state) ? state : 'unknown';
 }
 
+// ── Cadence boundary evaluation ────────────────────────────────────────
 function evaluateCadenceBoundary(evidence = {}, context = {}) {
   const reasons = [];
   const confidence = finiteOrNull(evidence.confidence);
@@ -52,38 +73,39 @@ function evaluateCadenceBoundary(evidence = {}, context = {}) {
   ));
   const hasBar = families.includes('beat-grid');
 
-  if (!hasAudio || audioDistance === null || audioDistance > 0.1) {
+  if (!hasAudio || audioDistance === null || audioDistance > BOUNDARY_DISTANCE_LIMIT_SEC) {
     reasons.push('audio-boundary-missing');
   }
-  if (!hasBar || barDistance === null || barDistance > 0.1) {
+  if (!hasBar || barDistance === null || barDistance > BOUNDARY_DISTANCE_LIMIT_SEC) {
     reasons.push('bar-boundary-missing');
   }
   if (supportFamilies.length < 2) reasons.push('evidence-consensus-missing');
-  if (confidence === null || confidence < 0.72) reasons.push('boundary-confidence-low');
+  if (confidence === null || confidence < MIN_CONFIDENCE) reasons.push('boundary-confidence-low');
   if (vocalState === 'active') reasons.push('vocal-active');
   if (vocalState === 'unknown' && context.timedVocalSection === true) {
     const measuredSilence = silenceAfterMs !== null
-      && silenceAfterMs >= 120
+      && silenceAfterMs >= SILENCE_AFTER_MS_FLOOR
       && silenceAfterDb !== null
-      && silenceAfterDb <= -45;
+      && silenceAfterDb <= SILENCE_AFTER_DB_CEILING;
     if (!measuredSilence) reasons.push('vocal-state-unknown');
   }
 
   const levelDrop = before === null || after === null ? null : before - after;
   const strongSectionChange = spectralChange !== null
-    && spectralChange >= 0.65
+    && spectralChange >= SPECTRAL_CHANGE_FLOOR
     && families.includes('section');
-  if (levelDrop === null || (levelDrop < 3 && !strongSectionChange)) {
+  if (levelDrop === null || (levelDrop < LEVEL_DROP_DB_FLOOR && !strongSectionChange)) {
     reasons.push('post-boundary-energy-continues');
   }
 
   return {
     eligible: reasons.length === 0,
     confidence: confidence === null ? 0 : round(Math.max(0, Math.min(1, confidence))),
-    reasons: Array.from(new Set(reasons)).slice(0, 8),
+    reasons: Array.from(new Set(reasons)).slice(0, MAX_REASONS),
   };
 }
 
+// ── Crossfade duration calculation ────────────────────────────────────
 function chooseEndCrossfadeDuration(options = {}) {
   const fromAvailable = Math.max(0, finiteOrNull(options.fromAvailable) || 0);
   const toDuration = Math.max(0, finiteOrNull(options.toDuration) || 0);
@@ -92,13 +114,12 @@ function chooseEndCrossfadeDuration(options = {}) {
   const foregroundSafe = fromVocalState === 'inactive' && toVocalState === 'inactive';
   const requested = finiteOrNull(options.requestedDuration);
   const target = foregroundSafe
-    ? Math.max(0.8, Math.min(3, requested === null ? 2 : requested))
-    : Math.max(0.8, Math.min(1.6, requested === null ? 0.8 : requested));
-  return round(Math.min(target, fromAvailable, toDuration));
+    ? Math.max(CROSSFADE_BACKGROUND_MIN, Math.min(CROSSFADE_BACKGROUND_MAX, requested === null ? CROSSFADE_BACKGROUND_DEFAULT : requested))
+    : Math.max(CROSSFADE_FOREGROUND_MIN, Math.min(CROSSFADE_FOREGROUND_MAX, requested === null ? CROSSFADE_FOREGROUND_DEFAULT : requested));
+  return Math.max(MIN_CROSSFADE_SEC, round(Math.min(target, fromAvailable, toDuration)));
 }
 
 module.exports = {
   evaluateCadenceBoundary,
   chooseEndCrossfadeDuration,
 };
-

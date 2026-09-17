@@ -125,6 +125,10 @@ let nativeTempPath = '';
 function defaultNativeTempPath() {
   const configured = String(process.env.MINERADIO_NATIVE_TEMP_DIR || '').trim();
   if (configured) return path.resolve(configured);
+  // macOS: use ~/Library/Caches/Mineradio; Windows: use LOCALAPPDATA/APPDATA
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Caches', 'Mineradio', 'native-helper-temp');
+  }
   const localRoot = String(process.env.LOCALAPPDATA || process.env.APPDATA || os.tmpdir()).trim();
   return path.join(localRoot, 'Mineradio', 'native-helper-temp');
 }

@@ -6,17 +6,20 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const systemMemory = require('./system-memory');
+// Windows-only modules: Wallpaper Engine and FullDesktopMode are not available on macOS
+const IS_WINDOWS = process.platform === 'win32';
+const IS_MACOS = process.platform === 'darwin';
 const {
   WallpaperEngineLibrary,
   registerWallpaperEngineScheme,
-} = require('./wallpaper-engine-library');
+} = IS_WINDOWS ? require('./wallpaper-engine-library') : { WallpaperEngineLibrary: class {}, registerWallpaperEngineScheme: () => {} };
 const {
   LocalMusicLibrary,
   registerLocalMusicScheme,
 } = require('./local-music-library');
 const { BuiltInPlaylistLibrary } = require('./built-in-playlist-library');
-const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
-const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
+const { WallpaperEngineRuntime } = IS_WINDOWS ? require('./wallpaper-engine-runtime') : { WallpaperEngineRuntime: class {} };
+const { FullDesktopModeRuntime } = IS_WINDOWS ? require('./full-desktop-mode-runtime') : { FullDesktopModeRuntime: class {} };
 const {
   LoginEasterEggGate,
   LOGIN_EASTER_EGG_GATE_VERSION,
@@ -26,7 +29,7 @@ const { extractKugouAuth } = require('../kugou-api');
 const { qishuiCookieHasLogin } = require('../qishui-api');
 const { clearSpotifyToken } = require('../spotify-api');
 
-registerWallpaperEngineScheme(protocol);
+if (IS_WINDOWS) registerWallpaperEngineScheme(protocol);
 registerLocalMusicScheme(protocol);
 
 let mainWindow = null;
@@ -103,6 +106,10 @@ const APP_METADATA = APP_PACKAGE_INFO.mineradio || {};
 const APP_NAME = process.env.MINERADIO_RUNTIME_NAME || APP_METADATA.runtimeName || APP_PACKAGE_INFO.productName || 'Mineradio';
 const APP_USER_MODEL_ID = process.env.MINERADIO_APP_USER_MODEL_ID || APP_METADATA.appUserModelId || (APP_PACKAGE_INFO.build && APP_PACKAGE_INFO.build.appId) || 'com.mineradio.desktop';
 const APP_ICON_ICO = path.join(__dirname, '..', 'build', 'icon.ico');
+const APP_ICON_ICNS = path.join(__dirname, '..', 'build', 'icon.icns');
+const APP_ICON_PATH = process.platform === 'darwin' && fs.existsSync(APP_ICON_ICNS)
+  ? APP_ICON_ICNS
+  : APP_ICON_ICO;
 const CURRENT_FX_AUTOSAVE_FILE = 'current-fx-autosave.json';
 const CURRENT_FX_AUTOSAVE_MAX_BYTES = 12 * 1024 * 1024;
 const STARTUP_ERROR_LOG_FILE = 'startup-error.log';
@@ -163,14 +170,40 @@ systemMemory.setNativeTempPath(NATIVE_HELPER_TEMP_PATH);
 const localMusicLibrary = new LocalMusicLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const builtInPlaylistLibrary = new BuiltInPlaylistLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const localMusicImportCapabilities = new Map();
-const wallpaperEngineLibrary = new WallpaperEngineLibrary({ userDataPath: STABLE_USER_DATA_PATH });
-const wallpaperEngineRuntime = new WallpaperEngineRuntime({
+const wallpaperEngineLibrary = IS_WINDOWS ? new WallpaperEngineLibrary({ userDataPath: STABLE_USER_DATA_PATH }) : {
+  list: () => Promise.resolve({ ok: false, projects: [], count: 0 }),
+  getProjectDetails: () => Promise.resolve({ ok: false }),
+  addManualRoot: () => Promise.resolve({ ok: false }),
+  addManualProjectFile: () => Promise.resolve({ ok: false }),
+  removeManualRoot: () => Promise.resolve({ ok: false }),
+  installProtocol: () => Promise.resolve(),
+  dispose: () => {},
+};
+const wallpaperEngineRuntime = IS_WINDOWS ? new WallpaperEngineRuntime({
   library: wallpaperEngineLibrary,
   desktopCapturer,
   hostElevationProbe: systemMemory.probeProcessElevation,
   nativeTempPath: NATIVE_HELPER_TEMP_PATH,
-});
-const fullDesktopModeRuntime = new FullDesktopModeRuntime({
+}) : {
+  getStatus: () => ({ active: false }),
+  pending: null,
+  active: null,
+  stop: () => Promise.resolve({ ok: true }),
+  probe: () => Promise.resolve({ available: false }),
+  start: () => Promise.resolve({ ok: false }),
+  embedActiveWindow: () => Promise.resolve({ ok: false }),
+  refreshActiveSource: () => Promise.resolve(null),
+  confirmCaptureReady: () => Promise.resolve(false),
+  getDwmGlassCaptureSource: () => Promise.resolve(null),
+  activateDwmSurface: () => Promise.resolve({ ok: false }),
+  updateGlassSurface: () => {},
+  updateDwmVisualSettings: () => {},
+  noteHostPointerActivity: () => {},
+  revealWorkshop: () => Promise.resolve(),
+  dispose: () => Promise.resolve({ ok: true }),
+  updateDwmDesktopIconLayering: () => Promise.resolve({ ok: true }),
+};
+const fullDesktopModeRuntime = IS_WINDOWS ? new FullDesktopModeRuntime({
   screen,
   platform: process.platform,
   execFileImpl: execFile,
@@ -178,7 +211,25 @@ const fullDesktopModeRuntime = new FullDesktopModeRuntime({
   beforePassive: ({ win, reason }) => prepareWallpaperEngineProjectPreviewBeforeDesktopEmbedding(win, reason),
   requestReconcile: (reason) => reconcileFullDesktopMode(reason),
   onStatus: (status) => broadcastDesktopWallpaperStatus(status),
-});
+}) : {
+  getStatus: () => ({ enabled: false, active: false }),
+  pending: null,
+  active: null,
+  stop: () => Promise.resolve({ ok: true }),
+  updateDwmDesktopIconLayering: () => Promise.resolve({ ok: true }),
+  setDesktopIconsVisible: () => Promise.resolve({ ok: true }),
+  setSoftwareInteractionLocked: () => Promise.resolve({ ok: true }),
+  requestKeyboardFocus: () => ({ ok: true }),
+  enable: () => Promise.resolve({ ok: true, enabled: false }),
+  disable: () => Promise.resolve({ ok: true, enabled: false }),
+  setInteractive: () => Promise.resolve({ ok: true, enabled: false }),
+  toggleInteractive: () => Promise.resolve({ ok: true, enabled: false }),
+  reconcile: () => Promise.resolve({ ok: true, enabled: false }),
+  updateIconShields: () => {},
+  updatePointerRoute: () => {},
+  ensureIconLayerOrder: () => Promise.resolve({ ok: true }),
+  dispose: () => {},
+};
 let wallpaperEngineCaptureSourceId = '';
 let wallpaperEngineCaptureGrant = null;
 let gestureCameraPermissionGrant = null;
@@ -282,6 +333,10 @@ function cacheSettingsConfigPath() {
 }
 
 function defaultCacheRootPath() {
+  // macOS: use ~/Library/Caches/Mineradio; Windows: legacy D:\ drive check
+  if (process.platform === 'darwin') {
+    return path.join(app.getPath('home'), 'Library', 'Caches', 'Mineradio');
+  }
   const dDrive = 'D:\\';
   return fs.existsSync(dDrive)
     ? path.join(dDrive, 'MineradioCache')
@@ -481,7 +536,8 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['enable-oop-rasterization'],
   ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
-  ['use-angle', 'd3d11'],
+  // macOS uses Metal backend natively; Windows uses ANGLE/D3D11
+  ...(process.platform === 'win32' ? [['use-angle', 'd3d11']] : []),
 ];
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
@@ -807,6 +863,7 @@ function isTrustedGestureCameraMediaPermission(webContents, origin, details) {
 }
 
 function isTrustedWallpaperEngineIpc(event) {
+  if (!IS_WINDOWS) return false;
   return isTrustedMainWindowIpc(event);
 }
 
@@ -1803,9 +1860,9 @@ function configureMineradioGlobalHotkeys(bindings = []) {
         accelerator,
         ok: false,
         conflict: {
-          sourceName: '系统 / 其他软件',
+          sourceName: IS_MACOS ? '系统 / 其他应用' : '系统 / 其他软件',
           sourceIcon: 'warning',
-          reason: '该组合键已被占用或被系统保留',
+          reason: IS_MACOS ? '该组合键已被占用或被系统保留（macOS 可能需要辅助功能权限）' : '该组合键已被占用或被系统保留',
         },
       });
     }
@@ -2107,13 +2164,20 @@ function focusMainWindow() {
 }
 
 function createOrUpdateTray() {
-  if (process.platform !== 'win32' && process.platform !== 'linux') return;
+  // macOS also supports system tray (menu bar) - enable for all platforms
   if (!tray) {
     try {
-      tray = new Tray(APP_ICON_ICO);
-      tray.setToolTip(APP_NAME);
-      tray.on('click', () => focusMainWindow());
-      tray.on('double-click', () => focusMainWindow());
+      // macOS uses PNG/ICNS, Windows uses ICO
+      const trayIconPath = IS_MACOS && fs.existsSync(APP_ICON_ICNS) ? APP_ICON_ICNS : APP_ICON_ICO;
+      tray = new Tray(trayIconPath);
+      if (IS_MACOS) {
+        // macOS: click shows the app (no context menu on click, use right-click or menu bar)
+        tray.on('click', () => focusMainWindow());
+      } else {
+        tray.setToolTip(APP_NAME);
+        tray.on('click', () => focusMainWindow());
+        tray.on('double-click', () => focusMainWindow());
+      }
     } catch (e) {
       console.warn('Tray init failed:', e.message);
       tray = null;
@@ -2125,14 +2189,14 @@ function createOrUpdateTray() {
     { label: `显示 ${APP_NAME}`, click: () => focusMainWindow() },
     {
       label: '退出完整桌面模式',
-      visible: desktopMode.enabled === true,
+      visible: IS_WINDOWS && desktopMode.enabled === true,
       click: () => disableFullDesktopMode('tray-exit-desktop-mode').catch((error) => {
         console.warn('[FullDesktopMode] tray exit failed:', error && error.message || error);
       }),
     },
     { type: 'separator' },
     {
-      label: '退出',
+      label: IS_MACOS ? '退出' : '退出',
       click: () => {
         appQuitting = true;
         app.quit();
@@ -2334,7 +2398,7 @@ function ensureDesktopShortcut() {
       cwd: path.dirname(target),
       args: '',
       description: `${APP_NAME} desktop music player`,
-      icon: fs.existsSync(APP_ICON_ICO) ? APP_ICON_ICO : target,
+      icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : target,
       iconIndex: 0,
       appUserModelId: APP_USER_MODEL_ID,
     };
@@ -2549,7 +2613,7 @@ async function openNeteaseMusicLoginWindow(owner) {
       autoHideMenuBar: true,
       title: '网易云音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON_PATH,
       webPreferences: {
         partition: NETEASE_LOGIN_PARTITION,
         contextIsolation: true,
@@ -2663,7 +2727,7 @@ async function openQQMusicLoginWindow(owner, options) {
       autoHideMenuBar: true,
       title: 'QQ 音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON_PATH,
       webPreferences: {
         partition: QQ_LOGIN_PARTITION,
         contextIsolation: true,
@@ -2739,7 +2803,7 @@ async function openQQMusicLoginWindow(owner, options) {
           show: false,
           autoHideMenuBar: true,
           backgroundColor: '#111111',
-          icon: APP_ICON_ICO,
+          icon: APP_ICON_PATH,
           webPreferences: {
             partition: QQ_LOGIN_PARTITION,
             contextIsolation: true,
@@ -2793,7 +2857,7 @@ async function openQQMusicLoginWindow(owner, options) {
               show: true,
               autoHideMenuBar: true,
               backgroundColor: '#111111',
-              icon: APP_ICON_ICO,
+              icon: APP_ICON_PATH,
               webPreferences: {
                 partition: QQ_LOGIN_PARTITION,
                 contextIsolation: true,
@@ -2892,7 +2956,7 @@ async function openKugouMusicLoginWindow(owner, options) {
       autoHideMenuBar: true,
       title: '酷狗音乐登录',
       backgroundColor: '#111111',
-      icon: APP_ICON_ICO,
+      icon: APP_ICON_PATH,
       webPreferences: {
         partition: KUGOU_LOGIN_PARTITION,
         contextIsolation: true,
@@ -3755,6 +3819,8 @@ function createDesktopLyricsWindow(payload = {}) {
     skipTaskbar: true,
     show: false,
     title: 'Mineradio Desktop Lyrics',
+    // macOS-specific: use floating level for desktop lyrics overlay
+    ...(IS_MACOS ? { level: 'floating' } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'overlay-preload.js'),
       contextIsolation: true,
@@ -3803,6 +3869,11 @@ function closeDesktopLyricsWindow() {
 
 function nativeWindowHandleDecimal(win) {
   const handle = win.getNativeWindowHandle();
+  if (IS_MACOS) {
+    // macOS: NSWindow pointer is big-endian on ARM64, little-endian on Intel
+    if (process.arch === 'arm64') return handle.readBigUInt64BE(0).toString();
+    return handle.readBigUInt64LE(0).toString();
+  }
   if (process.arch === 'x64') return handle.readBigUInt64LE(0).toString();
   return String(handle.readUInt32LE(0));
 }
@@ -5610,7 +5681,14 @@ async function createWindowOnce() {
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
-    icon: APP_ICON_ICO,
+    icon: APP_ICON_PATH,
+    // macOS-specific window properties
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 16, y: 16 },
+      vibrancy: 'under-window',
+      backgroundMaterial: 'acrylic',
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
