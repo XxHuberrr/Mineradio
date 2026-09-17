@@ -4,6 +4,7 @@
   "version": "2.2.0",
   "description": "Windows 沉浸式音乐播放器，融合桌面模式、歌词舞台、粒子视觉和 3D 歌单架。",
   "author": "Mineradio",
+  "desktopName": "mineradio.desktop",
   "license": "GPL-3.0-only",
   "main": "desktop/main.js",
   "private": true,
@@ -11,7 +12,9 @@
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir",
-    "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never"
+    "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never",
+    "build:linux": "electron-builder --linux AppImage deb --publish never",
+    "build:linux:dir": "electron-builder --linux dir"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -46,6 +49,28 @@
       "public/index.html"
     ],
     "asar": false,
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "maintainer": "Mineradio <huisheng66@users.noreply.github.com>",
+      "syncDesktopName": true,
+      "synopsis": "沉浸式音乐播放器",
+      "description": "Mineradio 沉浸式音乐播放器：歌词舞台、粒子视觉与 3D 歌单架。",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
     "win": {
       "executableName": "Mineradio",
       "icon": "build/icon.ico",
