@@ -11,7 +11,10 @@
     "start": "electron .",
     "build:win": "electron-builder --win nsis",
     "build:win:dir": "electron-builder --win dir",
-    "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never"
+    "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never",
+    "build:mac": "electron-builder --mac dmg --arm64 --publish never --config.electronDist=node_modules/electron/dist",
+    "build:mac:dir": "electron-builder --mac dir --arm64 --publish never --config.electronDist=node_modules/electron/dist",
+    "postinstall": "install-electron"
   },
   "build": {
     "appId": "com.mineradio.desktop",
@@ -80,7 +83,23 @@
         "owner": "XxHuberrr",
         "repo": "Mineradio"
       }
-    ]
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSCameraUsageDescription": "用于手势控制音乐播放。"
+      }
+    }
   },
   "mineradio": {
     "update": {

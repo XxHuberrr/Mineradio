@@ -46,7 +46,7 @@ function hotkeyDisplayPart(part) {
   if (part === 'Ctrl') return 'Ctrl';
   if (part === 'Alt') return 'Alt';
   if (part === 'Shift') return 'Shift';
-  if (part === 'Meta') return 'Win';
+  if (part === 'Meta') return window.desktopWindow && window.desktopWindow.platform === 'darwin' ? '⌘' : 'Win';
   if (part === 'Space') return 'Space';
   if (part === 'ArrowLeft') return 'Left';
   if (part === 'ArrowRight') return 'Right';
