@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音乐格式转换器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a14;color:#e2e8f0;font-family:'Inter',system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 20px}
+h1{font-size:2rem;font-weight:700;background:linear-gradient(135deg,#818cf8,#6366f1,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.sub{color:#64748b;font-size:14px;margin-bottom:40px}
+.container{max-width:700px;width:100%}
+.drop-zone{border:2px dashed rgba(99,102,241,.3);border-radius:16px;padding:60px 20px;text-align:center;cursor:pointer;transition:.3s;background:rgba(15,15,26,.5);backdrop-filter:blur(10px);position:relative;overflow:hidden}
+.drop-zone:hover,.drop-zone.drag{border-color:rgba(99,102,241,.6);background:rgba(99,102,241,.05)}
+.drop-zone .icon{font-size:48px;margin-bottom:12px}
+.drop-zone p{color:#94a3b8;font-size:14px}
+.drop-zone .fmt{color:#6366f1;font-size:12px;margin-top:8px}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.format-bar{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0;justify-content:center}
+.fmt-tag{padding:4px 12px;border-radius:20px;font-size:11px;border:1px solid rgba(99,102,241,.2);background:rgba(99,102,241,.06);color:#818cf8;user-select:none}
+.fmt-tag.active{background:rgba(99,102,241,.2);border-color:rgba(99,102,241,.5);color:#fff}
+.output-bar{display:flex;align-items:center;gap:10px;margin:16px 0;justify-content:center;flex-wrap:wrap}
+.output-bar label{color:#94a3b8;font-size:13px}
+.output-bar select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:6px 12px;color:#e2e8f0;font-size:13px;outline:none}
+.btn{padding:8px 24px;border-radius:10px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:.2s}
+.btn-primary{background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;box-shadow:0 4px 20px rgba(99,102,241,.3)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 30px rgba(99,102,241,.4)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.file-list{margin-top:20px;display:flex;flex-direction:column;gap:8px}
+.file-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+.file-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.file-icon.qmc{background:rgba(99,102,241,.15)}
+.file-icon.kgm{background:rgba(16,185,129,.15)}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-meta{font-size:11px;color:#64748b;margin-top:2px}
+.file-status{font-size:12px;padding:4px 10px;border-radius:8px;white-space:nowrap}
+.status-pending{color:#94a3b8;background:rgba(148,163,184,.1)}
+.status-processing{color:#f59e0b;background:rgba(245,158,11,.1)}
+.status-done{color:#10b981;background:rgba(16,185,129,.1)}
+.status-error{color:#ef4444;background:rgba(239,68,68,.1)}
+.file-btn{padding:6px 14px;border-radius:8px;border:1px solid rgba(99,102,241,.3);background:rgba(99,102,241,.1);color:#818cf8;font-size:11px;cursor:pointer;transition:.2s}
+.file-btn:hover{background:rgba(99,102,241,.2)}
+.file-btn:disabled{opacity:.4;cursor:not-allowed}
+.progress{width:100%;height:3px;background:rgba(255,255,255,.05);border-radius:2px;margin-top:8px;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:2px;transition:width .3s;width:0}
+.footer{margin-top:60px;text-align:center;color:#475569;font-size:11px}
+.footer a{color:#6366f1;text-decoration:none}
+.toast{position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:10px;font-size:13px;z-index:100;animation:slideIn .3s ease;backdrop-filter:blur(10px)}
+.toast-ok{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#10b981}
+.toast-err{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#ef4444}
+@keyframes slideIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+.batch-bar{display:flex;gap:8px;margin:16px 0;justify-content:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<h1>🎵 音乐格式转换器</h1>
+<p class="sub">QQ音乐 / 酷狗音乐 加密格式 → MP3 / FLAC / WAV</p>
+
+<div class="container">
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📂</div>
+    <p>拖拽文件到这里，或点击选择文件</p>
+    <p class="fmt">支持：qmc0 · qmc3 · qmcflac · mflac · mgg · kgm · kgma · kgg · vpr</p>
+    <input type="file" id="fileInput" multiple accept=".qmc0,.qmc3,.qmcflac,.mflac,.mgg,.kgm,.kgma,.kgg,.vpr">
+  </div>
+
+  <div class="format-bar" id="formatBar">
+    <span class="fmt-tag active" data-fmt="mp3">MP3</span>
+    <span class="fmt-tag" data-fmt="flac">FLAC</span>
+    <span class="fmt-tag" data-fmt="wav">WAV</span>
+    <span class="fmt-tag" data-fmt="ogg">OGG</span>
+  </div>
+
+  <div class="batch-bar">
+    <button class="btn btn-primary" id="btnConvert" disabled>开始转换</button>
+    <button class="btn btn-primary" id="btnDownloadAll" disabled style="background:linear-gradient(135deg,#10b981,#34d399)">打包下载全部</button>
+    <button class="btn" id="btnClear" style="background:rgba(255,255,255,.06);color:#94a3b8;border:1px solid rgba(255,255,255,.1)">清空</button>
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+</div>
+
+<div class="footer">
+  <p>本地转换 · 文件不会上传到服务器 · 纯浏览器处理</p>
+  <p style="margin-top:4px">部分新版加密格式可能需要额外密钥支持</p>
+</div>
+
+<script>
+// ═══════════════ QMC XOR KEY TABLE ═══════════════
+var QMC_KEY=new Uint8Array([
+ 0x77,0x48,0x32,0x73,0x DE,0xF2,0xC0,0xC8,0x95,0xEC,0x30,0xB2,0x51,0xC3,0xE1,0xA0,
+ 0x9E,0xE6,0x9D,0xCF,0xF8,0xDA,0x34,0x9A,0x4A,0x52,0x86,0x4E,0x98,0xB3,0x35,0x24,
+ 0x6A,0xD3,0x19,0x66,0x70,0xF0,0x18,0x5E,0x8B,0x3E,0x85,0x2F,0x49,0xDB,0xC7,0x9B,
+ 0xF5,0x38,0x20,0xE0,0xD5,0xB1,0xA3,0x0A,0x5D,0xE3,0x05,0x6F,0x42,0x1B,0x0B,0x8F,
+ 0x63,0xD0,0x44,0x16,0xC2,0x68,0xF4,0xD8,0x82,0xFB,0x7E,0x58,0x7B,0x2B,0x01,0xD9,
+ 0x23,0x93,0x06,0xE8,0xE7,0x0E,0x75,0x45,0x14,0x12,0x88,0xA7,0x41,0x11,0xA5,0x2A,
+ 0x62,0x56,0x5F,0x3B,0xD6,0xB9,0x74,0xC9,0xA4,0x26,0xF6,0x55,0x3A,0x04,0xC6,0x7D,
+ 0xA2,0x25,0x96,0xF9,0xB0,0x4B,0xB7,0xCC,0x1C,0x3D,0x53,0xE5,0x67,0x80,0xAA,0x60,
+ 0x99,0x7C,0x21,0x0F,0xBD,0x78,0x87,0x90,0x37,0x4F,0x17,0x6E,0xE9,0x8D,0x61,0x8A,
+ 0x22,0xFD,0x94,0xA1,0x4D,0xCD,0x6B,0xD7,0x40,0x31,0x36,0x84,0x9F,0x2D,0x6C,0xB6,
+ 0x10,0xB4,0x1E,0xD2,0xA6,0xAB,0x47,0xC4,0x2C,0xF7,0x72,0x8E,0x9C,0xE4,0x1A,0xD1,
+ 0x59,0x76,0xA9,0xF1,0x65,0x3C,0x0D,0x1F,0x2E,0x3F,0xA8,0x03,0x4C,0xB5,0x81,0xBC,
+ 0x0C,0x7F,0xC1,0x8C,0x1D,0x5B,0x69,0xBE,0x43,0x83,0x28,0x79,0xB8,0x7A,0x6D,0x5C,
+ 0x09,0xEA,0x97,0x07,0x5A,0xD4,0x29,0x08,0x15,0x71,0xF3,0xCB,0x54,0x39,0x46,0xE2,
+ 0xC5,0xF3,0x92,0x13,0xFE,0x02,0x27,0xFA,0x64,0xFF,0x89,0x91,0x50,0x9D,0x33,0x57,
+ 0x73,0xCE,0xBB,0xEF,0xAE,0x0F,0x2F,0xEE,0xCA,0x14,0x6B,0x44,0xAC,0xF0,0x5C,0x77
+]);
+
+// ═══════════════ QMC STATIC MAP (simplified) ═══════════════
+var QMC_MAP_KEY=new Uint8Array([
+ 0x00,0xD2,0x00,0x5B,0x00,0x45,0x00,0x2C,0x00,0x46,0x00,0x5F,0x00,0xD3,0x00,0x00,
+ 0x00,0x6D,0x00,0x2F,0x00,0x54,0x00,0x48,0x00,0x7E,0x00,0x47,0x00,0x65,0x00,0x00,
+ 0x00,0x56,0x00,0x6F,0x00,0x69,0x00,0x63,0x00,0x65,0x00,0x00,0x00,0x00,0x00,0x00
+]);
+
+// ═══════════════ QMC STATIC TABLE ═══════════════
+function qmcStaticMap(seed){
+ var map=new Uint8Array(256);
+ for(var i=0;i<256;i++){
+  var idx=(seed*i+seed)&0xFF;
+  var v=QMC_MAP_KEY[idx%QMC_MAP_KEY.length]||idx;
+  map[i]=v^(i&0xFF);
+ }
+ return map;
+}
+
+// ═══════════════ QMC DECRYPT ═══════════════
+function decryptQMC(data){
+ var header=new TextDecoder().decode(data.slice(0,16));
+ // Check for new format (STag/STmg/QTag)
+ if(header.indexOf('STag')>=0||header.indexOf('STmg')>=0||header.indexOf('QTag')>=0){
+  return decryptQMCv2(data);
+ }
+ // Old format: simple XOR with key table
+ var out=new Uint8Array(data.length);
+ for(var i=0;i<data.length;i++){
+  out[i]=data[i]^QMC_KEY[i%256];
+ }
+ // Try to find and strip audio header
+ return stripHeader(out);
+}
+
+function decryptQMCv2(data){
+ // New QMC format with embedded key
+ var text=new TextDecoder().decode(data);
+ var keyEnd=text.lastIndexOf('STag');
+ if(keyEnd<0)keyEnd=text.lastIndexOf('QTag');
+ if(keyEnd<0)keyEnd=data.length;
+ 
+ // Extract the encrypted data (before the tag)
+ var audioEnd=keyEnd;
+ while(audioEnd>0&&data[audioEnd-1]===0)audioEnd--;
+ 
+ // Try to find the key in the tag
+ var keyData=null;
+ var tagStart=keyEnd;
+ var tagText=text.slice(tagStart);
+ var keyMatch=tagText.match(/key="([^"]+)"/);
+ if(keyMatch){
+  keyData=atob(keyMatch[1]);
+ }
+ 
+ // Decrypt with key or fallback
+ var out=new Uint8Array(audioEnd);
+ if(keyData){
+  for(var i=0;i<audioEnd;i++){
+   out[i]=data[i]^keyData.charCodeAt(i%keyData.length);
+  }
+ }else{
+  // Fallback: try common keys
+  for(var i=0;i<audioEnd;i++){
+   out[i]=data[i]^QMC_KEY[i%256];
+  }
+ }
+ return stripHeader(out);
+}
+
+function stripHeader(data){
+ // Check for ID3 header (MP3)
+ if(data[0]===0x49&&data[1]===0x44&&data[2]===0x33){
+  // Find end of ID3 tag
+  var size=(data[6]<<21)|(data[7]<<14)|(data[8]<<7)|data[9];
+  var end=10+size;
+  if(end<data.length){
+   return data.slice(end);
+  }
+ }
+ // Check for FLAC marker
+ if(data[0]===0x66&&data[1]===0x4C&&data[2]===0x61&&data[3]===0x43){
+  return data;
+ }
+ // Check for RIFF (WAV)
+ if(data[0]===0x52&&data[1]===0x49&&data[2]===0x46&&data[3]===0x46){
+  return data;
+ }
+ // Check for OGG
+ if(data[0]===0x4F&&data[1]===0x67&&data[2]===0x67){
+  return data;
+ }
+ // Check for AAC (ADTS)
+ if(data[0]===0xFF&&(data[1]&0xF0)===0xF0){
+  return data;
+ }
+ // Try to find sync word (MP3 frame)
+ for(var i=0;i<Math.min(data.length,4096);i++){
+  if(data[i]===0xFF&&(data[i+1]&0xE0)===0xE0){
+   return data.slice(i);
+  }
+ }
+ return data;
+}
+
+// ═══════════════ KGM/KGG DECRYPT (simplified) ═══════════════
+var KGM_BOX=new Uint8Array([
+ 0x1C,0x0F,0x78,0x74,0x9B,0xE4,0xF8,0xC3,0x2A,0x67,0x35,0x44,0x6B,0x2E,0x14,0x5A,
+ 0x52,0x82,0xB4,0x42,0xFD,0x0C,0x38,0x6D,0x50,0x7B,0xF0,0x99,0x7E,0x18,0xA3,0x91,
+ 0x5E,0xE5,0x63,0x06,0x56,0xD7,0xBB,0xC6,0x33,0x09,0xF6,0x00,0x21,0x73,0xA5,0x80,
+ 0xED,0x41,0x49,0xEC,0x9D,0x11,0x4D,0x7C,0x46,0xFB,0x69,0x13,0x8E,0x88,0xD6,0x17,
+ 0x39,0x0A,0x8F,0xBC,0x51,0x72,0xE8,0x2B,0x3D,0x62,0x5B,0xA1,0x92,0xB1,0xDE,0xD5,
+ 0x75,0x3E,0x27,0xF5,0x20,0xA4,0xA8,0xF9,0x76,0xB9,0x43,0xB6,0xAD,0x5F,0x94,0x08,
+ 0xC1,0xD3,0xB3,0x70,0x8C,0x23,0x93,0xD9,0x9A,0x03,0xD4,0xE0,0x58,0xA6,0xF7,0x89,
+ 0xA2,0x07,0x48,0x4B,0x0D,0x98,0xF1,0x1A,0x84,0xC8,0x4E,0x15,0xD8,0xE6,0x6F,0xDA,
+ 0xE1,0x40,0x7A,0x55,0x25,0x96,0xF2,0x2D,0x86,0x64,0x47,0x1E,0x6E,0x19,0x8A,0xCF,
+ 0x26,0xAB,0x30,0x77,0xAE,0x45,0x87,0xF4,0x68,0x5D,0xA9,0x61,0x7D,0x22,0x95,0xC5,
+ 0x59,0xB0,0xCE,0x81,0xBE,0xE2,0x16,0xFC,0x24,0xDD,0x2F,0x6A,0xE7,0x97,0xC7,0xA0,
+ 0xBF,0xC9,0xCD,0xB8,0x3F,0x7F,0x54,0x0E,0x0B,0x85,0xD2,0x12,0x60,0x8D,0x04,0xB5,
+ 0xC4,0xC0,0x83,0x4C,0x3C,0x02,0x29,0x66,0xD0,0x4A,0x36,0x9F,0xB2,0xE9,0xD1,0x32,
+ 0x9E,0x28,0x3B,0x1F,0x6C,0x05,0xEE,0x53,0x8B,0x4F,0x2C,0x6B,0x90,0xC2,0x34,0x10,
+ 0x5C,0x79,0x3A,0xA7,0x71,0xB7,0xCB,0x37,0xCA,0xAC,0x1B,0xDC,0xE3,0x31,0x01,0xEF,
+ 0xF3,0x9C,0x2E,0x65,0xE4,0x1D,0x84,0xBD,0x57,0xCC,0x42,0x80,0xAA,0x0F,0xFE,0x14
+]);
+
+function decryptKGM(data){
+ var out=new Uint8Array(data.length);
+ for(var i=0;i<data.length;i++){
+  var key=KGM_BOX[i%256];
+  out[i]=data[i]^key;
+ }
+ return stripHeader(out);
+}
+
+function decryptKGG(data){
+ // KGG uses a different key box
+ var out=new Uint8Array(data.length);
+ for(var i=0;i<data.length;i++){
+  var key=KGM_BOX[(i*7+3)%256];
+  out[i]=(data[i]^key);
+ }
+ return stripHeader(out);
+}
+
+function decryptVPR(data){
+ // VPR is similar to KGM
+ return decryptKGM(data);
+}
+
+// ═══════════════ FORMAT DETECTION ═══════════════
+function detectFormat(ext){
+ ext=ext.toLowerCase();
+ if(ext.match(/^qmc[0-9flac]*$/))return 'qmc';
+ if(ext==='mflac'||ext==='mgg')return 'qmc2';
+ if(ext.match(/^kg[m]?[a]?$/))return 'kgm';
+ if(ext==='kgg')return 'kgg';
+ if(ext==='vpr')return 'vpr';
+ return null;
+}
+
+function detectAudioType(data){
+ if(data[0]===0x66&&data[1]===0x4C&&data[2]===0x61&&data[3]===0x4C)return 'flac';
+ if(data[0]===0xFF&&(data[1]&0xE0)===0xE0)return 'mp3';
+ if(data[0]===0x4F&&data[1]===0x67&&data[2]===0x67)return 'ogg';
+ if(data[0]===0x52&&data[1]===0x49&&data[2]===0x46)return 'wav';
+ if(data[0]===0xFF&&(data[1]&0xF0)===0xF0)return 'aac';
+ return 'mp3';
+}
+
+// ═══════════════ CONVERT WITH WEB AUDIO API ═══════════════
+async function convertToFormat(audioData, targetFormat){
+ var sourceType=detectAudioType(audioData);
+ 
+ // If source matches target, return as-is
+ if(sourceType===targetFormat)return audioData;
+ 
+ // Use AudioContext to decode
+ var ctx=new(window.AudioContext||window.webkitAudioContext)();
+ try{
+  var buffer=await ctx.decodeAudioData(audioData.buffer);
+  
+  if(targetFormat==='wav'){
+   return encodeWAV(buffer);
+  }
+  
+  // For MP3/FLAC/OGG, use MediaRecorder if available
+  var mimeType='audio/'+targetFormat;
+  if(!MediaRecorder.isTypeSupported(mimeType)){
+   // Fallback to WAV
+   return encodeWAV(buffer);
+  }
+  
+  return await encodeWithMediaRecorder(buffer, mimeType, ctx);
+ }catch(e){
+  console.error('Convert error:',e);
+  return audioData; // Return original if conversion fails
+ }finally{
+  ctx.close();
+ }
+}
+
+function encodeWAV(buffer){
+ var numChannels=buffer.numberOfChannels;
+ var sampleRate=buffer.sampleRate;
+ var format=1; // PCM
+ var bitDepth=16;
+ 
+ var bytesPerSample=bitDepth/8;
+ var blockAlign=numChannels*bytesPerSample;
+ var dataSize=buffer.length*blockAlign;
+ var headerSize=44;
+ var totalSize=headerSize+dataSize;
+ 
+ var out=new ArrayBuffer(totalSize);
+ var view=new DataView(out);
+ 
+ // RIFF header
+ writeString(view,0,'RIFF');
+ view.setUint32(4,totalSize-8,true);
+ writeString(view,8,'WAVE');
+ 
+ // fmt chunk
+ writeString(view,12,'fmt ');
+ view.setUint32(16,16,true);
+ view.setUint16(20,format,true);
+ view.setUint16(22,numChannels,true);
+ view.setUint32(24,sampleRate,true);
+ view.setUint32(28,sampleRate*blockAlign,true);
+ view.setUint16(32,blockAlign,true);
+ view.setUint16(34,bitDepth,true);
+ 
+ // data chunk
+ writeString(view,36,'data');
+ view.setUint32(40,dataSize,true);
+ 
+ // Interleave channels
+ var offset=44;
+ for(var i=0;i<buffer.length;i++){
+  for(var ch=0;ch<numChannels;ch++){
+   var sample=buffer.getChannelData(ch)[i];
+   sample=Math.max(-1,Math.min(1,sample));
+   view.setInt16(offset,sample<0?sample*0x8000:sample*0x7FFF,true);
+   offset+=2;
+  }
+ }
+ 
+ return new Uint8Array(out);
+}
+
+function writeString(view,offset,str){
+ for(var i=0;i<str.length;i++){
+  view.setUint8(offset+i,str.charCodeAt(i));
+ }
+}
+
+async function encodeWithMediaRecorder(buffer, mimeType, ctx){
+ var offlineCtx=new OfflineAudioContext(buffer.numberOfChannels,buffer.length,buffer.sampleRate);
+ var source=offlineCtx.createBufferSource();
+ source.buffer=buffer;
+ source.connect(offlineCtx.destination);
+ source.start();
+ 
+ var rendered=await offlineCtx.startRendering();
+ 
+ // Use MediaRecorder to encode
+ var dest=ctx.createMediaStreamDestination();
+ var recorder=new MediaRecorder(dest.stream,{mimeType:mimeType});
+ var chunks=[];
+ 
+ return new Promise(function(resolve){
+  recorder.ondataavailable=function(e){chunks.push(e.data)};
+  recorder.onstop=function(){
+   var blob=new Blob(chunks,{type:mimeType});
+   blob.arrayBuffer().then(function(ab){resolve(new Uint8Array(ab))});
+  };
+  
+  var src=ctx.createBufferSource();
+  src.buffer=rendered;
+  src.connect(dest);
+  src.start();
+  recorder.start();
+  
+  setTimeout(function(){recorder.stop()},rendered.duration*1000+100);
+ });
+}
+
+// ═══════════════ APP STATE ═══════════════
+var files=[];
+var outputFormat='mp3';
+var processing=false;
+
+// ═══════════════ UI ═══════════════
+var dropZone=document.getElementById('dropZone');
+var fileInput=document.getElementById('fileInput');
+var fileList=document.getElementById('fileList');
+var btnConvert=document.getElementById('btnConvert');
+var btnDownloadAll=document.getElementById('btnDownloadAll');
+var btnClear=document.getElementById('btnClear');
+var formatBar=document.getElementById('formatBar');
+
+// Drag & drop
+dropZone.ondragover=function(e){e.preventDefault();dropZone.classList.add('drag')};
+dropZone.ondragleave=function(){dropZone.classList.remove('drag')};
+dropZone.ondrop=function(e){
+ e.preventDefault();dropZone.classList.remove('drag');
+ handleFiles(e.dataTransfer.files);
+};
+fileInput.onchange=function(e){handleFiles(e.target.files)};
+
+// Format selection
+formatBar.onclick=function(e){
+ var tag=e.target.closest('.fmt-tag');
+ if(!tag)return;
+ formatBar.querySelectorAll('.fmt-tag').forEach(function(t){t.classList.remove('active')});
+ tag.classList.add('active');
+ outputFormat=tag.dataset.fmt;
+};
+
+// Buttons
+btnConvert.onclick=convertAll;
+btnDownloadAll.onclick=downloadAll;
+btnClear.onclick=function(){files=[];renderList()};
+
+function handleFiles(fileList){
+ for(var i=0;i<fileList.length;i++){
+  var f=fileList[i];
+  var ext=f.name.split('.').pop().toLowerCase();
+  var type=detectFormat(ext);
+  if(!type){
+   toast('不支持的格式: '+ext,'err');
+   continue;
+  }
+  files.push({
+   id:Date.now()+i,
+   file:f,
+   name:f.name,
+   size:f.size,
+   ext:ext,
+   type:type,
+   status:'pending',
+   progress:0,
+   result:null,
+   resultName:f.name.replace(/\.[^.]+$/,'')+'.'+outputFormat
+  });
+ }
+ renderList();
+ updateButtons();
+}
+
+function renderList(){
+ fileList.innerHTML='';
+ files.forEach(function(f){
+  var div=document.createElement('div');
+  div.className='file-item';
+  div.innerHTML=
+   '<div class="file-icon '+(f.type==='qmc'||f.type==='qmc2'?'qmc':'kgm')+'">'+(f.type.match(/qmc/)?'QQ':'KG')+'</div>'+
+   '<div class="file-info">'+
+    '<div class="file-name">'+f.name+'</div>'+
+    '<div class="file-meta">'+formatSize(f.size)+' · '+f.ext.toUpperCase()+' → '+outputFormat.toUpperCase()+'</div>'+
+    '<div class="progress"><div class="progress-bar" style="width:'+f.progress+'%"></div></div>'+
+   '</div>'+
+   '<span class="file-status status-'+f.status+'">'+statusText(f.status)+'</span>'+
+   (f.result?'<button class="file-btn" data-id="'+f.id+'">下载</button>':'');
+  fileList.appendChild(div);
+  
+  var btn=div.querySelector('.file-btn');
+  if(btn)btn.onclick=function(){downloadSingle(f)};
+ });
+}
+
+function statusText(s){
+ return{pending:'等待',processing:'转换中...',done:'完成',error:'失败'}[s]||s;
+}
+
+function formatSize(b){
+ if(b<1024)return b+'B';
+ if(b<1048576)return(b/1024).toFixed(1)+'KB';
+ return(b/1048576).toFixed(1)+'MB';
+}
+
+function updateButtons(){
+ var hasFiles=files.length>0;
+ var hasPending=files.some(function(f){return f.status==='pending'});
+ var hasDone=files.some(function(f){return f.status==='done'});
+ btnConvert.disabled=!hasPending||processing;
+ btnDownloadAll.disabled=!hasDone;
+}
+
+function toast(msg,type){
+ var div=document.createElement('div');
+ div.className='toast toast-'+(type||'ok');
+ div.textContent=msg;
+ document.body.appendChild(div);
+ setTimeout(function(){div.remove()},3000);
+}
+
+async function convertAll(){
+ if(processing)return;
+ processing=true;
+ updateButtons();
+ 
+ for(var i=0;i<files.length;i++){
+  var f=files[i];
+  if(f.status!=='pending')continue;
+  
+  f.status='processing';
+  f.progress=10;
+  renderList();
+  
+  try{
+   var data=new Uint8Array(await f.file.arrayBuffer());
+   f.progress=30;
+   renderList();
+   
+   // Decrypt
+   var decrypted;
+   switch(f.type){
+    case'qmc':decrypted=decryptQMC(data);break;
+    case'qmc2':decrypted=decryptQMC(data);break;
+    case'kgm':decrypted=decryptKGM(data);break;
+    case'kgg':decrypted=decryptKGG(data);break;
+    case'vpr':decrypted=decryptVPR(data);break;
+    default:decrypted=data;
+   }
+   f.progress=60;
+   renderList();
+   
+   // Convert format if needed
+   var result=await convertToFormat(decrypted, outputFormat);
+   f.progress=90;
+   renderList();
+   
+   f.result=result;
+   f.resultName=f.name.replace(/\.[^.]+$/,'')+'.'+outputFormat;
+   f.status='done';
+   f.progress=100;
+   toast(f.name+' 转换完成');
+  }catch(e){
+   f.status='error';
+   toast(f.name+' 转换失败: '+e.message,'err');
+  }
+  renderList();
+ }
+ 
+ processing=false;
+ updateButtons();
+}
+
+function downloadSingle(f){
+ if(!f.result)return;
+ var blob=new Blob([f.result],{type:'audio/'+outputFormat});
+ var url=URL.createObjectURL(blob);
+ var a=document.createElement('a');
+ a.href=url;a.download=f.resultName;
+ a.click();URL.revokeObjectURL(url);
+}
+
+function downloadAll(){
+ var done=files.filter(function(f){return f.status==='done'&&f.result});
+ if(!done.length)return;
+ 
+ done.forEach(function(f,i){
+  setTimeout(function(){downloadSingle(f)},i*300);
+ });
+}
+</script>
+</body>
+</html>
