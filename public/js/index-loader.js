@@ -104,6 +104,7 @@
     'js/modules/08-account/03-login-modal-flows.js',
     'js/modules/08-account/04-user-modal-logout.js',
     'js/modules/08-account/05-startup-login-guide.js',
+    'js/modules/08-account/06-kugou-rewards.js',
     'js/modules/09-idle-toast-libraries.js',
     'js/modules/10-shell/00-gesture-control.js',
     'js/modules/10-shell/01-viewport-resize-shortcuts.js',

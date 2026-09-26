@@ -6025,6 +6025,95 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 奖励汇总（账号面板一次拿全）：VIP 档位/到期 + 广告奖励进度 + 听歌奖励 + 每日领取
+  // 兜底原则：任何一步失败都不抛错，返回 200 + degraded/note，让界面能退化展示
+  if (pn === '/api/kugou/vip/reward-summary') {
+    const today = localDayKey();
+    const result = {
+      provider: 'kugou',
+      ok: true,
+      day: today,
+      loggedIn: false,
+      degraded: false,
+      note: '',
+      vip: { level: 'none', label: '无VIP', expireAt: '', isVip: false, source: 'none' },
+      ad: { enabled: kugouAdRewardEnabled(), state: 'unknown', done: 0, total: 8, remain: 0, remainVipHour: 0, awardVipHour: 0, message: '' },
+      listen: { state: 'unknown', message: '' },
+      daily: { state: 'unknown', message: '' },
+    };
+    try {
+      result.loggedIn = kugouRewardLoggedIn();
+      const uid = result.loggedIn ? String(extractKugouAuth(kugouCookie).userid || '') : '';
+      // 账本（本地兜底数据源）
+      const ledger = readKugouRewardState();
+      const sameDay = (entry) => !!(entry && entry.day === today && String(entry.userid || '') === uid);
+      const daily = ledger.dailyVip;
+      if (sameDay(daily)) {
+        result.daily = { state: (daily.ok || daily.already) ? 'claimed' : 'pending', message: daily.message || '', at: Number(daily.at) || 0 };
+      }
+      const listen = ledger.listenReport;
+      if (sameDay(listen)) {
+        result.listen = { state: (listen.ok || listen.already) ? 'claimed' : 'pending', message: listen.message || '', at: Number(listen.at) || 0 };
+      }
+      const ad = ledger.adReward;
+      if (!result.ad.enabled) {
+        result.ad = Object.assign(result.ad, { state: 'disabled', message: '广告奖励已在启动参数中关闭' });
+      } else if (!sameDay(ad)) {
+        result.ad = Object.assign(result.ad, { state: 'unknown', remain: 8, message: '今日尚未领取' });
+      } else {
+        const done = Number(ad.done) || 0;
+        const total = Number(ad.total) || 8;
+        const remain = Math.max(0, total - done);
+        let state = 'pending';
+        if (ad.exhausted || remain === 0) state = 'done';
+        else if (adRewardPumping) state = 'running';
+        else if (ad.at && (Date.now() - Number(ad.at) < KUGOU_AD_REWARD_INTERVAL_MS)) state = 'throttled';
+        result.ad = Object.assign(result.ad, {
+          state,
+          done,
+          total,
+          remain,
+          remainVipHour: Number(ad.remainVipHour) || 0,
+          awardVipHour: Number(ad.awardVipHour) || 0,
+          message: ad.message || '',
+          at: Number(ad.at) || 0,
+        });
+      }
+      if (!result.loggedIn) {
+        result.ok = false;
+        result.note = '未登录酷狗概念版';
+        sendJSON(res, result);
+        return;
+      }
+      // VIP 档位 / 到期（线上为准，失败退回账本里的提示）
+      try {
+        const vip = await kugouLite.liteVipDetail(kugouCookie);
+        if (vip && (vip.ok || vip.isVip)) {
+          result.vip = {
+            level: vip.vipLevel || 'none',
+            label: vip.vipLevel === 'svip' ? 'SVIP' : (vip.vipLevel === 'vip' ? 'VIP' : '无VIP'),
+            expireAt: vip.expireAt || '',
+            isVip: !!vip.isVip,
+            source: 'live',
+          };
+        } else {
+          result.degraded = true;
+          result.note = '会员状态读取失败（已按本地账本展示）';
+        }
+      } catch (vipErr) {
+        result.degraded = true;
+        result.note = '会员状态读取失败（已按本地账本展示）';
+        console.warn('[KugouRewardSummary] vip failed:', (vipErr && vipErr.message) || vipErr);
+      }
+      sendJSON(res, result);
+    } catch (err) {
+      console.warn('[KugouRewardSummary] failed:', (err && err.message) || err);
+      // 完全不抛：返回可展示的降级结果
+      sendJSON(res, Object.assign({}, result, { ok: false, degraded: true, note: '奖励信息读取失败，请稍后重试' }));
+    }
+    return;
+  }
+
   // 已购单曲 / 已购专辑（type=songs|albums，默认 songs）
   if (pn === '/api/kugou/user/purchased') {
     try {

@@ -13,7 +13,7 @@
   <script src="vendor/music-tempo.min.js"></script>
   <script src="vendor/gsap.min.js"></script>
   <script src="js/preload-mode.js"></script>
-  <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync">
+  <link rel="stylesheet" href="css/index.css?v=20260926-kugou-rewards2">
 </head>
 
 <body>
@@ -1639,6 +1639,27 @@
           <button id="account-add-qq" class="modal-btn" onclick="openProviderLogin('qq')">补登 QQ 音乐</button>
           <button id="account-add-kugou" class="modal-btn" onclick="openProviderLogin('kugou')">补登酷狗音乐</button>
           <button id="account-add-qishui" class="modal-btn" onclick="openProviderLogin('qishui')">登录汽水音乐</button>
+        </div>
+        <div id="kugou-reward-panel" class="kugou-reward-panel" hidden>
+          <div class="kugou-reward-head">
+            <span class="kugou-reward-title">今日奖励</span>
+            <span id="kugou-reward-tip" class="kugou-reward-tip"></span>
+          </div>
+          <div class="kugou-reward-rows">
+            <div class="kugou-reward-row"><span class="kugou-reward-label">会员</span><span id="kugou-reward-vip"
+                class="kugou-reward-value">—</span></div>
+            <div class="kugou-reward-row"><span class="kugou-reward-label">广告奖励</span><span id="kugou-reward-ad"
+                class="kugou-reward-value">—</span></div>
+            <div class="kugou-reward-row"><span class="kugou-reward-label">听歌奖励</span><span id="kugou-reward-listen"
+                class="kugou-reward-value">—</span></div>
+            <div class="kugou-reward-row"><span class="kugou-reward-label">每日领取</span><span id="kugou-reward-daily"
+                class="kugou-reward-value">—</span></div>
+          </div>
+          <div class="kugou-reward-actions">
+            <button id="kugou-reward-claim-btn" class="modal-btn kugou-reward-btn" type="button"
+              onclick="claimKugouRewardsNow()">补领奖励</button>
+            <button class="modal-btn kugou-reward-btn" type="button" onclick="refreshKugouRewardPanel()">刷新</button>
+          </div>
         </div>
         <div id="account-hint" class="account-hint">QQ 音乐真实登录暂未接入，当前先预览双平台账号交互。</div>
         <div class="btn-row">
