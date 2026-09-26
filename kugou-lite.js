@@ -272,7 +272,7 @@ async function liteSongUrl(params, kugouCookie) {
   const hash = String(params.hash || params.fileHash || params.id || '').trim();
   if (!hash) return { provider: 'kugou', url: '', playable: false, error: 'MISSING_HASH' };
   // 音质映射：Mineradio 的 jymaster/hires/lossless/exhigh/standard → 概念版参数
-  // 注意：酷狗概念版最高音质为 FLAC（无损），不支持 Hi-Res/至臻 → 自动降级
+  // 注意：概念版无 Hi-Res/至臻档位 → 归一化到 FLAC
   const requestedQuality = String(params.quality || '').trim() || 'standard';
   let liteQuality = '128';
   let qualityLevel = 'standard';
@@ -289,25 +289,40 @@ async function liteSongUrl(params, kugouCookie) {
   if (qualityLevel === 'jymaster') playHash = params.resHash || params.sqHash || params.hqHash || hash;
   else if (qualityLevel === 'hires' || qualityLevel === 'lossless') playHash = params.sqHash || params.resHash || params.hqHash || hash;
   else if (qualityLevel === 'exhigh') playHash = params.hqHash || params.sqHash || params.resHash || hash;
-  try {
-    const res = await liteCall('song_url', {
-      hash: playHash,
-      quality: liteQuality,
-      album_id: String(params.albumId || params.album_id || 0),
-      album_audio_id: String(params.albumAudioId || params.album_audio_id || params.mixSongId || 0),
-      ppage_id: '',
-    }, kugouCookie);
+
+  const albumId = String(params.albumId || params.album_id || 0);
+  const albumAudioId = String(params.albumAudioId || params.album_audio_id || params.mixSongId || 0);
+
+  // 单次请求：返回 { url, body }（body 保留原始返回，供失败分类）
+  const requestLiteUrl = async (h, quality) => {
+    const res = await liteCall('song_url', { hash: h, quality, album_id: albumId, album_audio_id: albumAudioId, ppage_id: '' }, kugouCookie);
     const body = res && res.body;
+    let url = '';
     if (body && Number(body.status) === 1 && body.url) {
       // 概念版返回逗号分隔的多地址（主+备用），前端代理只接受单个 URL，取第一个
       const rawUrls = String(body.url).split(',').map(s => s.trim()).filter(Boolean);
-      const primary = rawUrls[0] || '';
-      if (!primary) {
-        return { provider: 'kugou', url: '', playable: false, reason: 'url_unavailable', message: '概念版未返回有效播放地址', requestedQuality, level: qualityLevel };
-      }
+      url = rawUrls[0] || '';
+    }
+    return { url, body };
+  };
+  // 失败分类：概念版「畅听VIP」（每日一日VIP）只覆盖标准音质，
+  // 无损/320 需要豪华VIP套餐（fail_process 里的 pkg/buy 即权限拒绝原因）
+  const classifyFail = (body) => {
+    const fails = body && Array.isArray(body.fail_process) ? body.fail_process.map(String) : [];
+    const msg = String((body && (body.error_msg || body.msg)) || '');
+    if (fails.indexOf('buy') >= 0) return { reason: 'vip_required', message: '这首歌需要购买专辑/单曲后才能播放（概念版无此权限）' };
+    if (fails.indexOf('pkg') >= 0 || Number(body && body.status) === 2 || /会员|vip|付费|权限/i.test(msg) || Number(body && body.error_code) === 20010) {
+      return { reason: 'vip_required', message: msg || '需要酷狗豪华VIP才能播放该音质' };
+    }
+    return { reason: 'url_unavailable', message: msg || '概念版未返回播放地址' };
+  };
+
+  try {
+    const first = await requestLiteUrl(playHash, liteQuality);
+    if (first.url) {
       return {
         provider: 'kugou',
-        url: primary,
+        url: first.url,
         playable: true,
         level: qualityLevel,
         quality: qualityLevel,
@@ -316,11 +331,28 @@ async function liteSongUrl(params, kugouCookie) {
         hash: playHash,
       };
     }
-    const msg = body && (body.error_msg || body.msg) || '';
-    if (/会员|vip|付费|权限/i.test(String(msg)) || Number(body && body.error_code) === 20010) {
-      return { provider: 'kugou', url: '', playable: false, reason: 'vip_required', message: msg || '需要酷狗会员', requestedQuality, level: qualityLevel };
+    // 自动降级：高档位被权限拒绝时退回标准音质（主 hash + 128）再试一次，
+    // 与概念版 App 行为一致；返回 level:'standard' 让前端记录本首歌的音质上限。
+    if (liteQuality !== '128') {
+      const fb = await requestLiteUrl(hash, '128');
+      if (fb.url) {
+        return {
+          provider: 'kugou',
+          url: fb.url,
+          playable: true,
+          level: 'standard',
+          quality: 'standard',
+          degraded: true,
+          requestedQuality,
+          source: 'kugou-lite',
+          hash,
+        };
+      }
+      const f = classifyFail(fb.body);
+      return { provider: 'kugou', url: '', playable: false, reason: f.reason, message: f.message, status: fb.body && fb.body.status, requestedQuality, level: 'standard' };
     }
-    return { provider: 'kugou', url: '', playable: false, reason: 'url_unavailable', message: msg || '概念版未返回播放地址', status: body && body.status, requestedQuality, level: qualityLevel };
+    const f = classifyFail(first.body);
+    return { provider: 'kugou', url: '', playable: false, reason: f.reason, message: f.message, status: first.body && first.body.status, requestedQuality, level: qualityLevel };
   } catch (e) {
     console.warn('[KugouLiteSongUrl]', e && (e.message || e));
     return { provider: 'kugou', url: '', playable: false, error: (e && e.message) || 'LITE_SONG_URL_FAILED', requestedQuality, level: qualityLevel };
