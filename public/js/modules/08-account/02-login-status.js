@@ -632,4 +632,6 @@ function renderUserBtn() {
     requestAnimationFrame(updateLoginNodeGraphUi);
   }
   updatePlaybackQualityUi();
+  // 酷狗概念版「今日奖励」入口按钮：跟随登录状态显示/隐藏与徽标刷新
+  if (typeof syncKugouRewardEntry === 'function') syncKugouRewardEntry();
 }

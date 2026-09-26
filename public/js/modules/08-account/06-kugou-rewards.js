@@ -82,6 +82,7 @@ function renderKugouRewardPanel() {
     var loggedIn = (typeof hasPlatformLogin === 'function') && hasPlatformLogin('kugou');
     if (!isKugou || !loggedIn) {
       panel.hidden = true;
+      syncKugouRewardEntry();
       return;
     }
     panel.hidden = false;
@@ -101,6 +102,7 @@ function renderKugouRewardPanel() {
       btn.textContent = kugouRewardClaimBusy ? '补领中…' : (ad.state === 'done' ? '已领满' : (ad.enabled === false ? '已关闭' : '补领奖励'));
       btn.style.display = (ad.enabled === false) ? 'none' : '';
     }
+    syncKugouRewardEntry();
   } catch (e) {
     console.warn('[KugouReward] render failed:', e && e.message);
   }
@@ -203,4 +205,80 @@ function claimKugouRewardsNow() {
       renderKugouRewardPanel();
       showToast('补领失败：' + ((e && e.message) || '请稍后重试'));
     });
+}
+
+// ============================================================
+//  入口按钮（顶部右上角 pill + 登录弹窗内按钮）
+// ============================================================
+var kugouRewardEntryLastFetchAt = 0;
+
+function kugouRewardTodayKey() {
+  var d = new Date();
+  var pad = function (n) { return String(n).length < 2 ? ('0' + n) : String(n); };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+function kugouRewardEntryBadgeText() {
+  var s = kugouRewardSummary;
+  if (!s) return '—';
+  var ad = s.ad || {};
+  var total = Number(ad.total) || 8;
+  var done = Number(ad.done) || 0;
+  if (ad.enabled === false) return '关闭';
+  if (ad.state === 'unknown') return '0/' + total;
+  return done + '/' + total;
+}
+
+// 同步入口按钮的显示与徽标；未登录酷狗时整体隐藏（兜底：绝不抛错）
+function syncKugouRewardEntry() {
+  try {
+    var btn = document.getElementById('kugou-reward-entry-btn');
+    var loginBtn = document.getElementById('login-kugou-reward-btn');
+    var visible = (typeof hasPlatformLogin === 'function') && hasPlatformLogin('kugou');
+    if (btn) {
+      btn.hidden = !visible;
+      var badge = document.getElementById('kugou-reward-entry-badge');
+      if (badge) badge.textContent = kugouRewardEntryBadgeText();
+      var ad = (kugouRewardSummary && kugouRewardSummary.ad) || {};
+      btn.classList.toggle('on-done', ad.state === 'done');
+    }
+    if (loginBtn) loginBtn.hidden = !visible;
+    if (!visible) return;
+    // 没取过数 / 跨天 → 懒加载一次（60 秒内不重复），让徽标有值
+    var s = kugouRewardSummary;
+    var stale = !s || String(s.day || '') !== kugouRewardTodayKey();
+    if ((stale || kugouRewardClaimBusy) && (Date.now() - kugouRewardEntryLastFetchAt > 60000)) {
+      kugouRewardEntryLastFetchAt = Date.now();
+      refreshKugouRewardPanel().catch(function (e) {
+        console.warn('[KugouReward] entry fetch failed:', e && e.message);
+      });
+    }
+  } catch (e) {
+    console.warn('[KugouReward] entry sync failed:', e && e.message);
+  }
+}
+
+// 点入口按钮：切到酷狗平台并打开「账号信息」弹窗（奖励区块就在里面）
+function openKugouRewardPanel() {
+  try {
+    if (typeof hasPlatformLogin === 'function' && hasPlatformLogin('kugou')) {
+      activeAccountProvider = 'kugou';
+      if (typeof dualAccountMode !== 'undefined') dualAccountMode = false;
+      if (typeof renderUserBtn === 'function') { try { renderUserBtn(); } catch (_) { /* 忽略 */ } }
+    }
+    if (typeof showUserModal === 'function') {
+      showUserModal();
+    } else if (typeof showLoginModal === 'function') {
+      showLoginModal({ provider: 'kugou', source: 'kugou-reward-entry' });
+    }
+    if (typeof renderKugouRewardPanel === 'function') renderKugouRewardPanel();
+    if (typeof refreshKugouRewardPanel === 'function') {
+      refreshKugouRewardPanel().catch(function (e) {
+        console.warn('[KugouReward] open refresh failed:', e && e.message);
+      });
+    }
+  } catch (e) {
+    console.warn('[KugouReward] open failed:', e && e.message);
+    try { if (typeof showToast === 'function') showToast('奖励面板打开失败，请重试'); } catch (_) { /* 忽略 */ }
+  }
 }

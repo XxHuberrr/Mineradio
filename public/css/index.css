@@ -9868,6 +9868,58 @@ body.login-guide-active #login-guide-canvas {
 }
 
 /* ===== 账号面板：今日奖励（酷狗概念版）===== */
+.kugou-reward-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 44px;
+  padding: 0 17px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, .035);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, .72);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: background .22s ease, border-color .22s ease, color .22s ease
+}
+
+.kugou-reward-entry[hidden] {
+  display: none
+}
+
+.kugou-reward-entry:hover,
+.kugou-reward-entry:focus-visible {
+  background: rgba(255, 255, 255, .09);
+  border-color: rgba(86, 224, 255, .42);
+  color: #eafcff
+}
+
+.kugou-reward-entry-badge {
+  min-width: 36px;
+  padding: 3px 7px;
+  border-radius: 9px;
+  background: rgba(86, 224, 255, .16);
+  color: #cdf3ff;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center
+}
+
+.kugou-reward-entry.on-done .kugou-reward-entry-badge {
+  background: rgba(86, 224, 255, .26);
+  color: #e2faff
+}
+
+.login-kugou-reward-btn[hidden] {
+  display: none
+}
+
 .kugou-reward-panel {
   margin: 14px 0;
   padding: 10px 12px 11px;
