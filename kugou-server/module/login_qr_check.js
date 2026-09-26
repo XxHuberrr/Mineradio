@@ -8,15 +8,23 @@ module.exports = (params, useAxios) => {
       baseURL: 'https://login-user.kugou.com',
       url: '/v2/get_userinfo_qrcode',
       method: 'GET',
-      params: { plat: 4, appid, srcappid, qrcode: params?.key },
+      params: {
+        plat: 4,
+        appid,
+        srcappid,
+        qrcode: params?.key,
+        dev: params?.cookie?.KUGOU_API_DEV,
+      },
       encryptType: 'web',
       cookie: params?.cookie || {},
-    }).then(resp => {
-      if (resp.body?.data?.status == 4) {
-        resp.cookie.push(`token=${resp.body?.data?.token}`);
-        resp.cookie.push(`userid=${resp.body?.data?.userid}`);
-      }
-      resolve(resp);
-    }).catch(e => reject(e));
+    })
+      .then((resp) => {
+        if (resp.body?.data?.status == 4) {
+          resp.cookie.push(`token=${resp.body?.data?.token}`);
+          resp.cookie.push(`userid=${resp.body?.data?.userid}`);
+        }
+        resolve(resp);
+      })
+      .catch((e) => reject(e));
   });
 };

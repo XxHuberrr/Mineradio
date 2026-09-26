@@ -630,6 +630,32 @@ async function liteDailyVipUpgrade(kugouCookie) {
   return vipRewardOutcome(err || res);
 }
 
+// 广告奖励：上报一条激励广告播放（领取概念版 VIP 时长）
+// POST /youth/v1/ad/play_report → data.{total,done,remain,remain_vip_hour,award_vip_hour}
+// 次数用尽 → 业务码 30002（每天上限 8 次，每次约 +3 小时 VIP）
+async function liteAdPlayReport(kugouCookie, options) {
+  const opts = options || {};
+  const end = Number(opts.playEnd) || Date.now();
+  const start = Number(opts.playStart) || end - 30000; // 默认上报一次 30 秒广告播放
+  let res = null;
+  let err = null;
+  try {
+    res = await liteCall('youth_ad_play_report', { ad_id: opts.adId || undefined, play_start: start, play_end: end }, kugouCookie);
+  } catch (e) {
+    err = e;
+  }
+  const outcome = vipRewardOutcome(err || res, { playStart: start, playEnd: end }, [30002]);
+  const data = outcome.data || {};
+  return Object.assign(outcome, {
+    done: Number(data.done) || 0,
+    total: Number(data.total) || 0,
+    remain: Number(data.remain) || 0,
+    remainVipHour: Number(data.remain_vip_hour) || 0,
+    awardVipHour: Number(data.award_vip_hour) || 0,
+    exhausted: outcome.already || Number(outcome.code) === 30002,
+  });
+}
+
 // 概念版 VIP 到期时间（GET https://kugouvip.kugou.com/v1/get_union_vip）
 async function liteUnionVip(kugouCookie) {
   try {
@@ -640,6 +666,25 @@ async function liteUnionVip(kugouCookie) {
     return { ok: false, error: (e && e.message) || 'UNION_VIP_FAILED' };
   }
 }
+
+// 已购内容（数字单曲 / 数字专辑）：用来区分「你没买」与「买了但接口没给地址」
+// 注意：这是标准版接口，概念版 token 亦可用（实测 status=1 返回 {total, goods}）
+async function litePurchased(type, kugouCookie, page, pagesize) {
+  const kind = String(type || 'songs').toLowerCase() === 'albums' ? 'albums' : 'songs';
+  try {
+    const res = await liteCall(kind === 'albums' ? 'user_purchased_albums' : 'user_purchased_songs', {
+      page: Number(page) || 1,
+      pagesize: Math.max(1, Math.min(Number(pagesize) || 100, 200)),
+    }, kugouCookie);
+    const body = (res && res.body) || {};
+    const data = body.data || {};
+    const goods = Array.isArray(data.goods) ? data.goods : [];
+    return { ok: Number(body.status) === 1, type: kind, total: Number(data.total) || 0, goods, code: Number(body.error_code) || 0, message: body.error_msg || body.message || '' };
+  } catch (e) {
+    return { ok: false, type: kind, total: 0, goods: [], error: (e && e.body && e.body.error_msg) || (e && e.message) || 'PURCHASED_FAILED' };
+  }
+}
+
 
 // 重置设备身份（显式动作，非登出）：清内存与落盘，下次启动重新生成 guid/mid/dev/mac/webgl
 // 注意：退出登录/会话过期不应调用它 —— 设备身份要保持稳定（EchoMusic 同策略）
@@ -671,6 +716,8 @@ module.exports = {
   liteDailyVipClaim,
   liteListenSongReport,
   liteDailyVipUpgrade,
+  liteAdPlayReport,
+  litePurchased,
   liteUnionVip,
   liteMonthVipRecord,
   resetDevice,
